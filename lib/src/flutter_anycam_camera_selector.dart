@@ -1,0 +1,85 @@
+// ignore_for_file: public_member_api_docs, sort_constructors_first
+import 'dart:convert';
+import 'dart:io';
+
+enum FlutterAnycamLensFacing { back, front, usb, rtsp, unknown }
+
+class FlutterAnycamCameraSelector {
+  final String id;
+  final String name;
+  final FlutterAnycamLensFacing lensFacing;
+  final int sensorOrientation;
+
+  FlutterAnycamCameraSelector({
+    required this.id,
+    required this.name,
+    required this.lensFacing,
+    required this.sensorOrientation,
+  });
+
+  Map<String, dynamic> toMap() {
+    return <String, dynamic>{
+      'id': id,
+      'name': name,
+      'lensFacing': lensFacing.name,
+      'sensorOrientation': sensorOrientation,
+    };
+  }
+
+  factory FlutterAnycamCameraSelector.fromMap(Map<String, dynamic> map) {
+    return FlutterAnycamCameraSelector(
+      id: map['id'] as String,
+      name: map['name'] as String,
+      lensFacing: FlutterAnycamLensFacing.values.byName(map['lensFacing']),
+      sensorOrientation: map['sensorOrientation'] as int,
+    );
+  }
+
+  String toJson() => json.encode(toMap());
+
+  // ignore: library_private_types_in_public_api
+  _FlutterAnycamCameraSelectorRtsp rtsp(
+      {required String url,
+      required String username,
+      required String password}) {
+    if (!Platform.isAndroid) {
+      throw UnsupportedError("This method is only suported on Android OS");
+    }
+    return _FlutterAnycamCameraSelectorRtsp(
+      url: url,
+      username: username,
+      password: password,
+    );
+  }
+
+  factory FlutterAnycamCameraSelector.fromJson(String source) =>
+      FlutterAnycamCameraSelector.fromMap(
+          json.decode(source) as Map<String, dynamic>);
+}
+
+final class _FlutterAnycamCameraSelectorRtsp
+    extends FlutterAnycamCameraSelector {
+  final String url;
+  final String username;
+  final String password;
+
+  _FlutterAnycamCameraSelectorRtsp({
+    required this.url,
+    required this.username,
+    required this.password,
+  }) : super(
+            id: url,
+            name: username,
+            sensorOrientation: 0,
+            lensFacing: FlutterAnycamLensFacing.rtsp);
+
+  @override
+  Map<String, dynamic> toMap() {
+    return <String, dynamic>{
+      ...super.toMap(),
+      'url': url,
+      'username': username,
+      'password': password,
+    };
+  }
+}

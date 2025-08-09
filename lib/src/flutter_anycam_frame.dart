@@ -1,0 +1,72 @@
+import 'dart:typed_data';
+
+class FlutterAnycamFrame {
+  final String format;
+  final int width;
+  final int height;
+  final List<FlutterAnycamPlane> planes;
+  final Uint8List bytes;
+
+  FlutterAnycamFrame({
+    required this.format,
+    required this.width,
+    required this.height,
+    required this.planes,
+    required this.bytes,
+  });
+
+  factory FlutterAnycamFrame.fromMap(Map<String, dynamic> map) {
+    return FlutterAnycamFrame(
+      format: map['format'] as String,
+      width: map['width'] as int,
+      height: map['height'] as int,
+      bytes: Uint8List.fromList(map['bytes']),
+      planes: (map['planes'] as List<dynamic>)
+          .map((planeMap) =>
+              FlutterAnycamPlane.fromMap(Map<String, dynamic>.from(planeMap)))
+          .toList(),
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'format': format,
+      'bytes': bytes.toList(),
+      'width': width,
+      'height': height,
+      'planes': planes.map((p) => p.toMap()).toList(),
+    };
+  }
+}
+
+class FlutterAnycamPlane {
+  final Uint8List bytes;
+  final int bytesPerRow;
+  final int pixelStride;
+  final int rowStride;
+
+  FlutterAnycamPlane({
+    required this.bytes,
+    required this.bytesPerRow,
+    required this.pixelStride,
+    required this.rowStride,
+  });
+
+  factory FlutterAnycamPlane.fromMap(Map<String, dynamic> map) {
+    return FlutterAnycamPlane(
+      bytes: Uint8List.fromList(map['bytes']),
+      rowStride: map['rowStride'] as int,
+      pixelStride: map['pixelStride'] as int,
+      bytesPerRow: map["bytesPerRow"] ?? map["rowStride"],
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'bytes': bytes.toList(),
+      'rowStride': rowStride,
+      'pixelStride': pixelStride,
+      'bytesPerRow': bytesPerRow,
+    };
+  }
+}
