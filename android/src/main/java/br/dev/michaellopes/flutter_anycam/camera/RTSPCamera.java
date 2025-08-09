@@ -12,8 +12,10 @@ import android.view.SurfaceView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.camera.core.ImageProxy;
 
 import br.dev.michaellopes.flutter_anycam.integration.FlutterEventChannel;
+import br.dev.michaellopes.flutter_anycam.utils.FrameRateLimiterUtil;
 import ir.am3n.rtsp.client.Rtsp;
 import ir.am3n.rtsp.client.data.SdpInfo;
 import ir.am3n.rtsp.client.data.YuvFrame;
@@ -35,6 +37,16 @@ public class RTSPCamera extends BaseCamera {
         super(viewId, params);
     }
 
+    FrameRateLimiterUtil<FrameItem> limiter = new FrameRateLimiterUtil<FrameItem>(getFps()) {
+        @Override
+        protected void onFrameLimited(FrameItem frameItem) {
+            int w = frameItem.image.getWidth();
+            int h = frameItem.image.getHeight();
+            Log.i("RTSPCamera", "Process onVideoFrameReceived");
+            Map<String, Object> imageData = imageAnalysisUtil.rtspFrameToFlutterResult(frameItem.frame.getData(), w, h);
+            FlutterEventChannel.getINSTANCE().send(viewId, "onVideoFrameReceived", imageData);
+        }
+    };
 
     @Override
     protected void init() {
@@ -45,6 +57,8 @@ public class RTSPCamera extends BaseCamera {
             String username = cameraSelector.getCameraSelectorRTSP().username;
             String password = cameraSelector.getCameraSelectorRTSP().password;
 
+            vd = null;
+            vd = new RSTPVideoDecoder(surfaceView.getHolder().getSurface(), surfaceView.getWidth(), surfaceView.getHeight());
 
             rtsp.init(url, username, password, null, 3000);
 
@@ -58,11 +72,7 @@ public class RTSPCamera extends BaseCamera {
 
                 @Override
                 public void onVideoFrameReceived(int width, int height, @Nullable Image image, @Nullable YuvFrame yuvFrame, @Nullable Bitmap b) {
-                    int w = image.getWidth();
-                    int h = image.getHeight();
-                    Log.i("RTSPCamera", "Process onVideoFrameReceived");
-                    Map<String, Object> imageData = imageAnalysisUtil.rtspFrameToFlutterResult(yuvFrame.getData(), w, h);
-                    FlutterEventChannel.getINSTANCE().send(viewId, "onVideoFrameReceived", imageData);
+                    limiter.onNewFrame(new FrameItem(yuvFrame, image));
                 }
 
                 @Override
@@ -130,7 +140,7 @@ public class RTSPCamera extends BaseCamera {
 
     @Override
     public void dispose() {
-        if(rtsp != null) {
+        if (rtsp != null) {
             rtsp.stop();
             rtsp.stop();
             rtsp = null;
@@ -142,7 +152,7 @@ public class RTSPCamera extends BaseCamera {
     }
 
     @Override
-    public  SurfaceView createSurfaceView(Context context) {
+    public SurfaceView createSurfaceView(Context context) {
         if (surfaceView == null) {
             surfaceView = new RtspSurfaceView(context);
         }
@@ -180,11 +190,21 @@ public class RTSPCamera extends BaseCamera {
         }
 
         public void dispose() {
-            if(mediaCodec != null) {
+            if (mediaCodec != null) {
                 mediaCodec.stop();
                 mediaCodec.release();
                 mediaCodec = null;
             }
+        }
+    }
+
+    private static class FrameItem {
+        public final YuvFrame frame;
+        public final Image image;
+
+        private FrameItem(YuvFrame frame, Image image) {
+            this.frame = frame;
+            this.image = image;
         }
     }
 }

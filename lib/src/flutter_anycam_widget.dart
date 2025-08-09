@@ -322,7 +322,7 @@ class _FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
                             child: SizedBox(
                               width: x.maxWidth,
                               child: AspectRatio(
-                                aspectRatio: 1,
+                                aspectRatio: x.maxWidth / constraints.maxHeight,
                                 child: _generateView,
                               ),
                             ),

@@ -38,13 +38,13 @@ class FlutterAnycamCameraSelector {
   String toJson() => json.encode(toMap());
 
   // ignore: library_private_types_in_public_api
-  _FlutterAnycamCameraSelectorRtsp rtsp(
+  static _FlutterAnycamCameraSelectorRtsp rtsp(
       {required String url,
       required String username,
       required String password}) {
-    if (!Platform.isAndroid) {
+    /* if (!Platform.isAndroid) {
       throw UnsupportedError("This method is only suported on Android OS");
-    }
+    }*/
     return _FlutterAnycamCameraSelectorRtsp(
       url: url,
       username: username,

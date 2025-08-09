@@ -20,12 +20,14 @@ class CameraFactory {
         let cameraSelector = ViewCameraSelector.fromMap(map!);
                 
         switch cameraSelector?.lensFacing {
+        case "rtsp": 
+            return RTSPCamera(frame: self.frame, viewId: vId, params: self.params)
         case "back":
-            return DeviceCamera.create(frame: self.frame, viewId: vId, params: self.params)
+            return DeviceCamera(frame: self.frame, viewId: vId, params: self.params)
         case "front":
-            return DeviceCamera.create(frame: self.frame, viewId: vId, params: self.params)
+            return DeviceCamera(frame: self.frame, viewId: vId, params: self.params)
         default:
-            return DeviceCamera.create(frame: self.frame, viewId: vId, params: self.params)
+            return DeviceCamera(frame: self.frame, viewId: vId, params: self.params)
         }
     }
 }

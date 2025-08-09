@@ -93,7 +93,7 @@ public class ImageAnalysisUtil {
 
     public Map<String, Object> rtspFrameToFlutterResult(byte[] yv12Bytes, int width, int height) {
 
-        byte[] nv21Bytes = ImageConverterUtil.yv12ToNv21(yv12Bytes, width, height);
+        byte[] nv21Bytes = ImageConverterUtil.i420ToNv21(yv12Bytes, width, height);
         ImageConverterUtil.FrameImageProxy imageProxy = ImageConverterUtil.convertNV21ToFrameImageProxy(nv21Bytes, width, height);
         List<Map<String, Object>> planes = new ArrayList<>();
         for (ImageConverterUtil.FramePlane item :

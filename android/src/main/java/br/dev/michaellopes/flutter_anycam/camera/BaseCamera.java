@@ -4,8 +4,10 @@ import android.content.Context;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 
+import java.util.HashMap;
 import java.util.Map;
 
+import br.dev.michaellopes.flutter_anycam.integration.FlutterEventChannel;
 import br.dev.michaellopes.flutter_anycam.model.ViewCameraSelector;
 import br.dev.michaellopes.flutter_anycam.utils.CameraPermissionsUtil;
 import br.dev.michaellopes.flutter_anycam.utils.ImageAnalysisUtil;
@@ -44,7 +46,7 @@ public abstract class BaseCamera {
             if(errCode == null) {
                 init();
             } else {
-               FlutterEventChannel.getINSTANCE().send(viewId, "onUnauthorized", new HashMap()); 
+               FlutterEventChannel.getINSTANCE().send(viewId, "onUnauthorized", new HashMap());
             }
         });
     }

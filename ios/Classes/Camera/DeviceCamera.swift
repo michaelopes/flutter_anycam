@@ -16,7 +16,7 @@ class DeviceCamera : BaseCamera {
     private var isCapturing = false
     
     
-    private override init(frame: CGRect, viewId: Int, params: [String : Any?]) {
+    public override init(frame: CGRect, viewId: Int, params: [String : Any?]) {
         super.init(frame: frame, viewId: viewId, params: params);
     }
     
@@ -28,9 +28,7 @@ class DeviceCamera : BaseCamera {
         fatalError("init(coder:viewId:params:) has not been implemented")
     }
     
-    static func create(frame: CGRect, viewId: Int, params: [String : Any?]) -> DeviceCamera {
-        return DeviceCamera(frame: frame, viewId: viewId, params: params);
-    }
+   
     
     private lazy var limiter: FrameRateLimiterUtil<CMSampleBuffer> = {
         return FrameRateLimiterUtil<CMSampleBuffer>(targetFps: self.getFps()) { [weak self] sampleBuffer in

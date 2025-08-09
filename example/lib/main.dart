@@ -18,45 +18,91 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
+  bool _stop = false;
+
   @override
   void initState() {
     super.initState();
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext _) {
     return MaterialApp(
       home: Scaffold(
         appBar: AppBar(
           title: const Text('Plugin example app'),
         ),
-        body: SizedBox.expand(
-          child: Column(
-            children: [
-              /*Expanded(
-                child: FlutterAnycamWidget(
-                  camera: cameras[1],
-                  onFrame: (frame) {},
+        body: Builder(builder: (context) {
+          return SizedBox.expand(
+            child: Column(
+              children: [
+                /*Expanded(
+                    child: FlutterAnycamWidget(
+                      camera: cameras[1],
+                      onFrame: (frame) {},
+                    ),
+                  ),*/
+                /* Expanded(
+                    child: FlutterAnycamWidget(
+                      camera: cameras[0],
+                    ),
+                  ),*/
+                Expanded(
+                  child: FlutterAnycamWidget(
+                    camera: FlutterAnycamCameraSelector.rtsp(
+                      url: "rtsp://192.168.18.93:554/mode=real&idc=1&ids=1",
+                      username: "admin",
+                      password: "1",
+                    ),
+                    onFrame: (frame) async {
+                      if (!_stop) {
+                        _stop = true;
+                        final img = await FlutterAnycam.convertNv21ToJpeg(
+                          bytes: frame.bytes,
+                          width: frame.width,
+                          height: frame.height,
+                          rotation: 0,
+                        );
+                        /*  if (img != null) {
+                          await showDialog(
+                              context: context,
+                              builder: (_) {
+                                return Material(
+                                  child: Dialog(
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Image.memory(img),
+                                        const SizedBox(
+                                          height: 16,
+                                        ),
+                                        ElevatedButton(
+                                          onPressed: () {
+                                            Navigator.pop(context);
+                                          },
+                                          child: const Text("Fechar"),
+                                        )
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              });
+                        }*/
+
+                        _stop = false;
+                      }
+                    },
+                  ),
                 ),
-              ),*/
-              /* Expanded(
-                child: FlutterAnycamWidget(
-                  camera: cameras[0],
-                ),
-              ),*/
-              Expanded(
-                child: FlutterAnycamWidget(
-                  camera: cameras[0],
-                ),
-              ),
-              Expanded(
-                child: FlutterAnycamWidget(
-                  camera: cameras[1],
-                ),
-              ),
-            ],
-          ),
-        ),
+                /*   Expanded(
+                    child: FlutterAnycamWidget(
+                      camera: cameras[1],
+                    ),
+                  ),*/
+              ],
+            ),
+          );
+        }),
       ),
     );
   }
