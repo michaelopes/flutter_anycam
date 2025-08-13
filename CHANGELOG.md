@@ -1,3 +1,3 @@
 ## 1.0.0
 
-* TODO: Describe initial release.
+* Plugin Flutter para captura e análise de frames de múltiplos tipos de câmera (frontal, traseira, USB e RTSP), com suporte a conversão de frames para JPEG e processamento em tempo real.
