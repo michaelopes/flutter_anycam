@@ -1,4 +1,4 @@
-# flutter_anycam
+# FlutterAnycam
 
 Plugin Flutter para captura e análise de frames de múltiplos tipos de câmera (**frontal**, **traseira**, **USB** e **RTSP**), com suporte a conversão de frames para JPEG e processamento em tempo real.
 
