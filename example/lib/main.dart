@@ -18,15 +18,39 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  bool _stop = false;
-
   @override
   void initState() {
     super.initState();
   }
 
+  Future<void> _onFrame(FlutterAnycamFrame frame) async {
+    //Frame para jpeg
+    // ignore: unused_local_variable
+    final img = await FlutterAnycam.frameConversor.convertToJpeg(
+      frame: frame,
+      rotation: 0,
+    );
+  }
+
   @override
   Widget build(BuildContext _) {
+    final backCamera = cameras
+        .where((e) => e.lensFacing == FlutterAnycamLensFacing.back)
+        .firstOrNull;
+    final frontCamera = cameras
+        .where((e) => e.lensFacing == FlutterAnycamLensFacing.front)
+        .firstOrNull;
+
+    final usbCamera = cameras
+        .where((e) => e.lensFacing == FlutterAnycamLensFacing.usb)
+        .firstOrNull;
+
+    final rtspCamera = FlutterAnycamCameraSelector.rtsp(
+      url: "rtsp://192.168.18.93:554/mode=real&idc=1&ids=1",
+      username: "admin",
+      password: "1",
+    );
+
     return MaterialApp(
       home: Scaffold(
         appBar: AppBar(
@@ -36,24 +60,46 @@ class _MyAppState extends State<MyApp> {
           return SizedBox.expand(
             child: Column(
               children: [
-                /*Expanded(
+                if (backCamera != null)
+                  Expanded(
                     child: FlutterAnycamWidget(
-                    FlutterAnycamWidget(
-                    camera: FlutterAnycamCameraSelector.rtsp(
-                      url: "rtsp://192.168.18.93:554/mode=real&idc=1&ids=1",
-                      username: "admin",
-                      password: "1",
+                      camera: backCamera,
+                      onFrame: _onFrame,
                     ),
-                      onFrame: (frame) {},
-                    ),
-                  ),*/
-                /* Expanded(
+                  ),
+                if (frontCamera != null)
+                  Expanded(
                     child: FlutterAnycamWidget(
-                      camera: cameras[0],
+                      camera: frontCamera,
+                      onFrame: _onFrame,
                     ),
-                  ),*/
-
+                  ),
+                if (usbCamera != null)
+                  Expanded(
+                    child: FlutterAnycamWidget(
+                      camera: usbCamera,
+                      onFrame: _onFrame,
+                    ),
+                  ),
                 Expanded(
+                  child: FlutterAnycamWidget(
+                    camera: rtspCamera,
+                    onFrame: _onFrame,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ),
+    );
+  }
+}
+
+
+/*
+
+ Expanded(
                   child: FlutterAnycamWidget(
                     camera: FlutterAnycamCameraSelector.rtsp(
                       url: "rtsp://192.168.18.93:554/mode=real&idc=1&ids=1",
@@ -101,16 +147,5 @@ class _MyAppState extends State<MyApp> {
                     },
                   ),
                 ),
-                /*   Expanded(
-                    child: FlutterAnycamWidget(
-                      camera: cameras[1],
-                    ),
-                  ),*/
-              ],
-            ),
-          );
-        }),
-      ),
-    );
-  }
-}
+
+ */
