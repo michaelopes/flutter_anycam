@@ -54,10 +54,20 @@ flutter pub get
 <key>NSMicrophoneUsageDescription</key>
 <string>Uso do microfone da camera</string>
 ```
+## 📚 Frame data
+#### Tipo de dados do frame
+```dart 
+final bytes = frame.bytes;
+```
+#### Os bytes no Android é nv21 enquanto no iOS bra8888
 
 ## 📚 API
 #### Métodos principais
-| Coluna 1      | Coluna 2      | Coluna 3      |
+
+| Método      | Descrição     | Disponibilidade      |
 |---------------|---------------|---------------|
-| Linha 1 Col 1 | Linha 1 Col 2 | Linha 1 Col 3 |
-| Linha 2 Col 1 | Linha 2 Col 2 | Linha 2 Col 3 |
+| FlutterAnycam.availableCameras() | Lista todas as câmeras disponíveis (frontal, traseira, USB). | Android, iOS |
+| FlutterAnycamCameraSelector.rtsp({url, username, password}) | Cria um seletor para fluxo RTSP. | Android |
+| FlutterAnycamWidget(camera, onFrame) | Exibe a câmera selecionada e envia frames para o callback. | Android, iOS |
+| FlutterAnycam.frameConversor.convertToJpeg(frame, rotation) | Converte um frame capturado para JPEG. | Android, iOS |
+
