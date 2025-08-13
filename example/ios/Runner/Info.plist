@@ -49,5 +49,19 @@
 	<string>Sua camera será usda para realizar o seu reconhecimento facial</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>your usage description here</string>
+	
+
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<!-- Permite qualquer domínio sem HTTPS -->
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
+    <key>NSLocalNetworkUsageDescription</key>
+	<string>O app precisa acessar dispositivos na rede local para reproduzir vídeo.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_rtsp._tcp</string>
+	</array>
 </dict>
 </plist>

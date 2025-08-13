@@ -3,7 +3,7 @@ import UIKit
 
 public class FlutterAnycamPlugin: NSObject, FlutterPlugin {
     
-
+    
     
     public static func register(with registrar: FlutterPluginRegistrar) {
         
@@ -27,6 +27,42 @@ public class FlutterAnycamPlugin: NSObject, FlutterPlugin {
         case "availableCameras":
             let cameras = CameraUtil.availableCameras();
             result(cameras)
+        case "convertBGRA8888ToJpeg":
+            
+            let data =  call.arguments as? [String: Any?];
+            if(data == nil) {
+                DispatchQueue.main.async {
+                    result(nil)
+                }
+                return;
+            }
+            
+            let bytes = data?["bytes"] as? FlutterStandardTypedData
+            let width = data?["width"] as? Int
+            let height = data?["height"] as? Int
+            let quality = data?["quality"] as? Int
+            let rotation = data?["rotation"] as? Int
+            
+            if(bytes == nil || width == nil || height == nil || quality == nil || rotation == nil) {
+                DispatchQueue.main.async {
+                    result(nil)
+                }
+                return;
+            }
+            
+            let bgraData = bytes!.data
+            let res = ImageConverterUtil.convertBGRA8888ToJPEG(
+                bgraData: bgraData,
+                width: width!,
+                height: height!,
+                quality: CGFloat(quality!)
+                
+            )
+            
+            DispatchQueue.main.async {
+                result(res)
+            }
+            
         default:
             result(FlutterMethodNotImplemented)
         }

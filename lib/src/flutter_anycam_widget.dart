@@ -322,7 +322,11 @@ class _FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
                             child: SizedBox(
                               width: x.maxWidth,
                               child: AspectRatio(
-                                aspectRatio: x.maxWidth / constraints.maxHeight,
+                                aspectRatio: Platform.isAndroid &&
+                                        widget.camera.lensFacing !=
+                                            FlutterAnycamLensFacing.rtsp
+                                    ? 1
+                                    : x.maxWidth / constraints.maxHeight,
                                 child: _generateView,
                               ),
                             ),

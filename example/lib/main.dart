@@ -38,7 +38,12 @@ class _MyAppState extends State<MyApp> {
               children: [
                 /*Expanded(
                     child: FlutterAnycamWidget(
-                      camera: cameras[1],
+                    FlutterAnycamWidget(
+                    camera: FlutterAnycamCameraSelector.rtsp(
+                      url: "rtsp://192.168.18.93:554/mode=real&idc=1&ids=1",
+                      username: "admin",
+                      password: "1",
+                    ),
                       onFrame: (frame) {},
                     ),
                   ),*/
@@ -47,6 +52,7 @@ class _MyAppState extends State<MyApp> {
                       camera: cameras[0],
                     ),
                   ),*/
+
                 Expanded(
                   child: FlutterAnycamWidget(
                     camera: FlutterAnycamCameraSelector.rtsp(
@@ -57,13 +63,14 @@ class _MyAppState extends State<MyApp> {
                     onFrame: (frame) async {
                       if (!_stop) {
                         _stop = true;
-                        final img = await FlutterAnycam.convertNv21ToJpeg(
-                          bytes: frame.bytes,
-                          width: frame.width,
-                          height: frame.height,
+
+                        /*   final img =
+                            await FlutterAnycam.frameConversor.convertToJpeg(
+                          frame: frame,
                           rotation: 0,
                         );
-                        /*  if (img != null) {
+
+                        if (img != null) {
                           await showDialog(
                               context: context,
                               builder: (_) {

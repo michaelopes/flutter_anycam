@@ -42,6 +42,17 @@ abstract class FlutterAnycamPlatform extends PlatformInterface {
     throw UnimplementedError('convertNv21ToJpeg() has not been implemented.');
   }
 
+  Future<Uint8List?> convertBGRA8888ToJpeg({
+    required Uint8List bytes,
+    required int width,
+    required int height,
+    required int rotation,
+    int quality = 100,
+  }) {
+    throw UnimplementedError(
+        'convertBGRA8888ToJpeg() has not been implemented.');
+  }
+
   FlutterAnycamStreamListenerDisposer addStreamListener(
     FlutterAnycamStreamListener listener,
   ) {

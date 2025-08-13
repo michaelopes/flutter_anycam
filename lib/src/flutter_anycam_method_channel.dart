@@ -72,6 +72,27 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
   }
 
   @override
+  Future<Uint8List?> convertBGRA8888ToJpeg({
+    required Uint8List bytes,
+    required int width,
+    required int height,
+    required int rotation,
+    int quality = 100,
+  }) async {
+    final result = (await methodChannel.invokeMethod(
+      'convertBGRA8888ToJpeg',
+      {
+        "bytes": bytes,
+        "width": width,
+        "height": height,
+        "rotation": rotation.toDouble(),
+        "quality": quality
+      },
+    ));
+    return result;
+  }
+
+  @override
   Future<Uint8List?> convertNv21ToJpeg({
     required Uint8List bytes,
     required int width,

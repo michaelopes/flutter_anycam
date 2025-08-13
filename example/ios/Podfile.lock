@@ -1,38 +1,38 @@
 PODS:
+  - convert_native_img_stream (0.0.1):
+    - Flutter
   - Flutter (1.0.0)
   - flutter_anycam (0.0.1):
     - Flutter
-    - HaishinKit
-  - HaishinKit (2.0.9):
-    - Logboard (~> 2.5.0)
+  - imagekit_ffi (0.0.1)
   - integration_test (0.0.1):
     - Flutter
-  - Logboard (2.5.0)
 
 DEPENDENCIES:
+  - convert_native_img_stream (from `.symlinks/plugins/convert_native_img_stream/ios`)
   - Flutter (from `Flutter`)
   - flutter_anycam (from `.symlinks/plugins/flutter_anycam/ios`)
+  - imagekit_ffi (from `.symlinks/plugins/imagekit_ffi/ios`)
   - integration_test (from `.symlinks/plugins/integration_test/ios`)
 
-SPEC REPOS:
-  trunk:
-    - HaishinKit
-    - Logboard
-
 EXTERNAL SOURCES:
+  convert_native_img_stream:
+    :path: ".symlinks/plugins/convert_native_img_stream/ios"
   Flutter:
     :path: Flutter
   flutter_anycam:
     :path: ".symlinks/plugins/flutter_anycam/ios"
+  imagekit_ffi:
+    :path: ".symlinks/plugins/imagekit_ffi/ios"
   integration_test:
     :path: ".symlinks/plugins/integration_test/ios"
 
 SPEC CHECKSUMS:
+  convert_native_img_stream: 394628bfc5e0c7fdfe95c827be25c97219ba42b6
   Flutter: e0871f40cf51350855a761d2e70bf5af5b9b5de7
-  flutter_anycam: aa1f44e489d77bf52d3af8a130622997650af1e6
-  HaishinKit: add48c1321b98351e38498fe869efee230c92d05
+  flutter_anycam: 3f76490ba28dd0cf9f0ba9c04ba162ae457ff5a5
+  imagekit_ffi: 0dcbd4eed86ad173681997f8b0e09a24df541cbd
   integration_test: 4a889634ef21a45d28d50d622cf412dc6d9f586e
-  Logboard: 4674a3d86681539a0ad1fca528d888b90871e268
 
 PODFILE CHECKSUM: 819463e6a0290f5a72f145ba7cde16e8b6ef0796
 

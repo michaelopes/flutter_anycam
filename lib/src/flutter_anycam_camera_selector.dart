@@ -42,9 +42,9 @@ class FlutterAnycamCameraSelector {
       {required String url,
       required String username,
       required String password}) {
-    /* if (!Platform.isAndroid) {
-      throw UnsupportedError("This method is only suported on Android OS");
-    }*/
+    if (Platform.isIOS) {
+      throw UnsupportedError("Rtsp camera is not only suported on iOS yet");
+    }
     return _FlutterAnycamCameraSelectorRtsp(
       url: url,
       username: username,

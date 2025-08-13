@@ -6,6 +6,7 @@
 //
 
 import AVFoundation
+import Flutter
 
 class DeviceCamera : BaseCamera {
     
@@ -28,7 +29,7 @@ class DeviceCamera : BaseCamera {
         fatalError("init(coder:viewId:params:) has not been implemented")
     }
     
-   
+    
     
     private lazy var limiter: FrameRateLimiterUtil<CMSampleBuffer> = {
         return FrameRateLimiterUtil<CMSampleBuffer>(targetFps: self.getFps()) { [weak self] sampleBuffer in
@@ -40,7 +41,7 @@ class DeviceCamera : BaseCamera {
     
     
     override func exec() -> Void {
-
+        
         guard let input = AVCaptureUtil.shared.getCameraInput(cameraSelector: self.cameraSelector!) else {
             FlutterEventStreamChannel.shared.send(viewId, "onFailed", [
                 "message": "Error: It is not possible to open two instances of the same camera."
@@ -56,7 +57,7 @@ class DeviceCamera : BaseCamera {
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
         ]
         
-    
+        
         captureSession.beginConfiguration()
         captureSession.addInput(input);
         
@@ -64,6 +65,15 @@ class DeviceCamera : BaseCamera {
         if let output = videoOutput, captureSession.canAddOutput(output) {
             captureSession.addOutput(output)
         }
+        
+        
+        for connection in videoOutput!.connections {
+            connection.videoOrientation = getVideoOrientation(forDegrees: 0);
+            if cameraSelector?.lensFacing == "front" && connection.isVideoMirroringSupported {
+                connection.isVideoMirrored = true
+            }
+        }
+        
         
         captureSession.commitConfiguration()
         
@@ -88,6 +98,21 @@ class DeviceCamera : BaseCamera {
             "rotation": 0
         ]);
         
+    }
+    
+    private func getVideoOrientation(forDegrees degrees: Int) -> AVCaptureVideoOrientation {
+        switch degrees {
+        case 0:
+            return .portrait
+        case 180:
+            return .portraitUpsideDown
+        case 90:
+            return .landscapeLeft
+        case -90:
+            return .landscapeRight
+        default:
+            return .portrait
+        }
     }
     
     override func dispose() -> Void {
@@ -116,64 +141,6 @@ class DeviceCamera : BaseCamera {
         previewLayer?.frame = bounds
     }
     
-    func convertToBGRA8888(sampleBuffer: CMSampleBuffer) -> (pixelBuffer: CVPixelBuffer?, formatDescription: CMFormatDescription?) {
-        guard let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
-            return (nil, nil)
-        }
-        
-        // Bloqueia o buffer de base para acesso
-        CVPixelBufferLockBaseAddress(imageBuffer, .readOnly)
-        defer { CVPixelBufferUnlockBaseAddress(imageBuffer, .readOnly) }
-        
-        // Verifica se já está no formato BGRA8888
-        let pixelFormat = CVPixelBufferGetPixelFormatType(imageBuffer)
-        if pixelFormat == kCVPixelFormatType_32BGRA {
-            let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer)
-            return (imageBuffer, formatDescription)
-        }
-        
-        // Se não for BGRA, fazemos a conversão
-        let width = CVPixelBufferGetWidth(imageBuffer)
-        let height = CVPixelBufferGetHeight(imageBuffer)
-        
-        var convertedBuffer: CVPixelBuffer?
-        let attributes: [String: Any] = [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-            kCVPixelBufferWidthKey as String: width,
-            kCVPixelBufferHeightKey as String: height,
-            kCVPixelBufferIOSurfacePropertiesKey as String: [:]
-        ]
-        
-        // Cria um novo buffer no formato BGRA
-        let status = CVPixelBufferCreate(kCFAllocatorDefault,
-                                         width,
-                                         height,
-                                         kCVPixelFormatType_32BGRA,
-                                         attributes as CFDictionary,
-                                         &convertedBuffer)
-        
-        guard status == kCVReturnSuccess, let outputBuffer = convertedBuffer else {
-            return (nil, nil)
-        }
-        
-        // Faz a conversão usando Core Image
-        let ciImage = CIImage(cvPixelBuffer: imageBuffer)
-        let context = CIContext()
-        
-        CVPixelBufferLockBaseAddress(outputBuffer, [])
-        context.render(ciImage, to: outputBuffer)
-        CVPixelBufferUnlockBaseAddress(outputBuffer, [])
-        
-        // Cria um novo format description
-        var formatDescription: CMFormatDescription?
-        CMVideoFormatDescriptionCreateForImageBuffer(
-            allocator: kCFAllocatorDefault,
-            imageBuffer: outputBuffer,
-            formatDescriptionOut: &formatDescription
-        )
-        
-        return (outputBuffer, formatDescription)
-    }
 }
 
 extension DeviceCamera: AVCaptureVideoDataOutputSampleBufferDelegate {
@@ -183,45 +150,148 @@ extension DeviceCamera: AVCaptureVideoDataOutputSampleBufferDelegate {
                        didOutput sampleBuffer: CMSampleBuffer,
                        from connection: AVCaptureConnection) {
         guard isCapturing else { return }
+        guard CMSampleBufferDataIsReady(sampleBuffer) else {
+            return
+        }
+        
         limiter.processFrame(sampleBuffer)
         
     }
     
     private func processBuffer(sampleBuffer: CMSampleBuffer) {
-        let (pixelBuffer, _) = convertToBGRA8888(sampleBuffer: sampleBuffer)
-        
-        guard let pixelBuffer = pixelBuffer else { return }
-        
-        processBGRAFrame(pixelBuffer: pixelBuffer)
+        processBGRAFrame(sampleBuffer: sampleBuffer)
     }
     
-    private func processBGRAFrame(pixelBuffer: CVPixelBuffer) {
+    private func processBGRAFrame(sampleBuffer: CMSampleBuffer) {
+        
+        // Non-pixel buffer samples, such as audio samples, are ignored for streaming
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
+            return
+        }
+        
+        
+        // Must lock base address before accessing the pixel data
         CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
         
-        let width = CVPixelBufferGetWidth(pixelBuffer)
-        let height = CVPixelBufferGetHeight(pixelBuffer)
-        let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
-        let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer)!
-        let pixelStride = bytesPerRow / width
+        let imageWidth = CVPixelBufferGetWidth(pixelBuffer)
+        let imageHeight = CVPixelBufferGetHeight(pixelBuffer)
         
-        let data = Data(bytes: baseAddress, count: bytesPerRow * height)
+        var planes: [[String: Any]] = []
         
-        CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly)
+        let isPlanar = CVPixelBufferIsPlanar(pixelBuffer)
+        let planeCount = isPlanar ? CVPixelBufferGetPlaneCount(pixelBuffer) : 1
         
-        let result = [
-            "bytes": data,
-            "width": width,
-            "height": height,
-            "format": "BGRA8888",
-            "planes": [[
-                "bytes": data,
+        for i in 0..<planeCount {
+            let planeAddress: UnsafeMutableRawPointer?
+            let bytesPerRow: Int
+            let height: Int
+            let width: Int
+            
+            if isPlanar {
+                planeAddress = CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, i)
+                bytesPerRow = CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, i)
+                height = CVPixelBufferGetHeightOfPlane(pixelBuffer, i)
+                width = CVPixelBufferGetWidthOfPlane(pixelBuffer, i)
+            } else {
+                planeAddress = CVPixelBufferGetBaseAddress(pixelBuffer)
+                bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
+                height = CVPixelBufferGetHeight(pixelBuffer)
+                width = CVPixelBufferGetWidth(pixelBuffer)
+            }
+            
+            let length = bytesPerRow * height
+            let bytes = Data(bytes: planeAddress!, count: length)
+            let pixelStride = bytesPerRow / width
+            
+            let planeBuffer: [String: Any] = [
                 "rowStride": bytesPerRow,
                 "pixelStride": pixelStride,
-            ]]
-        ] as [String : Any?];
+                "width": width,
+                "height": height,
+                "bytes": FlutterStandardTypedData(bytes: bytes),
+            ]
+            planes.append(planeBuffer)
+        }
         
-        FlutterEventStreamChannel.shared.send(self.viewId, "onVideoFrameReceived", result)
+        // Lock the base address before accessing pixel data, and unlock it afterwards.
+        // Done accessing the `pixelBuffer` at this point.
+        CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly)
         
+        
+        let bytes = planes.first!["bytes"] as? FlutterStandardTypedData
+        let imageBuffer: [String: Any] = [
+            "width": imageWidth,
+            "height": imageHeight,
+            "format": "BGRA8888",
+            "planes": planes,
+            "bytes": bytes!,
+        ]
+        
+        FlutterEventStreamChannel.shared.send(self.viewId, "onVideoFrameReceived", imageBuffer)
+        
+        
+        /*    CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
+         
+         let width = CVPixelBufferGetWidth(pixelBuffer)
+         let height = CVPixelBufferGetHeight(pixelBuffer)
+         let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
+         let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer)!
+         let dataSize = CVPixelBufferGetDataSize(pixelBuffer)
+         let pixelStride = bytesPerRow / width
+         
+         
+         let pixelFormat = CVPixelBufferGetPixelFormatType(pixelBuffer)
+         print(String(format: "Pixel format: 0x%08X", pixelFormat))
+         
+         let data = Data(bytes: baseAddress, count: dataSize)
+         
+         CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly)
+         
+         let dt = convertImage(sampleBuffer: sampleBuffer)
+         
+         let result = [
+         "bytes": FlutterStandardTypedData(bytes: ImageConverterUtil.convertBGRA8888ToJPEG(bgraData: data, width: width, height: height, quality: 100)!),
+         "width": width,
+         "height": height,
+         "format": "BGRA8888",
+         "planes": [[
+         "bytes": FlutterStandardTypedData(bytes: data),
+         "rowStride": bytesPerRow,
+         "pixelStride": pixelStride,
+         ]]
+         ] as [String : Any?];
+         
+         FlutterEventStreamChannel.shared.send(self.viewId, "onVideoFrameReceived", result)*/
+        
+    }
+    
+    func convertPixelBufferToJPEG(pixelBuffer: CVPixelBuffer, compressionQuality: CGFloat = 0.8) -> Data? {
+        // Cria um contexto de imagem Core Graphics a partir do pixel buffer
+        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+        
+        // Cria um contexto de renderização
+        let context = CIContext(options: nil)
+        
+        // Renderiza a imagem CIImage para um CGImage
+        guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else {
+            return nil
+        }
+        
+        // Converte o CGImage para UIImage
+        let uiImage = UIImage(cgImage: cgImage)
+        
+        // Converte para JPEG com qualidade de compressão ajustável
+        return uiImage.jpegData(compressionQuality: compressionQuality)
+    }
+    
+    
+    func convertImage(sampleBuffer: CMSampleBuffer) -> UIImage {
+        let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer)!
+        let ciimage = CIImage(cvPixelBuffer: imageBuffer)
+        let context = CIContext(options: nil)
+        let cgImage = context.createCGImage(ciimage, from: ciimage.extent)!
+        let image = UIImage(cgImage: cgImage)
+        return image
     }
     
     

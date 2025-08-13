@@ -13,11 +13,23 @@ A new Flutter plugin project.
   s.license          = { :file => '../LICENSE' }
   s.author           = { 'Your Company' => 'email@example.com' }
   s.source           = { :path => '.' }
-  s.source_files = 'Classes/**/*'
-  s.dependency 'Flutter'
-  s.dependency 'HaishinKit'
   
+  s.source_files = ['Classes/**/*']
+  s.static_framework = true
+  s.dependency 'Flutter'
+
+  #s.dependency 'MobileVLCKit'
   #s.dependency 'MobileVLCKit', '~> 3.6.0'ð
+
+#  # FFmpeg headers
+#   s.xcconfig = {
+#     'HEADER_SEARCH_PATHS' => '"${PODS_TARGET_SRCROOT}/Classes/DFURTSPPlayer/FFMpegiOS/include"',
+#     'LIBRARY_SEARCH_PATHS' => '"${PODS_TARGET_SRCROOT}/Classes/DFURTSPPlayer/FFMpegiOS/lib"'
+#   }
+
+#   # FFmpeg libs
+#   s.vendored_libraries = 'Classes/DFURTSPPlayer/FFMpegiOS/lib/*.a'
+
 
   s.platform = :ios, '13.0'
 
