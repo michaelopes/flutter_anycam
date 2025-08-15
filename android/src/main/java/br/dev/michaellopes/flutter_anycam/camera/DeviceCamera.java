@@ -6,6 +6,7 @@ import android.view.Surface;
 
 import androidx.annotation.NonNull;
 import androidx.camera.camera2.internal.Camera2CameraInfoImpl;
+
 import androidx.camera.core.Camera;
 import androidx.camera.core.CameraInfo;
 import androidx.camera.core.CameraSelector;
@@ -28,14 +29,15 @@ import java.util.concurrent.Executors;
 
 import br.dev.michaellopes.flutter_anycam.integration.FlutterEventChannel;
 import br.dev.michaellopes.flutter_anycam.utils.ContextUtil;
+import br.dev.michaellopes.flutter_anycam.utils.DeviceCameraUtils;
 import br.dev.michaellopes.flutter_anycam.utils.FrameRateLimiterUtil;
 
-public class DeviceCamera extends BaseCamera  {
+
+public class DeviceCamera extends BaseCamera {
 
     private final ExecutorService cameraExecutor = Executors.newSingleThreadExecutor();
 
     private ImageAnalysis imageAnalysis;
-    private ListenableFuture<ProcessCameraProvider> cameraProviderFuture;
 
 
 
@@ -66,39 +68,29 @@ public class DeviceCamera extends BaseCamera  {
 
         preview.setSurfaceProvider(surfaceProvider);
 
-        cameraProviderFuture = ProcessCameraProvider.getInstance(surfaceView.getContext());
+        ListenableFuture<ProcessCameraProvider>  cameraProviderFuture = DeviceCameraUtils.getInstance().getCameraProviderFuture();
         cameraProviderFuture.addListener(() -> {
 
             try {
-                ProcessCameraProvider cameraProvider = cameraProviderFuture.get();
-                int counter = cameraProvider.getAvailableCameraInfos().size();
-                CameraSelector finalCameraSelector = null;
-                for (int i = 0; i < counter; i++) {
-                    CameraInfo availableCameraInfo = cameraProvider.getAvailableCameraInfos().get(i);
-                    Camera2CameraInfoImpl camera2CameraInfo = (Camera2CameraInfoImpl) availableCameraInfo;
-                    String id = camera2CameraInfo.getCameraId();
-                    if (id.equals(cameraSelector.getId())) {
-                        finalCameraSelector = availableCameraInfo.getCameraSelector();
-                    }
-                }
-
+                 CameraSelector finalCameraSelector =  DeviceCameraUtils.getInstance().getCameraSelectorByCameraId(cameraSelector.getId());
                 if (finalCameraSelector != null) {
+
                     imageAnalysis = new ImageAnalysis.Builder()
                             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                            .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
                             .build();
 
                     imageAnalysis.setAnalyzer(cameraExecutor, limiter::onNewFrame);
 
-                    cameraProvider.unbindAll();
-                    Camera cameraX = cameraProvider.bindToLifecycle((LifecycleOwner) ContextUtil.get(), finalCameraSelector, preview, imageAnalysis);
-                    boolean isPortrait = cameraX.getCameraInfo().getSensorRotationDegrees() % 180 == 0;
-                    Size size = preview.getAttachedSurfaceResolution();
+                    DeviceCameraUtils.getInstance().bind(finalCameraSelector, preview, imageAnalysis);
+
+                    Size ps = preview.getAttachedSurfaceResolution();
 
                     final Map<String, Object> result = new HashMap<>();
-                    result.put("width", size.getWidth());
-                    result.put("height", size.getHeight());
-                    result.put("isPortrait", isPortrait);
-                    result.put("rotation", cameraX.getCameraInfo().getSensorRotationDegrees());
+                    result.put("width", ps.getWidth());
+                    result.put("height", ps.getHeight());
+                    result.put("isPortrait", 0);
+                    result.put("rotation", 0);
 
                     FlutterEventChannel.getINSTANCE().send(viewId, "onConnected", result);
                 }
@@ -114,10 +106,10 @@ public class DeviceCamera extends BaseCamera  {
         }, getExecutor());
     }
 
+
     private Executor getExecutor() {
         return ContextCompat.getMainExecutor(ContextUtil.get());
     }
-
 
     private @NonNull Preview.SurfaceProvider createSurfaceProvider() {
         return request -> {
@@ -126,7 +118,7 @@ public class DeviceCamera extends BaseCamera  {
                     flutterSurface,
                     Executors.newSingleThreadExecutor(),
                     (result) -> {
-                        flutterSurface.release();
+                     //   flutterSurface.release();
                         int resultCode = result.getResultCode();
                         switch (resultCode) {
                             case SurfaceRequest.Result.RESULT_REQUEST_CANCELLED:
@@ -151,14 +143,16 @@ public class DeviceCamera extends BaseCamera  {
         if (cameraExecutor != null) {
             cameraExecutor.shutdown();
         }
-        if (cameraProviderFuture != null) {
+
+        DeviceCameraUtils.getInstance().dispose(cameraSelector);
+     /*   if (cameraProviderFuture != null) {
             cameraProviderFuture.cancel(true);
-        }
+        }*/
     }
 
     public void analyze(@NonNull ImageProxy image) {
         try {
-          //  Log.i("DeviceCamera", "Process onVideoFrameReceived");
+            //  Log.i("DeviceCamera", "Process onVideoFrameReceived");
             Map<String, Object> imageData = imageAnalysisUtil.imageProxyToFlutterResult(image);
             FlutterEventChannel.getINSTANCE().send(viewId, "onVideoFrameReceived", imageData);
         } catch (Exception e) {

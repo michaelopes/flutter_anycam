@@ -7,6 +7,7 @@ List<FlutterAnycamCameraSelector> cameras = [];
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   cameras = await FlutterAnycam.availableCameras();
+
   runApp(const MyApp());
 }
 
@@ -18,9 +19,18 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
+  FlutterAnycamCameraSelector? frontCamera;
   @override
   void initState() {
     super.initState();
+
+    Future.delayed(const Duration(seconds: 10), () {
+      setState(() {
+        frontCamera = cameras
+            .where((e) => e.lensFacing == FlutterAnycamLensFacing.front)
+            .firstOrNull;
+      });
+    });
   }
 
   Future<void> _onFrame(FlutterAnycamFrame frame) async {
@@ -28,7 +38,6 @@ class _MyAppState extends State<MyApp> {
     // ignore: unused_local_variable
     final img = await FlutterAnycam.frameConversor.convertToJpeg(
       frame: frame,
-      rotation: 0,
     );
   }
 
@@ -37,11 +46,8 @@ class _MyAppState extends State<MyApp> {
     final backCamera = cameras
         .where((e) => e.lensFacing == FlutterAnycamLensFacing.back)
         .firstOrNull;
-    final frontCamera = cameras
-        .where((e) => e.lensFacing == FlutterAnycamLensFacing.front)
-        .firstOrNull;
 
-    final usbCamera = cameras
+    /* final usbCamera = cameras
         .where((e) => e.lensFacing == FlutterAnycamLensFacing.usb)
         .firstOrNull;
 
@@ -49,7 +55,7 @@ class _MyAppState extends State<MyApp> {
       url: "rtsp://192.168.18.93:554/mode=real&idc=1&ids=1",
       username: "admin",
       password: "1",
-    );
+    );*/
 
     return MaterialApp(
       home: Scaffold(
@@ -70,23 +76,23 @@ class _MyAppState extends State<MyApp> {
                 if (frontCamera != null)
                   Expanded(
                     child: FlutterAnycamWidget(
-                      camera: frontCamera,
+                      camera: frontCamera!,
                       onFrame: _onFrame,
                     ),
                   ),
-                if (usbCamera != null)
+                /*  if (usbCamera != null)
                   Expanded(
                     child: FlutterAnycamWidget(
                       camera: usbCamera,
                       onFrame: _onFrame,
                     ),
-                  ),
-                Expanded(
+                  ),*/
+                /* Expanded(
                   child: FlutterAnycamWidget(
                     camera: rtspCamera,
                     onFrame: _onFrame,
                   ),
-                ),
+                ),*/
               ],
             ),
           );

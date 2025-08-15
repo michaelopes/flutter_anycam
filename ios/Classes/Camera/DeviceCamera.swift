@@ -222,6 +222,7 @@ extension DeviceCamera: AVCaptureVideoDataOutputSampleBufferDelegate {
         let imageBuffer: [String: Any] = [
             "width": imageWidth,
             "height": imageHeight,
+            "rotation": 0,
             "format": "BGRA8888",
             "planes": planes,
             "bytes": bytes!,

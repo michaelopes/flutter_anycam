@@ -15,9 +15,11 @@ import java.util.Map;
 public class ImageAnalysisUtil {
     @SuppressLint("RestrictedApi")
     public Map<String, Object> imageProxyToFlutterResult(ImageProxy image) {
-        byte[] bytes = ImageUtil.yuv_420_888toNv21(image);
+
         List<Map<String, Object>> planesAdapter = imagePlanesAdapter(image);
         Map<String, Object> adapter = imageProxyBaseAdapter(image);
+        byte[] bytes = ImageUtil.yuv_420_888toNv21(image);
+
         adapter.put("bytes", bytes);
         adapter.put("planes", planesAdapter);
         return adapter;
@@ -113,6 +115,8 @@ public class ImageAnalysisUtil {
         Map<String, Object> image = new HashMap<>();
         image.put("width", width);
         image.put("height", height);
+        image.put("rotation", 0);
+        image.put("isPortrait", height > width);
         image.put("bytes", nv21Bytes);
         image.put("planes", planes);
         image.put("format", "YUV_420_888");

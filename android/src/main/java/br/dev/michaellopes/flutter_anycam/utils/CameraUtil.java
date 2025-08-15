@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 
 import android.hardware.usb.UsbInterface;
+import android.os.Build;
 import android.util.Log;
 
 import com.jiangdg.usb.USBMonitor;
@@ -30,7 +31,6 @@ public class CameraUtil {
         try {
             for (String cameraId : cameraManager.getCameraIdList()) {
                 CameraCharacteristics characteristics = cameraManager.getCameraCharacteristics(cameraId);
-
                 Integer lensFacing = characteristics.get(CameraCharacteristics.LENS_FACING);
                 Integer sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
 

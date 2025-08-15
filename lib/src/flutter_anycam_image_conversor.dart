@@ -9,17 +9,15 @@ class FlutterAnycamFrameConversor {
   final _conversor = ImageKitFfi();
   Future<Uint8List?> convertToJpeg({
     required FlutterAnycamFrame frame,
-    required int rotation,
     int quality = 100,
   }) {
     return Platform.isIOS
-        ? _bra888ToJpeg(frame: frame, rotation: rotation, quality: quality)
-        : _n21ToJpeg(frame: frame, rotation: rotation, quality: quality);
+        ? _bra888ToJpeg(frame: frame, quality: quality)
+        : _n21ToJpeg(frame: frame, quality: quality);
   }
 
   Future<Uint8List?> _n21ToJpeg({
     required FlutterAnycamFrame frame,
-    required int rotation,
     int quality = 100,
   }) async {
     final nv21Bytes = frame.bytes;
@@ -38,14 +36,13 @@ class FlutterAnycamFrameConversor {
       yStride: width,
       uvStride: width,
       uvPixStride: 2,
-      rotationDegrees: rotation,
+      rotationDegrees: frame.rotation,
       quality: quality,
     );
   }
 
   Future<Uint8List?> _bra888ToJpeg({
     required FlutterAnycamFrame frame,
-    required int rotation,
     int quality = 100,
   }) async {
     return _conversor.encodeBgraToJpegBuffer(
