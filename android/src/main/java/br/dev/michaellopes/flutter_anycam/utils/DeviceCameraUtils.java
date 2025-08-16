@@ -96,31 +96,33 @@ public class DeviceCameraUtils {
     }
 
     private void updateLifecycle() {
-        if (cameraProvider != null && !binds.isEmpty()) {
+        if (cameraProvider != null) {
             cameraProvider.unbindAll();
-            LifecycleOwner lifecycleOwner = (LifecycleOwner) ContextUtil.get();
-            if(binds.size() == 1) {
-                CameraRef bind = binds.get(0);
-                UseCaseGroup.Builder usecase = new UseCaseGroup.Builder();
-                usecase.addUseCase(bind.preview);
-                usecase.addUseCase(bind.imageAnalysis);
-                CameraSelector cameraSelector = bind.cameraInfo.getCameraSelector();
-                cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, usecase.build());
-            } else {
-                List<ConcurrentCamera.SingleCameraConfig> configs = new ArrayList<>();
-                for (CameraRef bind : binds) {
+            if(!binds.isEmpty()) {
+                LifecycleOwner lifecycleOwner = (LifecycleOwner) ContextUtil.get();
+                if (binds.size() == 1) {
+                    CameraRef bind = binds.get(0);
                     UseCaseGroup.Builder usecase = new UseCaseGroup.Builder();
                     usecase.addUseCase(bind.preview);
                     usecase.addUseCase(bind.imageAnalysis);
                     CameraSelector cameraSelector = bind.cameraInfo.getCameraSelector();
-                    ConcurrentCamera.SingleCameraConfig config = new ConcurrentCamera.SingleCameraConfig(
-                            cameraSelector,
-                            usecase.build(),
-                            lifecycleOwner
-                    );
-                    configs.add(config);
+                    cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, usecase.build());
+                } else {
+                    List<ConcurrentCamera.SingleCameraConfig> configs = new ArrayList<>();
+                    for (CameraRef bind : binds) {
+                        UseCaseGroup.Builder usecase = new UseCaseGroup.Builder();
+                        usecase.addUseCase(bind.preview);
+                        usecase.addUseCase(bind.imageAnalysis);
+                        CameraSelector cameraSelector = bind.cameraInfo.getCameraSelector();
+                        ConcurrentCamera.SingleCameraConfig config = new ConcurrentCamera.SingleCameraConfig(
+                                cameraSelector,
+                                usecase.build(),
+                                lifecycleOwner
+                        );
+                        configs.add(config);
+                    }
+                    cameraProvider.bindToLifecycle(configs);
                 }
-                cameraProvider.bindToLifecycle(configs);
             }
         }
     }

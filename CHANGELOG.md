@@ -5,6 +5,8 @@
 ## 1.0.1
 Correções de multi-camera android
 
-
 ## 1.0.2
 Correções no gerênciamento de instâncias multi-componetes da camera android
+
+## 1.0.3
+Correções dispose da camera
