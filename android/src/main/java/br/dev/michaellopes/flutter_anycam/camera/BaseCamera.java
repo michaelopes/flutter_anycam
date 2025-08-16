@@ -20,7 +20,7 @@ public abstract class BaseCamera {
 
     protected ViewCameraSelector cameraSelector;
 
-    private final Map<String, Object> params;
+    protected final Map<String, Object> params;
 
     protected final ImageAnalysisUtil imageAnalysisUtil = new ImageAnalysisUtil();
 

@@ -9,6 +9,7 @@ class FlutterAnycamCameraSelector {
   final String name;
   final FlutterAnycamLensFacing lensFacing;
   final int sensorOrientation;
+  bool _forceSensorOrientation = false;
 
   FlutterAnycamCameraSelector({
     required this.id,
@@ -17,12 +18,20 @@ class FlutterAnycamCameraSelector {
     required this.sensorOrientation,
   });
 
+  int get previewRotation {
+    if (_forceSensorOrientation) {
+      return sensorOrientation;
+    }
+    return 0;
+  }
+
   Map<String, dynamic> toMap() {
     return <String, dynamic>{
       'id': id,
       'name': name,
       'lensFacing': lensFacing.name,
       'sensorOrientation': sensorOrientation,
+      'forceSensorOrientation': _forceSensorOrientation,
     };
   }
 
@@ -37,11 +46,25 @@ class FlutterAnycamCameraSelector {
 
   String toJson() => json.encode(toMap());
 
+  FlutterAnycamCameraSelector customSensorOrientation({
+    required int sensorOrientation,
+  }) {
+    final result = FlutterAnycamCameraSelector(
+      id: id,
+      name: name,
+      lensFacing: lensFacing,
+      sensorOrientation: sensorOrientation,
+    );
+    result._forceSensorOrientation = true;
+    return result;
+  }
+
   // ignore: library_private_types_in_public_api
-  static _FlutterAnycamCameraSelectorRtsp rtsp(
-      {required String url,
-      required String username,
-      required String password}) {
+  static FlutterAnycamCameraSelector rtsp({
+    required String url,
+    required String username,
+    required String password,
+  }) {
     if (Platform.isIOS) {
       throw UnsupportedError("Rtsp camera is not only suported on iOS yet");
     }

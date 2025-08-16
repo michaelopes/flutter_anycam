@@ -9,6 +9,8 @@ public class ViewCameraSelector {
     private final String lensFacing;
     private final int sensorOrientation;
 
+    private boolean forceSensorOrientation = false;
+
     private ViewCameraSelectorRTSP cameraSelectorRTSP;
 
 
@@ -40,13 +42,18 @@ public class ViewCameraSelector {
         return sensorOrientation;
     }
 
+    public boolean isForceSensorOrientation() {
+        return forceSensorOrientation;
+    }
     public static ViewCameraSelector fromMap(Map<String, Object> map) {
         String id = (String) map.get("id");
         String name = (String) map.get("name");
         String lensFacing = (String) map.get("lensFacing");
         int sensorOrientation = (int) map.get("sensorOrientation");
+        boolean forceSensorOrientation = (boolean) map.get("forceSensorOrientation");
 
         ViewCameraSelector cameraSelector = new ViewCameraSelector(id, name, lensFacing, sensorOrientation);
+        cameraSelector.forceSensorOrientation = forceSensorOrientation;
 
         if(map.get("url") != null && map.get("username") != null &&  map.get("password") != null) {
             String url = (String) map.get("url");
@@ -66,6 +73,8 @@ public class ViewCameraSelector {
         map.put("sensorOrientation", sensorOrientation);
         return map;
     }
+
+
 
     public static class ViewCameraSelectorRTSP {
         public final String url;

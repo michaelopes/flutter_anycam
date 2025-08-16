@@ -1,22 +1,20 @@
 package br.dev.michaellopes.flutter_anycam.camera;
 
 import android.annotation.SuppressLint;
+
 import android.util.Size;
 import android.view.Surface;
 
 import androidx.annotation.NonNull;
 import androidx.camera.camera2.internal.Camera2CameraInfoImpl;
 
-import androidx.camera.core.Camera;
-import androidx.camera.core.CameraInfo;
-import androidx.camera.core.CameraSelector;
+
 import androidx.camera.core.ImageProxy;
 import androidx.camera.core.Preview;
 import androidx.camera.core.SurfaceRequest;
 import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.camera.core.ImageAnalysis;
 import androidx.core.content.ContextCompat;
-import androidx.lifecycle.LifecycleOwner;
 
 import com.google.common.util.concurrent.ListenableFuture;
 
@@ -56,6 +54,8 @@ public class DeviceCamera extends BaseCamera {
         super(viewId, params);
     }
 
+
+
     @Override
     @SuppressLint("RestrictedApi")
     public void init() {
@@ -78,6 +78,8 @@ public class DeviceCamera extends BaseCamera {
                             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                             .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
                             .build();
+
+
 
                     imageAnalysis.setAnalyzer(cameraExecutor, limiter::onNewFrame);
 
@@ -149,10 +151,18 @@ public class DeviceCamera extends BaseCamera {
         }*/
     }
 
+    private Integer getCustomRotationDegrees() {
+        if(cameraSelector.isForceSensorOrientation()) {
+          return cameraSelector.getSensorOrientation();
+        }
+        return  null;
+    }
+
     public void analyze(@NonNull ImageProxy image) {
         try {
             //  Log.i("DeviceCamera", "Process onVideoFrameReceived");
-            Map<String, Object> imageData = imageAnalysisUtil.imageProxyToFlutterResult(image);
+
+            Map<String, Object> imageData = imageAnalysisUtil.imageProxyToFlutterResult(image, getCustomRotationDegrees());
             FlutterEventChannel.getINSTANCE().send(viewId, "onVideoFrameReceived", imageData);
         } catch (Exception e) {
             throw new RuntimeException(e);

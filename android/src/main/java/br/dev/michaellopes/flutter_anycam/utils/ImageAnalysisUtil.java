@@ -14,7 +14,7 @@ import java.util.Map;
 
 public class ImageAnalysisUtil {
     @SuppressLint("RestrictedApi")
-    public Map<String, Object> imageProxyToFlutterResult(ImageProxy image) {
+    public Map<String, Object> imageProxyToFlutterResult(ImageProxy image, Integer customRotationDegrees) {
 
         List<Map<String, Object>> planesAdapter = imagePlanesAdapter(image);
         Map<String, Object> adapter = imageProxyBaseAdapter(image);
@@ -22,6 +22,9 @@ public class ImageAnalysisUtil {
 
         adapter.put("bytes", bytes);
         adapter.put("planes", planesAdapter);
+        if(customRotationDegrees != null) {
+            adapter.put("rotation", customRotationDegrees);
+        }
         return adapter;
     }
 

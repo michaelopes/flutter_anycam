@@ -10,6 +10,7 @@ import 'flutter_anycam_camera_selector.dart';
 import 'flutter_anycam_mesure.dart';
 import 'flutter_anycam_platform_interface.dart';
 import 'flutter_anycam_preview_info.dart';
+import 'flutter_anycam_rotation.dart';
 import 'flutter_anycam_stream_listener.dart';
 import 'flutter_anycam_texts.dart';
 import 'flutter_anycam_typedefs.dart';
@@ -195,21 +196,24 @@ class _FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
         "fps": widget.fps,
       };
 
-  Widget get _generateView => Platform.isAndroid
-      ? AndroidView(
-          key: _viewKey,
-          viewType: 'br.dev.michaellopes.flutter_anycam/view',
-          onPlatformViewCreated: _onPlatformViewCreated,
-          creationParams: _params,
-          creationParamsCodec: const StandardMessageCodec(),
-        )
-      : UiKitView(
-          key: _viewKey,
-          viewType: 'br.dev.michaellopes.flutter_anycam/view',
-          onPlatformViewCreated: _onPlatformViewCreated,
-          creationParams: _params,
-          creationParamsCodec: const StandardMessageCodec(),
-        );
+  Widget get _generateView => FlutterAnycamRotation(
+        degress: widget.camera.previewRotation,
+        child: Platform.isAndroid
+            ? AndroidView(
+                key: _viewKey,
+                viewType: 'br.dev.michaellopes.flutter_anycam/view',
+                onPlatformViewCreated: _onPlatformViewCreated,
+                creationParams: _params,
+                creationParamsCodec: const StandardMessageCodec(),
+              )
+            : UiKitView(
+                key: _viewKey,
+                viewType: 'br.dev.michaellopes.flutter_anycam/view',
+                onPlatformViewCreated: _onPlatformViewCreated,
+                creationParams: _params,
+                creationParamsCodec: const StandardMessageCodec(),
+              ),
+      );
 
   Widget get _buildNotConnectedStates {
     switch (_viewState) {
