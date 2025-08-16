@@ -39,8 +39,6 @@ public class DeviceCamera extends BaseCamera {
 
     private ImageAnalysis imageAnalysis;
 
-
-
     FrameRateLimiterUtil<ImageProxy> limiter = new FrameRateLimiterUtil<ImageProxy>(getFps()) {
         @Override
         protected void onFrameLimited(ImageProxy image) {
@@ -72,8 +70,9 @@ public class DeviceCamera extends BaseCamera {
         cameraProviderFuture.addListener(() -> {
 
             try {
-                 CameraSelector finalCameraSelector =  DeviceCameraUtils.getInstance().getCameraSelectorByCameraId(cameraSelector.getId());
-                if (finalCameraSelector != null) {
+
+                Camera2CameraInfoImpl finalCameraInfo =  DeviceCameraUtils.getInstance().getCameraInfoById(cameraSelector.getId());
+                if (finalCameraInfo != null) {
 
                     imageAnalysis = new ImageAnalysis.Builder()
                             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
@@ -82,7 +81,7 @@ public class DeviceCamera extends BaseCamera {
 
                     imageAnalysis.setAnalyzer(cameraExecutor, limiter::onNewFrame);
 
-                    DeviceCameraUtils.getInstance().bind(finalCameraSelector, preview, imageAnalysis);
+                    DeviceCameraUtils.getInstance().bind(finalCameraInfo, preview, imageAnalysis);
 
                     Size ps = preview.getAttachedSurfaceResolution();
 

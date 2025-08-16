@@ -18,26 +18,21 @@ import com.google.common.util.concurrent.ListenableFuture;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 
 import br.dev.michaellopes.flutter_anycam.model.ViewCameraSelector;
-
+@SuppressLint("RestrictedApi")
 public class DeviceCameraUtils {
 
     private DeviceCameraUtils() {
     }
 
-    List<ConcurrentCamera.SingleCameraConfig> configs = new ArrayList<>();
     private final ListenableFuture<ProcessCameraProvider> cameraProviderFuture = ProcessCameraProvider.getInstance(ContextUtil.get());
-
     private ProcessCameraProvider cameraProvider;
-
     private static DeviceCameraUtils instance;
-
-    private ConcurrentCamera.SingleCameraConfig backCamera = null;
-
-    private ConcurrentCamera.SingleCameraConfig frontCamera = null;
+    private final List<CameraRef> binds = new ArrayList<>();
 
     public static synchronized DeviceCameraUtils getInstance() {
         if (instance == null) instance = new DeviceCameraUtils();
@@ -56,79 +51,102 @@ public class DeviceCameraUtils {
         return cameraProvider;
     }
 
-    @SuppressLint("RestrictedApi")
-    public CameraSelector getCameraSelectorByCameraId(String cameraId) throws ExecutionException, InterruptedException {
+    public Camera2CameraInfoImpl getCameraInfoById(String cameraId) throws ExecutionException, InterruptedException {
         int counter = getCameraProvider().getAvailableCameraInfos().size();
-        CameraSelector cameraSelector = null;
         for (int i = 0; i < counter; i++) {
             CameraInfo availableCameraInfo = cameraProvider.getAvailableCameraInfos().get(i);
             Camera2CameraInfoImpl camera2CameraInfo = (Camera2CameraInfoImpl) availableCameraInfo;
             String id = camera2CameraInfo.getCameraId();
             if (id.equals(cameraId)) {
-                cameraSelector = availableCameraInfo.getCameraSelector();
+               return camera2CameraInfo;
             }
         }
-        return cameraSelector;
+        return null;
+    }
+
+    public synchronized void bind(Camera2CameraInfoImpl cameraInfo, Preview preview, ImageAnalysis imageAnalysis) {
+
+        if (cameraProvider != null) {
+            CameraRef existingCamera = getCameraIfExists(cameraInfo);
+            if (existingCamera != null) {
+                binds.remove(existingCamera);
+            }
+            binds.add(new CameraRef(cameraInfo, preview, imageAnalysis));
+            updateLifecycle();
+        }
+
     }
 
     @SuppressLint("RestrictedApi")
-    public synchronized void bind(CameraSelector cameraSelector, Preview preview, ImageAnalysis imageAnalysis) {
-        Integer lensFacing = cameraSelector.getLensFacing();
-        if (cameraProvider != null) {
-            LifecycleOwner lifecycleOwner = (LifecycleOwner) ContextUtil.get();
-            if (lensFacing == null || lensFacing == CameraSelector.LENS_FACING_BACK || lensFacing == CameraSelector.LENS_FACING_UNKNOWN) {
-                UseCaseGroup.Builder usecase = new UseCaseGroup.Builder();
-                usecase.addUseCase(preview);
-                usecase.addUseCase(imageAnalysis);
-                backCamera = new ConcurrentCamera.SingleCameraConfig(
-                        cameraSelector,
-                        usecase.build(),
-                        lifecycleOwner
-                );
-
-
-                configs.add(backCamera);
-            } else if (lensFacing == CameraSelector.LENS_FACING_FRONT) {
-                UseCaseGroup.Builder usecase = new UseCaseGroup.Builder();
-                usecase.addUseCase(preview);
-                usecase.addUseCase(imageAnalysis);
-                frontCamera = new ConcurrentCamera.SingleCameraConfig(
-                        cameraSelector,
-                        usecase.build(),
-                        lifecycleOwner
-                );
-                configs.add(frontCamera);
-            }
-
-            updateLifecycle();
+    private CameraRef getCameraIfExists(Camera2CameraInfoImpl cameraInfo) {
+        Object[] list = binds.stream().filter(camera -> Objects.equals(camera.getCameraId(), cameraInfo.getCameraId())).toArray();
+        if (list.length > 0) {
+            return (CameraRef) list[0];
         }
+        return null;
+    }
+
+
+    private CameraRef getCameraIfExistsById(String cameraId) {
+        Object[] list = binds.stream().filter(camera -> Objects.equals(camera.getCameraId(), cameraId)).toArray();
+        if (list.length > 0) {
+            return (CameraRef) list[0];
+        }
+        return null;
     }
 
     private void updateLifecycle() {
-        if (cameraProvider != null) {
+        if (cameraProvider != null && !binds.isEmpty()) {
             cameraProvider.unbindAll();
-            if (!configs.isEmpty()) {
-                if (configs.size() == 1) {
-                    LifecycleOwner lifecycleOwner = (LifecycleOwner) ContextUtil.get();
-                    UseCaseGroup usecaseGroup = configs.get(0).getUseCaseGroup();
-                    CameraSelector cameraSelector = configs.get(0).getCameraSelector();
-                    cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, usecaseGroup);
-                } else {
-                    cameraProvider.bindToLifecycle(configs);
+            LifecycleOwner lifecycleOwner = (LifecycleOwner) ContextUtil.get();
+            if(binds.size() == 1) {
+                CameraRef bind = binds.get(0);
+                UseCaseGroup.Builder usecase = new UseCaseGroup.Builder();
+                usecase.addUseCase(bind.preview);
+                usecase.addUseCase(bind.imageAnalysis);
+                CameraSelector cameraSelector = bind.cameraInfo.getCameraSelector();
+                cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, usecase.build());
+            } else {
+                List<ConcurrentCamera.SingleCameraConfig> configs = new ArrayList<>();
+                for (CameraRef bind : binds) {
+                    UseCaseGroup.Builder usecase = new UseCaseGroup.Builder();
+                    usecase.addUseCase(bind.preview);
+                    usecase.addUseCase(bind.imageAnalysis);
+                    CameraSelector cameraSelector = bind.cameraInfo.getCameraSelector();
+                    ConcurrentCamera.SingleCameraConfig config = new ConcurrentCamera.SingleCameraConfig(
+                            cameraSelector,
+                            usecase.build(),
+                            lifecycleOwner
+                    );
+                    configs.add(config);
                 }
+                cameraProvider.bindToLifecycle(configs);
             }
         }
     }
 
     public void dispose(ViewCameraSelector cameraSelector) {
-        if(backCamera != null && (cameraSelector.getLensFacing().equals("back") || cameraSelector.getLensFacing().equals("unknown"))) {
-            configs.remove(backCamera);
-            backCamera = null;
-        } else if(frontCamera != null && cameraSelector.getLensFacing().equals("front")) {
-            configs.remove(frontCamera);
-            frontCamera = null;
+        CameraRef existingCamera = getCameraIfExistsById(cameraSelector.getId());
+        if (existingCamera != null) {
+            binds.remove(existingCamera);
+            updateLifecycle();
         }
-        updateLifecycle();
+    }
+
+    private static class CameraRef {
+       private final Camera2CameraInfoImpl cameraInfo;
+        private final  Preview preview;
+        private final  ImageAnalysis imageAnalysis;
+
+        private String getCameraId() {
+            return cameraInfo.getCameraId();
+        }
+
+        private CameraRef(Camera2CameraInfoImpl cameraInfo, Preview preview, ImageAnalysis imageAnalysis) {
+            this.cameraInfo = cameraInfo;
+            this.preview = preview;
+            this.imageAnalysis = imageAnalysis;
+        }
     }
 
 }

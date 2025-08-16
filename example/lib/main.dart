@@ -31,6 +31,12 @@ class _MyAppState extends State<MyApp> {
             .firstOrNull;
       });
     });
+
+    Future.delayed(const Duration(seconds: 30), () {
+      setState(() {
+        frontCamera = null;
+      });
+    });
   }
 
   Future<void> _onFrame(FlutterAnycamFrame frame) async {
