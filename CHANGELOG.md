@@ -10,3 +10,6 @@ Correções no gerênciamento de instâncias multi-componetes da camera android
 
 ## 1.0.3
 Correções dispose da camera
+
+## 1.0.4
+Correção de rotação em cameras android

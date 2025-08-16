@@ -65,7 +65,7 @@ public class ImageAnalysisUtil {
         return planeData;
     }
 
-    public Map<String, Object> usbFrameToFlutterResult(ByteBuffer buffer, int width, int height) {
+    public Map<String, Object> usbFrameToFlutterResult(ByteBuffer buffer, int width, int height, Integer customRotationDegrees) {
         byte[] nv21Bytes = new byte[buffer.remaining()];
         buffer.get(nv21Bytes);
 
@@ -88,6 +88,11 @@ public class ImageAnalysisUtil {
         Map<String, Object> image = new HashMap<>();
         image.put("width", width);
         image.put("height", height);
+        if(customRotationDegrees != null) {
+            image.put("rotation", customRotationDegrees);
+        } else {
+            image.put("rotation", 0);
+        }
         image.put("bytes", nv21Bytes);
         image.put("planes", planes);
         image.put("format", "YUV_420_888");
@@ -96,7 +101,7 @@ public class ImageAnalysisUtil {
     }
 
 
-    public Map<String, Object> rtspFrameToFlutterResult(byte[] yv12Bytes, int width, int height) {
+    public Map<String, Object> rtspFrameToFlutterResult(byte[] yv12Bytes, int width, int height, Integer customRotationDegrees) {
 
         byte[] nv21Bytes = ImageConverterUtil.i420ToNv21(yv12Bytes, width, height);
         ImageConverterUtil.FrameImageProxy imageProxy = ImageConverterUtil.convertNV21ToFrameImageProxy(nv21Bytes, width, height);
@@ -118,7 +123,11 @@ public class ImageAnalysisUtil {
         Map<String, Object> image = new HashMap<>();
         image.put("width", width);
         image.put("height", height);
-        image.put("rotation", 0);
+        if(customRotationDegrees != null) {
+            image.put("rotation", customRotationDegrees);
+        } else {
+            image.put("rotation", 0);
+        }
         image.put("isPortrait", height > width);
         image.put("bytes", nv21Bytes);
         image.put("planes", planes);
