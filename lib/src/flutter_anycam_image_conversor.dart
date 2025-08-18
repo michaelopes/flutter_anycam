@@ -1,18 +1,15 @@
 import 'dart:io';
 import 'dart:typed_data';
-
-import 'package:imagekit_ffi/imagekit_ffi.dart';
-
+import 'package:flutter_anycam/src/flutter_anycam_platform_interface.dart';
 import 'flutter_anycam_frame.dart';
 
 class FlutterAnycamFrameConversor {
-  final _conversor = ImageKitFfi();
   Future<Uint8List?> convertToJpeg({
     required FlutterAnycamFrame frame,
     int quality = 100,
   }) {
     return Platform.isIOS
-        ? _bra888ToJpeg(frame: frame, quality: quality)
+        ? _bgra888ToJpeg(frame: frame, quality: quality)
         : _n21ToJpeg(frame: frame, quality: quality);
   }
 
@@ -24,32 +21,25 @@ class FlutterAnycamFrameConversor {
     final width = frame.width;
     final height = frame.height;
 
-    final ySize = width * height;
-    final yPlane = nv21Bytes.sublist(0, ySize);
-    final uvPlane = nv21Bytes.sublist(ySize);
-
-    return _conversor.convertNv21ToJpegBuffer(
-      yPlane: yPlane,
-      uvPlane: uvPlane,
+    return FlutterAnycamPlatform.instance.convertNv21ToJpeg(
+      bytes: nv21Bytes,
       width: width,
       height: height,
-      yStride: width,
-      uvStride: width,
-      uvPixStride: 2,
-      rotationDegrees: frame.rotation,
       quality: quality,
+      rotation: frame.rotation,
     );
   }
 
-  Future<Uint8List?> _bra888ToJpeg({
+  Future<Uint8List?> _bgra888ToJpeg({
     required FlutterAnycamFrame frame,
     int quality = 100,
   }) async {
-    return _conversor.encodeBgraToJpegBuffer(
-      bgraBytes: frame.bytes,
+    return FlutterAnycamPlatform.instance.convertBGRA8888ToJpeg(
+      bytes: frame.bytes,
       width: frame.width,
       height: frame.height,
       quality: quality,
+      rotation: 0,
     );
   }
 }

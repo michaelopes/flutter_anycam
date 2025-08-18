@@ -51,15 +51,13 @@ class _MyAppState extends State<MyApp> {
     );
 
     setState(() {
-      //  _img = img;
+      _img = img;
     });
   }
 
   @override
   Widget build(BuildContext _) {
-    final backCamera = cameras[0].customSensorOrientation(
-      sensorOrientation: 90,
-    );
+    final backCamera = cameras[1];
 
     /* final usbCamera = cameras
         .where((e) => e.lensFacing == FlutterAnycamLensFacing.usb)

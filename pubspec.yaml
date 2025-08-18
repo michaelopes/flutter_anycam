@@ -1,6 +1,6 @@
 name: flutter_anycam
 description: "Plugin Flutter para captura e análise de frames de múltiplos tipos de câmera (frontal, traseira, USB e RTSP), com suporte a conversão de frames para JPEG e processamento em tempo real."
-version: 1.0.4
+version: 1.0.5
 homepage: https://github.com/michaelopes/flutter_anycam
 
 environment:
@@ -10,7 +10,6 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  imagekit_ffi: ^0.0.4
   plugin_platform_interface: ^2.0.2
 
 dev_dependencies:

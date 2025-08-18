@@ -51,11 +51,10 @@ public class FlutterAnycamPlugin: NSObject, FlutterPlugin {
             }
             
             let bgraData = bytes!.data
-            let res = ImageConverterUtil.convertBGRA8888ToJPEG(
-                bgraData: bgraData,
-                width: width!,
-                height: height!,
-                quality: CGFloat(quality!)
+            let res = ImageConverterUtil.convertBGRA8888ToJPEG(bgraData: bgraData,
+                                                               width: width!,
+                                                               height: height!,
+                                                               quality: quality == 0 ? 0 : CGFloat(quality! / 100)
                 
             )
             

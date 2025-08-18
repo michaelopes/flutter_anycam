@@ -13,3 +13,6 @@ Correções dispose da camera
 
 ## 1.0.4
 Correção de rotação em cameras android
+
+## 1.0.5
+Native image converter
