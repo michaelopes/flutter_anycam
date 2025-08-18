@@ -15,4 +15,4 @@ Correções dispose da camera
 Correção de rotação em cameras android
 
 ## 1.0.5
-Native image converter
+Motor de conversão de imagem nativa
