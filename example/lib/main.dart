@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -22,9 +23,18 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   FlutterAnycamCameraSelector? frontCamera;
+
+  UniqueKey key = UniqueKey();
+
   @override
   void initState() {
     super.initState();
+
+    Timer.periodic(const Duration(milliseconds: 5000), (timer) {
+      setState(() {
+        key = UniqueKey();
+      });
+    });
 
 /*    Future.delayed(const Duration(seconds: 10), () {
       setState(() {
@@ -50,9 +60,9 @@ class _MyAppState extends State<MyApp> {
       frame: frame,
     );
 
-    setState(() {
+    /*  setState(() {
       _img = img;
-    });
+    });*/
   }
 
   @override
@@ -78,35 +88,26 @@ class _MyAppState extends State<MyApp> {
           return SizedBox.expand(
             child: _img != null
                 ? Image.memory(_img!)
-                : Column(
+                : Stack(
                     children: [
-                      if (backCamera != null)
-                        Expanded(
+                      SizedBox.expand(
+                        key: key,
+                        child: FlutterAnycamWidget(
+                          camera: cameras[0],
+                          onFrame: _onFrame,
+                        ),
+                      ),
+                      Positioned(
+                        right: 20,
+                        bottom: 20,
+                        width: 250,
+                        child: AspectRatio(
+                          aspectRatio: 16 / 10,
                           child: FlutterAnycamWidget(
-                            camera: backCamera,
-                            onFrame: _onFrame,
+                            camera: cameras[2],
                           ),
                         ),
-                      if (frontCamera != null)
-                        Expanded(
-                          child: FlutterAnycamWidget(
-                            camera: frontCamera!,
-                            onFrame: _onFrame,
-                          ),
-                        ),
-                      /*  if (usbCamera != null)
-                  Expanded(
-                    child: FlutterAnycamWidget(
-                      camera: usbCamera,
-                      onFrame: _onFrame,
-                    ),
-                  ),*/
-                      /* Expanded(
-                  child: FlutterAnycamWidget(
-                    camera: rtspCamera,
-                    onFrame: _onFrame,
-                  ),
-                ),*/
+                      )
                     ],
                   ),
           );

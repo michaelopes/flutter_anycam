@@ -16,3 +16,6 @@ Correção de rotação em cameras android
 
 ## 1.0.5
 Motor de conversão de imagem nativa
+
+## 1.0.6
+Sincronização na criação de cameras android

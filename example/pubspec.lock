@@ -109,7 +109,7 @@ packages:
       path: ".."
       relative: true
     source: path
-    version: "1.0.4"
+    version: "1.0.5"
   flutter_driver:
     dependency: transitive
     description: flutter
@@ -141,14 +141,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.5.4"
-  imagekit_ffi:
-    dependency: "direct main"
-    description:
-      name: imagekit_ffi
-      sha256: "1da6c6355c4f2ede1bd93d8902726f4d4541209d474dbf7c9a59747a985e4645"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.0.4"
   integration_test:
     dependency: "direct dev"
     description: flutter

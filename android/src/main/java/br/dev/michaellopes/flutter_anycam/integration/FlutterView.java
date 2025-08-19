@@ -15,12 +15,9 @@ import java.util.Map;
 import io.flutter.plugin.platform.PlatformView;
 
 public class FlutterView implements PlatformView {
-    private  final CameraFactory cameraFactory = new CameraFactory();
     private final SurfaceView surfaceView;
     private final SurfaceHolder surfaceHolder;
     private final int viewId;
-    private final Map<String, Object> params;
-
     private final BaseCamera camera;
 
     public FlutterView(Context context, int vId, Map<String, Object> params) {
@@ -30,8 +27,7 @@ public class FlutterView implements PlatformView {
         } else {
             this.viewId = vId;
         }
-        this.params = params;
-        this.camera = cameraFactory.getCamera(viewId, params);
+        this.camera = CameraFactory.getInstance().getCamera(viewId, params);
 
         surfaceView = camera.createSurfaceView(context);
         surfaceHolder = surfaceView.getHolder();
@@ -44,7 +40,7 @@ public class FlutterView implements PlatformView {
 
             @Override
             public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
-
+                camera.run();
             }
 
             @Override

@@ -41,7 +41,7 @@ public abstract class BaseCamera {
         return  5;
     }
 
-    public void run() {
+    public synchronized void run() {
         CameraPermissionsUtil.getINSTANCE().requestPermissions((String errCode, String errDesc) -> {
             if(errCode == null) {
                 init();
