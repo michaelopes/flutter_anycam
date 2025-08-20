@@ -1,5 +1,6 @@
 package br.dev.michaellopes.flutter_anycam.utils;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraManager;
@@ -9,96 +10,153 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
 
 import android.hardware.usb.UsbInterface;
 import android.os.Build;
 import android.util.Log;
 
+import androidx.camera.camera2.internal.Camera2CameraInfoImpl;
+import androidx.camera.core.CameraInfo;
+import androidx.camera.lifecycle.ProcessCameraProvider;
+import androidx.core.content.ContextCompat;
+
+import com.google.common.util.concurrent.ListenableFuture;
 import com.jiangdg.usb.USBMonitor;
 
-
+@SuppressLint("RestrictedApi")
 public class CameraUtil {
-   private static List<Map<String, Object>> cameras = new ArrayList<>();
 
-    public static List<Map<String, Object>> availableCameras() {
-        return cameras;
+    private static final CameraUtil instance = new CameraUtil();
+
+    private CameraUtil() {
     }
 
-    public static void init(Context context) {
+    public static CameraUtil getInstance() {
+        return instance;
+    }
 
-        CameraManager cameraManager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
+    private ListenableFuture<ProcessCameraProvider> cameraProviderFuture;
 
-        try {
-            for (String cameraId : cameraManager.getCameraIdList()) {
-                CameraCharacteristics characteristics = cameraManager.getCameraCharacteristics(cameraId);
-                Integer lensFacing = characteristics.get(CameraCharacteristics.LENS_FACING);
-                Integer sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
+    private ProcessCameraProvider provider;
 
-                String lensDirection;
-                if (lensFacing != null) {
-                    switch (lensFacing) {
-                        case CameraCharacteristics.LENS_FACING_FRONT:
-                            lensDirection = "front";
-                            break;
-                        case CameraCharacteristics.LENS_FACING_BACK:
-                            lensDirection = "back";
-                            break;
-                        default:
-                            lensDirection = "unknown";
+    private final List<CameraItem> cameras = new ArrayList<>();
+
+    public void availableCameras(CamerasCallback callback) {
+        synchronized (instance) {
+            if(provider != null) {
+                List<Map<String, Object>> list = new ArrayList<>();
+                for (CameraItem item : cameras) {
+                    list.add(item.cameraMap);
+                }
+                callback.onResult(list);
+            } else {
+                cameraProviderFuture.addListener(() -> {
+                    List<Map<String, Object>> list = new ArrayList<>();
+                    for (CameraItem item : cameras) {
+                        list.add(item.cameraMap);
                     }
-                } else {
-                    lensDirection = "unknown";
-                }
-
-                Map<String, Object> cameraInfo = new HashMap<>();
-                cameraInfo.put("id", cameraId);
-                cameraInfo.put("name", lensDirection + " camera");
-                cameraInfo.put("lensFacing", lensDirection);
-                cameraInfo.put("sensorOrientation", sensorOrientation != null ? sensorOrientation : 0);
-
-                cameras.add(cameraInfo);
+                    callback.onResult(list);
+                }, ContextCompat.getMainExecutor(ContextUtil.get()));
             }
-            USBMonitor mUSBMonitor = new USBMonitor(context, new USBMonitor.OnDeviceConnectListener() {
-                @Override
-                public void onAttach(UsbDevice device) {
-                }
+        }
+    }
 
-                @Override
-                public void onDetach(UsbDevice device) {
-                }
+    public ProcessCameraProvider getProvider() {
+        return provider;
+    }
 
-                @Override
-                public void onConnect(UsbDevice device, USBMonitor.UsbControlBlock ctrlBlock, boolean createNew) {
-                }
+    public CameraItem getCameraById(String id) {
+        Object[] filter = cameras.stream().filter(item -> item.getId().equals(id)).toArray();
+        if (filter.length >= 1) {
+            return (CameraItem) filter[0];
+        }
+        return null;
+    }
 
-                @Override
-                public void onDisconnect(UsbDevice device, USBMonitor.UsbControlBlock ctrlBlock) {
-                }
+    public void init(Context context) {
+        synchronized (instance) {
 
-                @Override
-                public void onCancel(UsbDevice device) {
-                }
-            });
+            cameraProviderFuture = ProcessCameraProvider.getInstance(context);
+            cameraProviderFuture.addListener(() -> {
+                try {
+                    ProcessCameraProvider provider = cameraProviderFuture.get();
+                    int counter = provider.getAvailableCameraInfos().size();
+                    for (int i = 0; i < counter; i++) {
+                        CameraInfo availableCameraInfo = provider.getAvailableCameraInfos().get(i);
+                        Camera2CameraInfoImpl camera2CameraInfo = (Camera2CameraInfoImpl) availableCameraInfo;
 
-            List<UsbDevice> deviceList = mUSBMonitor.getDeviceList();
-            for (UsbDevice device : deviceList) {
-                Log.d("USB", "Device: " + device.getDeviceName());
-                if(isUsbCamera(device)) {
-                    Map<String, Object> cameraInfo = new HashMap<>();
-                    cameraInfo.put("id", String.valueOf(device.getDeviceId()));
-                    cameraInfo.put("name", device.getDeviceName());
-                    cameraInfo.put("lensFacing", "usb");
-                    cameraInfo.put("sensorOrientation", 0);
-                    cameras.add(cameraInfo);
-                }
-            }
-            if(mUSBMonitor.isRegistered()) {
-                mUSBMonitor.unregister();
-                mUSBMonitor = null;
-            }
+                        Integer lensFacing = camera2CameraInfo.getLensFacing();
+                        Integer sensorOrientation = camera2CameraInfo.getSensorRotationDegrees();
 
-        } catch (Exception e) {
-            e.printStackTrace();
+                        String lensDirection;
+
+                        switch (lensFacing) {
+                            case CameraCharacteristics.LENS_FACING_FRONT:
+                                lensDirection = "front";
+                                break;
+                            case CameraCharacteristics.LENS_FACING_BACK:
+                                lensDirection = "back";
+                                break;
+                            default:
+                                lensDirection = "unknown";
+                        }
+
+
+                        Map<String, Object> cameraMap = new HashMap<>();
+                        cameraMap.put("id", camera2CameraInfo.getCameraId());
+                        cameraMap.put("name", lensDirection + " camera");
+                        cameraMap.put("lensFacing", lensDirection);
+                        cameraMap.put("sensorOrientation", sensorOrientation);
+
+                        cameras.add(new CameraItem(camera2CameraInfo, cameraMap));
+                    }
+
+
+                    USBMonitor mUSBMonitor = new USBMonitor(context, new USBMonitor.OnDeviceConnectListener() {
+                        @Override
+                        public void onAttach(UsbDevice device) {
+                        }
+
+                        @Override
+                        public void onDetach(UsbDevice device) {
+                        }
+
+                        @Override
+                        public void onConnect(UsbDevice device, USBMonitor.UsbControlBlock ctrlBlock, boolean createNew) {
+                        }
+
+                        @Override
+                        public void onDisconnect(UsbDevice device, USBMonitor.UsbControlBlock ctrlBlock) {
+                        }
+
+                        @Override
+                        public void onCancel(UsbDevice device) {
+                        }
+                    });
+
+                    List<UsbDevice> deviceList = mUSBMonitor.getDeviceList();
+                    for (UsbDevice device : deviceList) {
+                        Log.d("USB", "Device: " + device.getDeviceName());
+                        if (isUsbCamera(device)) {
+                            Map<String, Object> cameraInfo = new HashMap<>();
+                            cameraInfo.put("id", String.valueOf(device.getDeviceId()));
+                            cameraInfo.put("name", device.getDeviceName());
+                            cameraInfo.put("lensFacing", "usb");
+                            cameraInfo.put("sensorOrientation", 0);
+                            cameras.add(new CameraItem(null, cameraInfo));
+                        }
+                    }
+                    if (mUSBMonitor.isRegistered()) {
+                        mUSBMonitor.unregister();
+                        mUSBMonitor = null;
+                    }
+
+                    this.provider = provider;
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }, ContextCompat.getMainExecutor(context));
         }
     }
 
@@ -112,5 +170,36 @@ public class CameraUtil {
             }
         }
         return false;
+    }
+
+
+    public interface CamerasCallback {
+        public void onResult(List<Map<String, Object>> cameras);
+    }
+
+    public static class CameraItem {
+        private final Camera2CameraInfoImpl cameraInfo;
+        private final Map<String, Object> cameraMap;
+
+        public CameraItem(Camera2CameraInfoImpl cameraInfo, Map<String, Object> cameraMap) {
+            this.cameraInfo = cameraInfo;
+            this.cameraMap = cameraMap;
+        }
+
+        public String getId() {
+            return (String) cameraMap.get("id");
+        }
+
+        public boolean isUsb() {
+            return cameraInfo == null;
+        }
+
+        public Camera2CameraInfoImpl getCameraInfo() {
+            return cameraInfo;
+        }
+
+        public Map<String, Object> getCameraMap() {
+            return cameraMap;
+        }
     }
 }

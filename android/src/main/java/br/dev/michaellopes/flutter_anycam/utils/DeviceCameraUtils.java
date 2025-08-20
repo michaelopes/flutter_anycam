@@ -2,8 +2,11 @@ package br.dev.michaellopes.flutter_anycam.utils;
 
 import android.annotation.SuppressLint;
 
+import androidx.annotation.NonNull;
 import androidx.camera.camera2.internal.Camera2CameraInfoImpl;
+import androidx.camera.camera2.interop.Camera2CameraInfo;
 import androidx.camera.core.Camera;
+import androidx.camera.core.CameraFilter;
 import androidx.camera.core.CameraInfo;
 import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ConcurrentCamera;
@@ -29,8 +32,6 @@ public class DeviceCameraUtils {
     private DeviceCameraUtils() {
     }
 
-    private final ListenableFuture<ProcessCameraProvider> cameraProviderFuture = ProcessCameraProvider.getInstance(ContextUtil.get());
-    private ProcessCameraProvider cameraProvider;
     private static DeviceCameraUtils instance;
     private final List<CameraRef> binds = new ArrayList<>();
 
@@ -40,46 +41,59 @@ public class DeviceCameraUtils {
 
     }
 
-    public ListenableFuture<ProcessCameraProvider> getCameraProviderFuture() {
-        return cameraProviderFuture;
-    }
 
-    private ProcessCameraProvider getCameraProvider() throws ExecutionException, InterruptedException {
-        if (cameraProvider == null) {
-            cameraProvider = cameraProviderFuture.get();
-        }
-        return cameraProvider;
-    }
-
-    public Camera2CameraInfoImpl getCameraInfoById(String cameraId) throws ExecutionException, InterruptedException {
+  /*  private Camera2CameraInfoImpl getCameraInfoById(String cameraId) throws ExecutionException, InterruptedException {
         int counter = getCameraProvider().getAvailableCameraInfos().size();
         for (int i = 0; i < counter; i++) {
             CameraInfo availableCameraInfo = cameraProvider.getAvailableCameraInfos().get(i);
             Camera2CameraInfoImpl camera2CameraInfo = (Camera2CameraInfoImpl) availableCameraInfo;
             String id = camera2CameraInfo.getCameraId();
             if (id.equals(cameraId)) {
-               return camera2CameraInfo;
+                return camera2CameraInfo;
             }
         }
         return null;
-    }
+    }*/
 
-    public synchronized void bind(Camera2CameraInfoImpl cameraInfo, Preview preview, ImageAnalysis imageAnalysis) {
+    /*public CameraSelector getCameraSelectorById(String cameraId) throws ExecutionException, InterruptedException {
+        return getCameraInfoById(cameraId).getCameraSelector();
+    }*/
 
-        if (cameraProvider != null) {
-            CameraRef existingCamera = getCameraIfExists(cameraInfo);
+/*    @SuppressLint("UnsafeOptInUsageError")
+   private CameraSelector createCameraSelector(String targetCameraId) {
+        return new CameraSelector.Builder()
+                .addCameraFilter(new CameraFilter() {
+                    @NonNull
+                    @Override
+                    public List<CameraInfo> filter(@NonNull List<CameraInfo> cameraInfos) {
+                        List<CameraInfo> result = new ArrayList<>();
+                        for (CameraInfo info : cameraInfos) {
+                             String id = Camera2CameraInfo.from(info).getCameraId();
+                            if (id.equals(targetCameraId)) {
+                                result.add(info);
+                            }
+                        }
+                        return result;
+                    }
+                })
+                .build();
+    }*/
+
+    public synchronized void bind(String cameraId, Preview preview, ImageAnalysis imageAnalysis) {
+        CameraUtil.CameraItem camera = CameraUtil.getInstance().getCameraById(cameraId);
+        if(camera != null) {
+            CameraRef existingCamera = getCameraIfExistsById(cameraId);
             if (existingCamera != null) {
                 binds.remove(existingCamera);
             }
-            binds.add(new CameraRef(cameraInfo, preview, imageAnalysis));
+            binds.add(new CameraRef(cameraId, camera.getCameraInfo().getCameraSelector(), preview, imageAnalysis));
             updateLifecycle();
         }
-
     }
 
     @SuppressLint("RestrictedApi")
-    private CameraRef getCameraIfExists(Camera2CameraInfoImpl cameraInfo) {
-        Object[] list = binds.stream().filter(camera -> Objects.equals(camera.getCameraId(), cameraInfo.getCameraId())).toArray();
+    private CameraRef getCameraIfExists(CameraRef cameraRef) {
+        Object[] list = binds.stream().filter(camera -> Objects.equals(camera.getCameraId(), cameraRef.cameraId)).toArray();
         if (list.length > 0) {
             return (CameraRef) list[0];
         }
@@ -96,6 +110,7 @@ public class DeviceCameraUtils {
     }
 
     private void updateLifecycle() {
+        ProcessCameraProvider cameraProvider = CameraUtil.getInstance().getProvider();
         if (cameraProvider != null) {
             cameraProvider.unbindAll();
             if(!binds.isEmpty()) {
@@ -105,7 +120,7 @@ public class DeviceCameraUtils {
                     UseCaseGroup.Builder usecase = new UseCaseGroup.Builder();
                     usecase.addUseCase(bind.preview);
                     usecase.addUseCase(bind.imageAnalysis);
-                    CameraSelector cameraSelector = bind.cameraInfo.getCameraSelector();
+                    CameraSelector cameraSelector = bind.cameraSelector;
                     cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, usecase.build());
                 } else {
                     List<ConcurrentCamera.SingleCameraConfig> configs = new ArrayList<>();
@@ -113,7 +128,7 @@ public class DeviceCameraUtils {
                         UseCaseGroup.Builder usecase = new UseCaseGroup.Builder();
                         usecase.addUseCase(bind.preview);
                         usecase.addUseCase(bind.imageAnalysis);
-                        CameraSelector cameraSelector = bind.cameraInfo.getCameraSelector();
+                        CameraSelector cameraSelector = bind.cameraSelector;
                         ConcurrentCamera.SingleCameraConfig config = new ConcurrentCamera.SingleCameraConfig(
                                 cameraSelector,
                                 usecase.build(),
@@ -135,17 +150,21 @@ public class DeviceCameraUtils {
         }
     }
 
-    private static class CameraRef {
-       private final Camera2CameraInfoImpl cameraInfo;
+    public static class CameraRef {
+
+        private  final String cameraId;
+
+       private final CameraSelector cameraSelector;
         private final  Preview preview;
         private final  ImageAnalysis imageAnalysis;
 
         private String getCameraId() {
-            return cameraInfo.getCameraId();
+            return cameraId;
         }
 
-        private CameraRef(Camera2CameraInfoImpl cameraInfo, Preview preview, ImageAnalysis imageAnalysis) {
-            this.cameraInfo = cameraInfo;
+        private CameraRef(String cameraId, CameraSelector cameraSelector, Preview preview, ImageAnalysis imageAnalysis) {
+            this.cameraId = cameraId;
+            this.cameraSelector = cameraSelector;
             this.preview = preview;
             this.imageAnalysis = imageAnalysis;
         }

@@ -9,6 +9,7 @@ import androidx.annotation.NonNull;
 import androidx.camera.camera2.internal.Camera2CameraInfoImpl;
 
 
+import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ImageProxy;
 import androidx.camera.core.Preview;
 import androidx.camera.core.SurfaceRequest;
@@ -55,7 +56,6 @@ public class DeviceCamera extends BaseCamera {
     }
 
 
-
     @Override
     @SuppressLint("RestrictedApi")
     public void init() {
@@ -66,50 +66,33 @@ public class DeviceCamera extends BaseCamera {
 
         preview.setSurfaceProvider(surfaceProvider);
 
-        ListenableFuture<ProcessCameraProvider>  cameraProviderFuture = DeviceCameraUtils.getInstance().getCameraProviderFuture();
-        cameraProviderFuture.addListener(() -> {
+        try {
 
-            try {
+            imageAnalysis = new ImageAnalysis.Builder()
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
+                    .build();
 
-                Camera2CameraInfoImpl finalCameraInfo =  DeviceCameraUtils.getInstance().getCameraInfoById(cameraSelector.getId());
-                if (finalCameraInfo != null) {
+            imageAnalysis.setAnalyzer(cameraExecutor, limiter::onNewFrame);
+            DeviceCameraUtils.getInstance().bind(cameraSelector.getId(), preview, imageAnalysis);
+            Size ps = preview.getAttachedSurfaceResolution();
 
-                    imageAnalysis = new ImageAnalysis.Builder()
-                            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                            .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
-                            .build();
+            final Map<String, Object> result = new HashMap<>();
+            result.put("width", 0);
+            result.put("height", 0);
+            result.put("isPortrait", 0);
+            result.put("rotation", 0);
 
+            FlutterEventChannel.getINSTANCE().send(viewId, "onConnected", result);
 
-
-                    imageAnalysis.setAnalyzer(cameraExecutor, limiter::onNewFrame);
-
-                    DeviceCameraUtils.getInstance().bind(finalCameraInfo, preview, imageAnalysis);
-
-                    Size ps = preview.getAttachedSurfaceResolution();
-
-                    final Map<String, Object> result = new HashMap<>();
-                    result.put("width", ps.getWidth());
-                    result.put("height", ps.getHeight());
-                    result.put("isPortrait", 0);
-                    result.put("rotation", 0);
-
-                    FlutterEventChannel.getINSTANCE().send(viewId, "onConnected", result);
-                }
-
-            } catch (Exception e) {
-                FlutterEventChannel.getINSTANCE().send(viewId, "onFailed", new HashMap() {{
-                    put("message", e.getMessage());
-                }});
-                e.printStackTrace();
-            }
+        } catch (Exception e) {
+            FlutterEventChannel.getINSTANCE().send(viewId, "onFailed", new HashMap() {{
+                put("message", e.getMessage());
+            }});
+            e.printStackTrace();
+        }
 
 
-        }, getExecutor());
-    }
-
-
-    private Executor getExecutor() {
-        return ContextCompat.getMainExecutor(ContextUtil.get());
     }
 
     private @NonNull Preview.SurfaceProvider createSurfaceProvider() {
@@ -119,7 +102,7 @@ public class DeviceCamera extends BaseCamera {
                     flutterSurface,
                     Executors.newSingleThreadExecutor(),
                     (result) -> {
-                     //   flutterSurface.release();
+                        //   flutterSurface.release();
                         int resultCode = result.getResultCode();
                         switch (resultCode) {
                             case SurfaceRequest.Result.RESULT_REQUEST_CANCELLED:
@@ -152,10 +135,10 @@ public class DeviceCamera extends BaseCamera {
     }
 
     private Integer getCustomRotationDegrees() {
-        if(cameraSelector.isForceSensorOrientation()) {
-          return cameraSelector.getSensorOrientation();
+        if (cameraSelector.isForceSensorOrientation()) {
+            return cameraSelector.getSensorOrientation();
         }
-        return  null;
+        return null;
     }
 
     public void analyze(@NonNull ImageProxy image) {

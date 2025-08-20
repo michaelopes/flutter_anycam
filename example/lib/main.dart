@@ -11,6 +11,10 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   cameras = await FlutterAnycam.availableCameras();
 
+  for (var item in cameras) {
+    print(item.toMap());
+  }
+
   runApp(const MyApp());
 }
 
@@ -93,7 +97,7 @@ class _MyAppState extends State<MyApp> {
                       SizedBox.expand(
                         key: key,
                         child: FlutterAnycamWidget(
-                          camera: cameras[0],
+                          camera: cameras.firstWhere((e) => e.id == "102"),
                           onFrame: _onFrame,
                         ),
                       ),
@@ -104,7 +108,7 @@ class _MyAppState extends State<MyApp> {
                         child: AspectRatio(
                           aspectRatio: 16 / 10,
                           child: FlutterAnycamWidget(
-                            camera: cameras[2],
+                            camera: cameras.firstWhere((e) => e.id == "2002"),
                           ),
                         ),
                       )

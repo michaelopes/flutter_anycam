@@ -37,7 +37,7 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
     @Override
     public void onAttachedToActivity(@NonNull ActivityPluginBinding binding) {
         CameraPermissionsUtil.getINSTANCE().init(binding::addRequestPermissionsResultListener);
-        CameraUtil.init(binding.getActivity());
+        CameraUtil.getInstance().init(binding.getActivity());
         ContextUtil.init(binding.getActivity());
         LivecycleUtil.init(binding.getLifecycle());
 
@@ -71,8 +71,7 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
     @Override
     public void onMethodCall(@NonNull MethodCall call, @NonNull Result result) {
         if (call.method.equals("availableCameras")) {
-            List<Map<String, Object>> cameras = CameraUtil.availableCameras();
-            result.success(cameras);
+            CameraUtil.getInstance().availableCameras(result::success);
         } else if (call.method.equals("convertNv21ToJpeg")) {
             convertNv21ToJpeg(call, result);
         } else {

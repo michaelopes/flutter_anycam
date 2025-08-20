@@ -38,7 +38,7 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
             if(!frameWait ) {
                 frameWait = true;
                 executor.execute(()-> {
-                    Log.i("UsbCamera", "Process onVideoFrameReceived");
+                   // Log.i("UsbCamera", "Process onVideoFrameReceived");
                     Map<String, Object> imageData = imageAnalysisUtil.usbFrameToFlutterResult(frame, 640, 480, getCustomRotationDegrees());
                     FlutterEventChannel.getINSTANCE().send(viewId, "onVideoFrameReceived", imageData);
                     frameWait = false;

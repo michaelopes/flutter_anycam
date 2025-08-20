@@ -42,7 +42,7 @@ public class RTSPCamera extends BaseCamera {
         protected void onFrameLimited(FrameItem frameItem) {
             int w = frameItem.image.getWidth();
             int h = frameItem.image.getHeight();
-            Log.i("RTSPCamera", "Process onVideoFrameReceived");
+         //   Log.i("RTSPCamera", "Process onVideoFrameReceived");
             Map<String, Object> imageData = imageAnalysisUtil.rtspFrameToFlutterResult(frameItem.frame.getData(), w, h, getCustomRotationDegrees());
             FlutterEventChannel.getINSTANCE().send(viewId, "onVideoFrameReceived", imageData);
         }
