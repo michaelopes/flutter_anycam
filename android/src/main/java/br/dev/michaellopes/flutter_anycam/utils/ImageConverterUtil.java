@@ -30,7 +30,7 @@ public class ImageConverterUtil {
 
         // Intercala VU no NV21
         for (int i = 0; i < qFrameSize; i++) {
-            nv21Bytes[frameSize + i * 2]     = yv12Bytes[vStart + i]; // V
+            nv21Bytes[frameSize + i * 2] = yv12Bytes[vStart + i]; // V
             nv21Bytes[frameSize + i * 2 + 1] = yv12Bytes[uStart + i]; // U
         }
 
@@ -51,7 +51,7 @@ public class ImageConverterUtil {
 
         // Converte para NV21 (Y | VU intercalado)
         for (int i = 0; i < qFrameSize; i++) {
-            nv21[frameSize + i * 2]     = i420Bytes[vStart + i]; // V
+            nv21[frameSize + i * 2] = i420Bytes[vStart + i]; // V
             nv21[frameSize + i * 2 + 1] = i420Bytes[uStart + i]; // U
         }
 
@@ -149,28 +149,25 @@ public class ImageConverterUtil {
 
         Bitmap bitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.length);
 
-        float centerX = bitmap.getWidth() / 2f;
-        float centerY = bitmap.getHeight() / 2f;
-
-        Bitmap rotatedBitmap = BitmapPoolUtil.get(bitmap.getWidth(), bitmap.getHeight(), bitmap.getConfig());
-        Canvas canvas = new Canvas(rotatedBitmap);
-
         Matrix matrix = new Matrix();
+        int centerX = width / 2;
+        int centerY = height / 2;
+
         matrix.postRotate(rotation, centerX, centerY);
-        if (rotation == 270f) {
-            matrix.postScale(-1f, 1f, centerX, centerY);
+
+        if(rotation == 270) {
+            matrix.postScale(-1, 1, centerX, centerY);
         }
 
-        canvas.drawBitmap(bitmap, matrix, null);
-
+        Bitmap rotatedBitmap = Bitmap.createBitmap(bitmap, 0, 0, width, height, matrix, true);
+        
         ByteArrayOutputStream finalOut = new ByteArrayOutputStream();
         rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, quality, finalOut);
         byte[] rotatedBytes = finalOut.toByteArray();
 
         bitmap.recycle();
-        BitmapPoolUtil.put(rotatedBitmap);
+        rotatedBitmap.recycle();
 
         return rotatedBytes;
-
     }
 }

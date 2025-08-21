@@ -4,7 +4,6 @@ PODS:
   - Flutter (1.0.0)
   - flutter_anycam (0.0.1):
     - Flutter
-  - imagekit_ffi (0.0.1)
   - integration_test (0.0.1):
     - Flutter
 
@@ -12,7 +11,6 @@ DEPENDENCIES:
   - convert_native_img_stream (from `.symlinks/plugins/convert_native_img_stream/ios`)
   - Flutter (from `Flutter`)
   - flutter_anycam (from `.symlinks/plugins/flutter_anycam/ios`)
-  - imagekit_ffi (from `.symlinks/plugins/imagekit_ffi/ios`)
   - integration_test (from `.symlinks/plugins/integration_test/ios`)
 
 EXTERNAL SOURCES:
@@ -22,8 +20,6 @@ EXTERNAL SOURCES:
     :path: Flutter
   flutter_anycam:
     :path: ".symlinks/plugins/flutter_anycam/ios"
-  imagekit_ffi:
-    :path: ".symlinks/plugins/imagekit_ffi/ios"
   integration_test:
     :path: ".symlinks/plugins/integration_test/ios"
 
@@ -31,7 +27,6 @@ SPEC CHECKSUMS:
   convert_native_img_stream: 394628bfc5e0c7fdfe95c827be25c97219ba42b6
   Flutter: e0871f40cf51350855a761d2e70bf5af5b9b5de7
   flutter_anycam: 3f76490ba28dd0cf9f0ba9c04ba162ae457ff5a5
-  imagekit_ffi: 0dcbd4eed86ad173681997f8b0e09a24df541cbd
   integration_test: 4a889634ef21a45d28d50d622cf412dc6d9f586e
 
 PODFILE CHECKSUM: 819463e6a0290f5a72f145ba7cde16e8b6ef0796

@@ -64,9 +64,9 @@ class _MyAppState extends State<MyApp> {
       frame: frame,
     );
 
-    /*  setState(() {
+    setState(() {
       _img = img;
-    });*/
+    });
   }
 
   @override
@@ -90,30 +90,24 @@ class _MyAppState extends State<MyApp> {
         ),
         body: Builder(builder: (context) {
           return SizedBox.expand(
-            child: _img != null
-                ? Image.memory(_img!)
-                : Stack(
-                    children: [
-                      SizedBox.expand(
-                        key: key,
-                        child: FlutterAnycamWidget(
-                          camera: cameras[4],
-                          onFrame: _onFrame,
-                        ),
-                      ),
-                      /*Positioned(
-                        right: 20,
-                        bottom: 20,
-                        width: 250,
-                        child: AspectRatio(
-                          aspectRatio: 16 / 10,
-                          child: FlutterAnycamWidget(
-                            camera: cameras.firstWhere((e) => e.id == "5002"),
-                          ),
-                        ),
-                      )*/
-                    ],
+            child: Stack(
+              children: [
+                SizedBox.expand(
+                  key: key,
+                  child: FlutterAnycamWidget(
+                    camera: cameras.firstWhere(
+                        (e) => e.lensFacing == FlutterAnycamLensFacing.back),
+                    onFrame: _onFrame,
                   ),
+                ),
+                if (_img != null)
+                  Positioned(
+                    top: 20,
+                    right: 20,
+                    child: SizedBox(height: 150, child: Image.memory(_img!)),
+                  )
+              ],
+            ),
           );
         }),
       ),

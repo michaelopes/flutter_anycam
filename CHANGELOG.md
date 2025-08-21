@@ -22,3 +22,6 @@ Sincronização na criação de cameras android
 
 ## 1.0.7
 Melhoria no gerênciamento multi-camera android
+
+## 1.0.8
+Correção de conversão de imagem nv21 para jpg
