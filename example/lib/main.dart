@@ -34,13 +34,13 @@ class _MyAppState extends State<MyApp> {
   void initState() {
     super.initState();
 
-    Timer.periodic(const Duration(milliseconds: 5000), (timer) {
+    /* Timer.periodic(const Duration(milliseconds: 5000), (timer) {
       setState(() {
         key = UniqueKey();
       });
     });
 
-/*    Future.delayed(const Duration(seconds: 10), () {
+    Future.delayed(const Duration(seconds: 10), () {
       setState(() {
         frontCamera = cameras
             .where((e) => e.lensFacing == FlutterAnycamLensFacing.front)
@@ -97,21 +97,21 @@ class _MyAppState extends State<MyApp> {
                       SizedBox.expand(
                         key: key,
                         child: FlutterAnycamWidget(
-                          camera: cameras.firstWhere((e) => e.id == "102"),
+                          camera: cameras[4],
                           onFrame: _onFrame,
                         ),
                       ),
-                      Positioned(
+                      /*Positioned(
                         right: 20,
                         bottom: 20,
                         width: 250,
                         child: AspectRatio(
                           aspectRatio: 16 / 10,
                           child: FlutterAnycamWidget(
-                            camera: cameras.firstWhere((e) => e.id == "2002"),
+                            camera: cameras.firstWhere((e) => e.id == "5002"),
                           ),
                         ),
-                      )
+                      )*/
                     ],
                   ),
           );

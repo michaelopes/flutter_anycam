@@ -19,3 +19,6 @@ Motor de conversão de imagem nativa
 
 ## 1.0.6
 Sincronização na criação de cameras android
+
+## 1.0.7
+Melhoria no gerênciamento multi-camera android
