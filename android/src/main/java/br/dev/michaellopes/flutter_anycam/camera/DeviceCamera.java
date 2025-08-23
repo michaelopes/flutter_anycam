@@ -60,39 +60,39 @@ public class DeviceCamera extends BaseCamera {
     @Override
     @SuppressLint("RestrictedApi")
     public void init() {
+       synchronized (DeviceCameraUtils.getInstance()) {
+           Preview.SurfaceProvider surfaceProvider = createSurfaceProvider();
+           Preview preview = new Preview.Builder()
+                   .build();
 
-        Preview.SurfaceProvider surfaceProvider = createSurfaceProvider();
-        Preview preview = new Preview.Builder()
-                .build();
+           preview.setSurfaceProvider(surfaceProvider);
 
-        preview.setSurfaceProvider(surfaceProvider);
+           try {
 
-        try {
+               imageAnalysis = new ImageAnalysis.Builder()
+                       .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                       .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
+                       .build();
 
-            imageAnalysis = new ImageAnalysis.Builder()
-                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
-                    .build();
+               imageAnalysis.setAnalyzer(cameraExecutor, limiter::onNewFrame);
+               DeviceCameraUtils.getInstance().bind(cameraSelector.getId(), preview, imageAnalysis);
+               Size ps = preview.getAttachedSurfaceResolution();
 
-            imageAnalysis.setAnalyzer(cameraExecutor, limiter::onNewFrame);
-            DeviceCameraUtils.getInstance().bind(cameraSelector.getId(), preview, imageAnalysis);
-            Size ps = preview.getAttachedSurfaceResolution();
+               final Map<String, Object> result = new HashMap<>();
+               result.put("width", 0);
+               result.put("height", 0);
+               result.put("isPortrait", 0);
+               result.put("rotation", 0);
 
-            final Map<String, Object> result = new HashMap<>();
-            result.put("width", 0);
-            result.put("height", 0);
-            result.put("isPortrait", 0);
-            result.put("rotation", 0);
+               FlutterEventChannel.getINSTANCE().send(viewId, "onConnected", result);
 
-            FlutterEventChannel.getINSTANCE().send(viewId, "onConnected", result);
-
-        } catch (Exception e) {
-            FlutterEventChannel.getINSTANCE().send(viewId, "onFailed", new HashMap() {{
-                put("message", e.getMessage());
-            }});
-            e.printStackTrace();
-        }
-
+           } catch (Exception e) {
+               FlutterEventChannel.getINSTANCE().send(viewId, "onFailed", new HashMap() {{
+                   put("message", e.getMessage());
+               }});
+               e.printStackTrace();
+           }
+       }
 
     }
 
@@ -124,8 +124,6 @@ public class DeviceCamera extends BaseCamera {
     public void dispose() {
         if (imageAnalysis != null) {
             imageAnalysis.clearAnalyzer();
-        }
-        if (cameraExecutor != null) {
             cameraExecutor.shutdown();
         }
         DeviceCameraUtils.getInstance().dispose(cameraSelector);

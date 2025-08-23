@@ -28,3 +28,6 @@ Correção de conversão de imagem nv21 para jpg
 
 ## 1.0.9
 Adicionado controle de flash
+
+## 1.0.10
+Correção no sistema de permissão da camera android

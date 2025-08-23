@@ -21,6 +21,7 @@ public class FlutterView implements PlatformView {
     private final BaseCamera camera;
 
     public FlutterView(Context context, int vId, Map<String, Object> params) {
+
         final Integer customViewId = (Integer) params.get("viewId");
         if(customViewId != null) {
             this.viewId = customViewId;
