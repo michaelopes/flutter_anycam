@@ -28,7 +28,6 @@ public class ImageAnalysisUtil {
         return adapter;
     }
 
-
     @SuppressLint({"RestrictedApi", "UnsafeOptInUsageError"})
     private Map<String, Object> imageProxyBaseAdapter(ImageProxy imageProxy) {
         Image image = imageProxy.getImage();

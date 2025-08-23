@@ -72,6 +72,11 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
   }
 
   @override
+  Future<void> setFlash(bool value) async {
+    await methodChannel.invokeMethod('setFlash', {"value": value});
+  }
+
+  @override
   Future<Uint8List?> convertBGRA8888ToJpeg({
     required Uint8List bytes,
     required int width,

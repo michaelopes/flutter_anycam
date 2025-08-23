@@ -5,6 +5,7 @@ import android.os.Looper;
 
 import androidx.annotation.NonNull;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -12,6 +13,7 @@ import br.dev.michaellopes.flutter_anycam.integration.FlutterEventChannel;
 import br.dev.michaellopes.flutter_anycam.integration.FlutterViewFactory;
 import br.dev.michaellopes.flutter_anycam.utils.CameraUtil;
 import br.dev.michaellopes.flutter_anycam.utils.ContextUtil;
+import br.dev.michaellopes.flutter_anycam.utils.DeviceCameraUtils;
 import br.dev.michaellopes.flutter_anycam.utils.ImageConverterUtil;
 import br.dev.michaellopes.flutter_anycam.utils.LivecycleUtil;
 import br.dev.michaellopes.flutter_anycam.utils.CameraPermissionsUtil;
@@ -74,6 +76,11 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
             CameraUtil.getInstance().availableCameras(result::success);
         } else if (call.method.equals("convertNv21ToJpeg")) {
             convertNv21ToJpeg(call, result);
+        } else if (call.method.equals("setFlash")) {
+            HashMap<?, ?> args = (HashMap<?, ?>)call.arguments;
+            boolean value = (boolean)args.get("value");
+            DeviceCameraUtils.getInstance().setFlash(value);
+            result.success(true);
         } else {
             result.notImplemented();
         }

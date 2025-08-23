@@ -1,6 +1,8 @@
 package br.dev.michaellopes.flutter_anycam.utils;
 
 import android.annotation.SuppressLint;
+import android.content.Context;
+import android.hardware.camera2.CameraManager;
 
 import androidx.annotation.NonNull;
 import androidx.camera.camera2.internal.Camera2CameraInfoImpl;
@@ -34,50 +36,13 @@ public class DeviceCameraUtils {
 
     private static DeviceCameraUtils instance;
     private final List<CameraRef> binds = new ArrayList<>();
+    private  Camera currentCamera;
 
     public static synchronized DeviceCameraUtils getInstance() {
         if (instance == null) instance = new DeviceCameraUtils();
         return instance;
 
     }
-
-
-  /*  private Camera2CameraInfoImpl getCameraInfoById(String cameraId) throws ExecutionException, InterruptedException {
-        int counter = getCameraProvider().getAvailableCameraInfos().size();
-        for (int i = 0; i < counter; i++) {
-            CameraInfo availableCameraInfo = cameraProvider.getAvailableCameraInfos().get(i);
-            Camera2CameraInfoImpl camera2CameraInfo = (Camera2CameraInfoImpl) availableCameraInfo;
-            String id = camera2CameraInfo.getCameraId();
-            if (id.equals(cameraId)) {
-                return camera2CameraInfo;
-            }
-        }
-        return null;
-    }*/
-
-    /*public CameraSelector getCameraSelectorById(String cameraId) throws ExecutionException, InterruptedException {
-        return getCameraInfoById(cameraId).getCameraSelector();
-    }*/
-
-/*    @SuppressLint("UnsafeOptInUsageError")
-   private CameraSelector createCameraSelector(String targetCameraId) {
-        return new CameraSelector.Builder()
-                .addCameraFilter(new CameraFilter() {
-                    @NonNull
-                    @Override
-                    public List<CameraInfo> filter(@NonNull List<CameraInfo> cameraInfos) {
-                        List<CameraInfo> result = new ArrayList<>();
-                        for (CameraInfo info : cameraInfos) {
-                             String id = Camera2CameraInfo.from(info).getCameraId();
-                            if (id.equals(targetCameraId)) {
-                                result.add(info);
-                            }
-                        }
-                        return result;
-                    }
-                })
-                .build();
-    }*/
 
     public synchronized void bind(String cameraId, Preview preview, ImageAnalysis imageAnalysis) {
         CameraUtil.CameraItem camera = CameraUtil.getInstance().getCameraById(cameraId);
@@ -88,6 +53,15 @@ public class DeviceCameraUtils {
             }
             binds.add(new CameraRef(cameraId, camera.getCameraInfo().getCameraSelector(), preview, imageAnalysis));
             updateLifecycle();
+        }
+    }
+
+
+    public void setFlash(boolean value) {
+        if(currentCamera != null) {
+            if (currentCamera.getCameraInfo().hasFlashUnit()) {
+                currentCamera.getCameraControl().enableTorch(value);
+            }
         }
     }
 
@@ -112,6 +86,7 @@ public class DeviceCameraUtils {
     private void updateLifecycle() {
         ProcessCameraProvider cameraProvider = CameraUtil.getInstance().getProvider();
         if (cameraProvider != null) {
+            currentCamera = null;
             cameraProvider.unbindAll();
             if(!binds.isEmpty()) {
                 LifecycleOwner lifecycleOwner = (LifecycleOwner) ContextUtil.get();
@@ -121,7 +96,7 @@ public class DeviceCameraUtils {
                     usecase.addUseCase(bind.preview);
                     usecase.addUseCase(bind.imageAnalysis);
                     CameraSelector cameraSelector = bind.cameraSelector;
-                    cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, usecase.build());
+                    currentCamera =  cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, usecase.build());
                 } else {
                     List<ConcurrentCamera.SingleCameraConfig> configs = new ArrayList<>();
                     for (CameraRef bind : binds) {
@@ -136,13 +111,22 @@ public class DeviceCameraUtils {
                         );
                         configs.add(config);
                     }
-                    cameraProvider.bindToLifecycle(configs);
+                    ConcurrentCamera cCamera = cameraProvider.bindToLifecycle(configs);
+                    for (Camera item:
+                    cCamera.getCameras()) {
+                        if(item.getCameraInfo().getCameraSelector().getLensFacing() ==
+                        CameraSelector.LENS_FACING_BACK ) {
+                            currentCamera = item;
+                        }
+                    }
+
                 }
             }
         }
     }
 
     public void dispose(ViewCameraSelector cameraSelector) {
+        setFlash(false);
         CameraRef existingCamera = getCameraIfExistsById(cameraSelector.getId());
         if (existingCamera != null) {
             binds.remove(existingCamera);

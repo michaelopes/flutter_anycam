@@ -37,6 +37,24 @@ class AVCaptureUtil {
         }
     }
     
+    func setFlash(_ value: Bool) -> Void {
+        if(backCamInput != nil) {
+            let device = backCamInput!.device;
+            if device.hasTorch {
+                do {
+                    try device.lockForConfiguration()
+                    device.torchMode = value ? .on : .off
+                    if(value) {
+                       try device.setTorchModeOn(level: 1);
+                    }
+                    device.unlockForConfiguration()
+                } catch {
+                    print("Torch could not be used")
+                }
+            }
+        }
+    }
+    
     func getCameraInput(cameraSelector: ViewCameraSelector) -> AVCaptureDeviceInput?  {
         if(cameraSelector.lensFacing == "back" && backCamInput == nil) {
             
@@ -45,6 +63,7 @@ class AVCaptureUtil {
                 return nil
             }
             self.backCamInput = backCamInput
+            
             return backCamInput
             
             

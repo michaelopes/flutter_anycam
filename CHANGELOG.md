@@ -25,3 +25,6 @@ Melhoria no gerênciamento multi-camera android
 
 ## 1.0.8
 Correção de conversão de imagem nv21 para jpg
+
+## 1.0.9
+Adicionado controle de flash

@@ -10,11 +10,6 @@ List<FlutterAnycamCameraSelector> cameras = [];
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   cameras = await FlutterAnycam.availableCameras();
-
-  for (var item in cameras) {
-    print(item.toMap());
-  }
-
   runApp(const MyApp());
 }
 
@@ -26,7 +21,8 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  FlutterAnycamCameraSelector? frontCamera;
+  FlutterAnycamCameraSelector camera =
+      cameras.firstWhere((e) => e.lensFacing == FlutterAnycamLensFacing.back);
 
   UniqueKey key = UniqueKey();
 
@@ -34,25 +30,13 @@ class _MyAppState extends State<MyApp> {
   void initState() {
     super.initState();
 
-    /* Timer.periodic(const Duration(milliseconds: 5000), (timer) {
-      setState(() {
-        key = UniqueKey();
+    Future.delayed(const Duration(milliseconds: 10000), () {
+      FlutterAnycam.enableFlash();
+
+      Future.delayed(const Duration(milliseconds: 10000), () {
+        FlutterAnycam.disableFlash();
       });
     });
-
-    Future.delayed(const Duration(seconds: 10), () {
-      setState(() {
-        frontCamera = cameras
-            .where((e) => e.lensFacing == FlutterAnycamLensFacing.front)
-            .firstOrNull;
-      });
-    });
-
-    Future.delayed(const Duration(seconds: 30), () {
-      setState(() {
-        frontCamera = null;
-      });
-    });*/
   }
 
   Uint8List? _img;
@@ -71,8 +55,6 @@ class _MyAppState extends State<MyApp> {
 
   @override
   Widget build(BuildContext _) {
-    final backCamera = cameras[1];
-
     /* final usbCamera = cameras
         .where((e) => e.lensFacing == FlutterAnycamLensFacing.usb)
         .firstOrNull;
@@ -95,8 +77,7 @@ class _MyAppState extends State<MyApp> {
                 SizedBox.expand(
                   key: key,
                   child: FlutterAnycamWidget(
-                    camera: cameras.firstWhere(
-                        (e) => e.lensFacing == FlutterAnycamLensFacing.back),
+                    camera: camera,
                     onFrame: _onFrame,
                   ),
                 ),

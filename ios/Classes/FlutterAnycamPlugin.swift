@@ -27,6 +27,11 @@ public class FlutterAnycamPlugin: NSObject, FlutterPlugin {
         case "availableCameras":
             let cameras = CameraUtil.availableCameras();
             result(cameras)
+        case "setFlash":
+            let data =  call.arguments as? [String: Any?];
+            let value = data?["value"] as? Bool
+            AVCaptureUtil.shared.setFlash(value!)
+            result(true)
         case "convertBGRA8888ToJpeg":
             
             let data =  call.arguments as? [String: Any?];

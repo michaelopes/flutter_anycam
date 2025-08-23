@@ -13,4 +13,12 @@ class FlutterAnycam {
   static Future<List<FlutterAnycamCameraSelector>> availableCameras() {
     return FlutterAnycamPlatform.instance.availableCameras();
   }
+
+  static Future<void> enableFlash() async {
+    FlutterAnycamPlatform.instance.setFlash(true);
+  }
+
+  static Future<void> disableFlash() async {
+    FlutterAnycamPlatform.instance.setFlash(false);
+  }
 }

@@ -160,7 +160,7 @@ public class ImageConverterUtil {
         }
 
         Bitmap rotatedBitmap = Bitmap.createBitmap(bitmap, 0, 0, width, height, matrix, true);
-        
+
         ByteArrayOutputStream finalOut = new ByteArrayOutputStream();
         rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, quality, finalOut);
         byte[] rotatedBytes = finalOut.toByteArray();

@@ -53,6 +53,10 @@ abstract class FlutterAnycamPlatform extends PlatformInterface {
         'convertBGRA8888ToJpeg() has not been implemented.');
   }
 
+  Future<void> setFlash(bool value) {
+    throw UnimplementedError('setFlash() has not been implemented.');
+  }
+
   FlutterAnycamStreamListenerDisposer addStreamListener(
     FlutterAnycamStreamListener listener,
   ) {

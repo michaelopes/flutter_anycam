@@ -27,6 +27,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import br.dev.michaellopes.flutter_anycam.integration.FlutterEventChannel;
+import br.dev.michaellopes.flutter_anycam.utils.CameraUtil;
 import br.dev.michaellopes.flutter_anycam.utils.ContextUtil;
 import br.dev.michaellopes.flutter_anycam.utils.DeviceCameraUtils;
 import br.dev.michaellopes.flutter_anycam.utils.FrameRateLimiterUtil;
@@ -127,11 +128,7 @@ public class DeviceCamera extends BaseCamera {
         if (cameraExecutor != null) {
             cameraExecutor.shutdown();
         }
-
         DeviceCameraUtils.getInstance().dispose(cameraSelector);
-     /*   if (cameraProviderFuture != null) {
-            cameraProviderFuture.cancel(true);
-        }*/
     }
 
     private Integer getCustomRotationDegrees() {
