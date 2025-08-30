@@ -22,7 +22,8 @@ import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.core.content.ContextCompat;
 
 import com.google.common.util.concurrent.ListenableFuture;
-import com.jiangdg.usb.USBMonitor;
+import com.serenegiant.usb.USBMonitor;
+
 
 @SuppressLint("RestrictedApi")
 public class CameraUtil {
@@ -123,11 +124,11 @@ public class CameraUtil {
                         }
 
                         @Override
-                        public void onConnect(UsbDevice device, USBMonitor.UsbControlBlock ctrlBlock, boolean createNew) {
+                        public void onDeviceOpen(UsbDevice device, USBMonitor.UsbControlBlock ctrlBlock, boolean createNew) {
                         }
 
                         @Override
-                        public void onDisconnect(UsbDevice device, USBMonitor.UsbControlBlock ctrlBlock) {
+                        public void onDeviceClose(UsbDevice device, USBMonitor.UsbControlBlock ctrlBlock) {
                         }
 
                         @Override

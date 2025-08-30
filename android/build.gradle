@@ -17,6 +17,11 @@ rootProject.allprojects {
         google()
         mavenCentral()
         maven { url 'https://jitpack.io' }
+
+        flatDir {
+            dirs project(':flutter_anycam').file('libs')
+            // e.g. dirs project(':url_launcher').file('libs')  - don't miss the ':'
+        }
     }
 }
 
@@ -27,7 +32,7 @@ android {
         namespace = "br.dev.michaellopes.flutter_anycam"
     }
 
-    compileSdk = 34
+    compileSdk = 35
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
@@ -42,7 +47,7 @@ android {
 
 
     defaultConfig {
-        minSdk = 24
+        minSdk = 26
     }
 
     dependencies {
@@ -59,6 +64,8 @@ android {
             }
         }
     }
+
+
 }
 
 
@@ -69,14 +76,19 @@ configurations.configureEach {
 }
 
 dependencies {
-    def camerax_version = "1.3.0"
+    def camerax_version = "1.4.0"
     implementation "androidx.camera:camera-core:${camerax_version}"
     implementation "androidx.camera:camera-camera2:${camerax_version}"
     implementation "androidx.camera:camera-lifecycle:${camerax_version}"
+    implementation "androidx.concurrent:concurrent-futures:1.3.0"
     implementation "com.google.guava:guava:31.1-android"
 
-    implementation "androidx.concurrent:concurrent-futures:${camerax_version}"
-    implementation 'com.github.chenyeju295.AndroidUSBCamera:libausbc:3.3.6'
-    implementation 'com.github.chenyeju295.AndroidUSBCamera:libuvc:3.3.6'
-    implementation("com.github.am3n:rtsp-client-android:5.1.0")
+
+    implementation(name: "libuvccamera", ext: "aar")
+    implementation(name: "rtsp-client", ext: "aar")
+
+    //implementation 'com.herohan:UVCAndroid:1.0.9'
+  //implementation 'com.github.chenyeju295.AndroidUSBCamera:libausbc:3.3.6'
+   //implementation 'com.github.chenyeju295.AndroidUSBCamera:libuvc:3.3.6'
+   // implementation "com.github.am3n:rtsp-client-android:5.1.0"
 }

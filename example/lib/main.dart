@@ -22,7 +22,7 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   FlutterAnycamCameraSelector camera =
-      cameras.firstWhere((e) => e.lensFacing == FlutterAnycamLensFacing.back);
+      cameras.firstWhere((e) => e.id == "5002");
 
   UniqueKey key = UniqueKey();
 
