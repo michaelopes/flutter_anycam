@@ -4,8 +4,15 @@
 //
 //  Created by Michael Lopes on 08/08/25.
 //
+
+import AVFoundation
+
 class CameraUtil {
-    static func availableCameras() -> [[String : Any]] {
+    static func availableCameras() -> [[String: Any]] {
+        return self.camerasList()
+    }
+    
+    private static func camerasList() -> [[String: Any]] {
         return [
             [
                 "id": "0",
@@ -19,6 +26,6 @@ class CameraUtil {
                 "lensFacing": "back",
                 "sensorOrientation": 0,
             ]
-        ];
+        ]
     }
 }

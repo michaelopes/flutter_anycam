@@ -6,7 +6,6 @@ import android.os.Looper;
 import androidx.annotation.NonNull;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 import br.dev.michaellopes.flutter_anycam.integration.FlutterEventChannel;
@@ -38,7 +37,7 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
 
     @Override
     public void onAttachedToActivity(@NonNull ActivityPluginBinding binding) {
-        CameraPermissionsUtil.getINSTANCE().init(binding::addRequestPermissionsResultListener);
+        CameraPermissionsUtil.getInstance().init(binding::addRequestPermissionsResultListener);
         CameraUtil.getInstance().init(binding.getActivity());
         ContextUtil.init(binding.getActivity());
         LivecycleUtil.init(binding.getLifecycle());
@@ -67,22 +66,36 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
         eventChannel = new EventChannel(flutterPluginBinding.getBinaryMessenger(), "br.dev.michaellopes.flutter_anycam/event");
 
         channel.setMethodCallHandler(this);
-        eventChannel.setStreamHandler(FlutterEventChannel.getINSTANCE());
+        eventChannel.setStreamHandler(FlutterEventChannel.getInstance());
     }
 
     @Override
     public void onMethodCall(@NonNull MethodCall call, @NonNull Result result) {
-        if (call.method.equals("availableCameras")) {
-            CameraUtil.getInstance().availableCameras(result::success);
-        } else if (call.method.equals("convertNv21ToJpeg")) {
-            convertNv21ToJpeg(call, result);
-        } else if (call.method.equals("setFlash")) {
-            HashMap<?, ?> args = (HashMap<?, ?>)call.arguments;
-            boolean value = (boolean)args.get("value");
-            DeviceCameraUtils.getInstance().setFlash(value);
-            result.success(true);
-        } else {
-            result.notImplemented();
+        switch (call.method) {
+            case "availableCameras":
+                CameraUtil.getInstance().availableCameras(result::success);
+                break;
+            case "requestPermission":
+                CameraPermissionsUtil.getInstance().requestPermissions((String errCode, String errDesc) -> {
+                    if(errCode == null) {
+                        result.success(true);
+                    } else {
+                        result.success(false);
+                    }
+                });
+                break;
+            case "convertNv21ToJpeg":
+                convertNv21ToJpeg(call, result);
+                break;
+            case "setFlash":
+                HashMap<?, ?> args = (HashMap<?, ?>) call.arguments;
+                boolean value = (boolean) args.get("value");
+                DeviceCameraUtils.getInstance().setFlash(value);
+                result.success(true);
+                break;
+            default:
+                result.notImplemented();
+                break;
         }
     }
 

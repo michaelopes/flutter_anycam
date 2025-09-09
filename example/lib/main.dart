@@ -22,19 +22,29 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   FlutterAnycamCameraSelector camera =
-      cameras.firstWhere((e) => e.id == "5002");
+      cameras.firstWhere((e) => e.lensFacing == FlutterAnycamLensFacing.front);
 
-  UniqueKey key = UniqueKey();
+  UniqueKey? key = UniqueKey();
 
   @override
   void initState() {
     super.initState();
 
     Future.delayed(const Duration(milliseconds: 10000), () {
-      FlutterAnycam.enableFlash();
+      setState(() {
+        key = null;
+      });
 
-      Future.delayed(const Duration(milliseconds: 10000), () {
-        FlutterAnycam.disableFlash();
+      Future.delayed(const Duration(seconds: 20), () {
+        setState(() {
+          key = UniqueKey();
+        });
+
+        Future.delayed(const Duration(seconds: 10), () {
+          setState(() {
+            key = UniqueKey();
+          });
+        });
       });
     });
   }
@@ -74,12 +84,26 @@ class _MyAppState extends State<MyApp> {
           return SizedBox.expand(
             child: Stack(
               children: [
-                SizedBox.expand(
-                  key: key,
-                  child: FlutterAnycamWidget(
-                    camera: camera,
-                    onFrame: _onFrame,
-                  ),
+                Column(
+                  children: [
+                    if (key != null)
+                      Expanded(
+                        key: key,
+                        child: FlutterAnycamWidget(
+                          camera: camera,
+                          onFrame: _onFrame,
+                        ),
+                      ),
+                    Expanded(
+                      // key: UniqueKey(),
+                      child: FlutterAnycamWidget(
+                        camera: cameras.firstWhere(
+                          (e) => e.lensFacing == FlutterAnycamLensFacing.back,
+                        ),
+                        onFrame: (_) {},
+                      ),
+                    ),
+                  ],
                 ),
                 if (_img != null)
                   Positioned(

@@ -117,4 +117,10 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
     ));
     return result;
   }
+
+  @override
+  Future<bool> requestPermission() async {
+    final res = await methodChannel.invokeMethod('requestPermission');
+    return res ?? false;
+  }
 }

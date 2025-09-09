@@ -57,6 +57,10 @@ abstract class FlutterAnycamPlatform extends PlatformInterface {
     throw UnimplementedError('setFlash() has not been implemented.');
   }
 
+  Future<bool> requestPermission() {
+    throw UnimplementedError('requestPermission() has not been implemented.');
+  }
+
   FlutterAnycamStreamListenerDisposer addStreamListener(
     FlutterAnycamStreamListener listener,
   ) {

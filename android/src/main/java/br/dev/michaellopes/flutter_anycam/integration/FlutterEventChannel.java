@@ -7,23 +7,22 @@ import android.os.Looper;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Queue;
 
 public class FlutterEventChannel implements  EventChannel.StreamHandler {
 
 
-    private  static FlutterEventChannel INSTANCE;
+    private  static FlutterEventChannel instance;
     private EventChannel.EventSink attachEvent;
 
     private Handler uiHandler = new Handler(Looper.getMainLooper());
 
     private  FlutterEventChannel () {}
 
-    public static FlutterEventChannel getINSTANCE() {
-        if(INSTANCE == null) {
-            INSTANCE = new FlutterEventChannel();
+    public static FlutterEventChannel getInstance() {
+        if(instance == null) {
+            instance = new FlutterEventChannel();
         }
-        return INSTANCE;
+        return instance;
     }
 
     @Override

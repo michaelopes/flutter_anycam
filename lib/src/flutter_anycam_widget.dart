@@ -7,7 +7,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_anycam/src/flutter_anycam_frame.dart';
 
 import 'flutter_anycam_camera_selector.dart';
+import 'flutter_anycam_lifecycle.dart';
 import 'flutter_anycam_mesure.dart';
+import 'flutter_anycam_permission_handler.dart';
 import 'flutter_anycam_platform_interface.dart';
 import 'flutter_anycam_preview_info.dart';
 import 'flutter_anycam_rotation.dart';
@@ -57,6 +59,11 @@ class _FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
   bool autoRetryTrigged = false;
 
   bool _isInactive = false;
+  int vId = -1;
+
+  late final _livecicle = FlutterAnycamLifecycle(
+    onExecute: _refresh,
+  );
 
   // ignore: unused_field
   FlutterAnycamPreviewInfo? _previewInfo;
@@ -80,9 +87,10 @@ class _FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
       _listenerDisposer?.call();
     }
 
+    vId = widget.viewId ?? id;
     _listenerDisposer = FlutterAnycamPlatform.instance.addStreamListener(
       FlutterAnycamStreamListener(
-        viewId: widget.viewId ?? id,
+        viewId: vId,
         onConnected: (data) {
           _disconnectDeboucer?.cancel();
           debugPrint("CM: onConnected");
@@ -116,11 +124,23 @@ class _FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
             );
           }
         },
-        onUnauthorized: (data) {
+        onUnauthorized: (data) async {
           debugPrint("CM: onUnauthorized");
-          setState(() {
-            _viewState = _ViewState.unauthorized;
-          });
+          if (_viewState != _ViewState.unauthorized) {
+            setState(() {
+              _viewState = _ViewState.unauthorized;
+            });
+            if (widget.camera.lensFacing != FlutterAnycamLensFacing.rtsp) {
+              FlutterAnycamPermissionHandler.I.requestPermission(
+                viewId: vId,
+                onResult: (result) {
+                  if (result) {
+                    _refresh();
+                  }
+                },
+              );
+            }
+          }
         },
         onDisconnected: (data) {
           debugPrint("CM: onDisconnected");
@@ -169,11 +189,12 @@ class _FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.inactive && !_isInactive) {
+    if (state == AppLifecycleState.paused && !_isInactive) {
       _isInactive = true;
-      _refresh();
-    } else if (state == AppLifecycleState.resumed) {
+      _livecicle.pause();
+    } else if (state == AppLifecycleState.resumed && _isInactive) {
       _isInactive = false;
+      _livecicle.resume();
     }
     super.didChangeAppLifecycleState(state);
   }
@@ -215,7 +236,7 @@ class _FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
               ),
       );
 
-  Widget get _buildNotConnectedStates {
+  Widget get _buildStates {
     switch (_viewState) {
       case _ViewState.disconnected:
         return _buildDisconnected;
@@ -231,7 +252,7 @@ class _FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
     }
   }
 
-  Widget _buildNonConnect({required String message}) {
+  Widget _buildState({required String message}) {
     return SizedBox.expand(
       child: Padding(
         padding: const EdgeInsets.all(8),
@@ -248,7 +269,21 @@ class _FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
               height: 24,
             ),
             TextButton(
-              onPressed: _refresh,
+              onPressed: () {
+                if (_viewState == _ViewState.unauthorized &&
+                    widget.camera.lensFacing != FlutterAnycamLensFacing.rtsp) {
+                  FlutterAnycamPermissionHandler.I.requestPermission(
+                    viewId: vId,
+                    onResult: (result) {
+                      if (result) {
+                        _refresh();
+                      }
+                    },
+                  );
+                } else {
+                  _refresh();
+                }
+              },
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -270,15 +305,15 @@ class _FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
   }
 
   Widget get _buildDisconnected {
-    return _buildNonConnect(message: widget.texts.disconnectedMessage);
+    return _buildState(message: widget.texts.disconnectedMessage);
   }
 
   Widget get _buildFailure {
-    return _buildNonConnect(message: widget.texts.failureMessage);
+    return _buildState(message: widget.texts.failureMessage);
   }
 
   Widget get _buildUnauthorized {
-    return _buildNonConnect(message: widget.texts.unauthorizedMessage);
+    return _buildState(message: widget.texts.unauthorizedMessage);
   }
 
   Widget get _infos {
@@ -314,7 +349,7 @@ class _FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
                 IndexedStack(
                   index: _ViewState.connected == _viewState ? 1 : 0,
                   children: [
-                    _buildNotConnectedStates,
+                    _buildStates,
                     LayoutBuilder(builder: (_, x) {
                       return SizedBox(
                         width: x.maxWidth,

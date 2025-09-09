@@ -13,6 +13,8 @@ class FlutterViewFactory: NSObject, FlutterPlatformViewFactory {
     }
     
     func create(withFrame frame: CGRect, viewIdentifier viewId: Int64, arguments args: Any?) -> FlutterPlatformView {
-        return FlutterView(frame: frame,  viewId: viewId, args: args)
+        var platformView: FlutterPlatformView!
+        platformView = FlutterView(frame: frame, viewId: viewId, args: args)
+        return platformView
     }
 }

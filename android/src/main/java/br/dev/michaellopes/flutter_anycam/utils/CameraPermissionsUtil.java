@@ -9,7 +9,7 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 public final class CameraPermissionsUtil {
-    private static CameraPermissionsUtil INSTANCE;
+    private static CameraPermissionsUtil instance;
 
   public interface PermissionsRegistry {
         @SuppressWarnings("deprecation")
@@ -40,11 +40,11 @@ public final class CameraPermissionsUtil {
     CameraPermissionsUtil() {
     }
 
-    public static CameraPermissionsUtil getINSTANCE() {
-        if(INSTANCE == null) {
-            INSTANCE = new CameraPermissionsUtil();
+    public static CameraPermissionsUtil getInstance() {
+        if(instance == null) {
+            instance = new CameraPermissionsUtil();
         }
-        return INSTANCE;
+        return instance;
     }
 
 
@@ -63,7 +63,7 @@ public final class CameraPermissionsUtil {
                     CAMERA_PERMISSIONS_REQUEST_ONGOING, CAMERA_PERMISSIONS_REQUEST_ONGOING_MESSAGE);
             return;
         }
-        if (!hasCameraPermission(getActivity())) {
+        if (!hasCameraPermission()) {
             permissionsRegistry.addListener(
                     new CameraRequestPermissionsListener(
                             (String errorCode, String errorDescription) -> {
@@ -81,8 +81,8 @@ public final class CameraPermissionsUtil {
         }
     }
 
-    private boolean hasCameraPermission(Activity activity) {
-        return ContextCompat.checkSelfPermission(activity, permission.CAMERA)
+    public boolean hasCameraPermission() {
+        return ContextCompat.checkSelfPermission(getActivity(), permission.CAMERA)
                 == PackageManager.PERMISSION_GRANTED;
     }
 

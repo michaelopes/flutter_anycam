@@ -4,9 +4,7 @@ import android.content.Context;
 import android.hardware.usb.UsbInterface;
 import android.hardware.usb.UsbManager;
 import android.hardware.usb.UsbDevice;
-import android.util.Log;
 
-import com.herohan.uvcapp.CameraHelper;
 import com.serenegiant.usb.IFrameCallback;
 import com.serenegiant.usb.Size;
 import com.serenegiant.usb.USBMonitor;
@@ -44,7 +42,7 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
                 frameWait = true;
                 executor.execute(()-> {
                     Map<String, Object> imageData = imageAnalysisUtil.usbFrameToFlutterResult(frame, size.width, size.height, getCustomRotationDegrees());
-                    FlutterEventChannel.getINSTANCE().send(viewId, "onVideoFrameReceived", imageData);
+                    FlutterEventChannel.getInstance().send(viewId, "onVideoFrameReceived", imageData);
                     frameWait = false;
                 });
 
@@ -109,7 +107,7 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
                     isAttached = true;
                 }
             } else {
-                FlutterEventChannel.getINSTANCE().send(viewId, "onUnauthorized", new HashMap());
+                FlutterEventChannel.getInstance().send(viewId, "onUnauthorized", new HashMap());
             }
         }
     }
@@ -142,9 +140,9 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
                     result.put("isPortrait", false);
                     result.put("rotation", 0);
 
-                    FlutterEventChannel.getINSTANCE().send(viewId, "onConnected", result);
+                    FlutterEventChannel.getInstance().send(viewId, "onConnected", result);
                 } catch (Exception e) {
-                    FlutterEventChannel.getINSTANCE().send(viewId, "onFailed", new HashMap() {{
+                    FlutterEventChannel.getInstance().send(viewId, "onFailed", new HashMap() {{
                         put("message", e.getMessage());
                     }});
                     e.printStackTrace();
@@ -159,7 +157,7 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
         if (mUVCCamera != null) {
             mUVCCamera.close();
         }
-        FlutterEventChannel.getINSTANCE().send(viewId, "onDisconnected", new HashMap());
+        FlutterEventChannel.getInstance().send(viewId, "onDisconnected", new HashMap());
     }
 
 
@@ -169,7 +167,7 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
         if (mUVCCamera != null) {
             mUVCCamera.close();
         }
-        FlutterEventChannel.getINSTANCE().send(viewId, "onDisconnected", new HashMap());
+        FlutterEventChannel.getInstance().send(viewId, "onDisconnected", new HashMap());
     }
 
     @Override

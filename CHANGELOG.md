@@ -34,3 +34,6 @@ Correção no sistema de permissão da camera android
 
 ## 1.0.11
 Suporte a dispositivos de 16 KB
+
+## 1.0.12
+Sistema de permissões aprimorado
