@@ -13,7 +13,7 @@ class CameraFactory {
        self.frame = frame
     }
     
-    func getCamera(vId: Int, args: Any?) -> BaseCamera{
+    func getCamera(vId: Int, args: Any?) -> BaseCamera {
     
         self.params = (args as? [String: Any?]) ?? [String: Any?]();
         let map = params["cameraSelector"] as? [String : Any?];

@@ -11,12 +11,13 @@ class FlutterView: NSObject, FlutterPlatformView {
     private let cameraView: BaseCamera
     
     init(frame: CGRect, viewId: Int64, args: Any?) {
-        print("aki 2")
         let factory = CameraFactory(frame: frame);
         cameraView = factory.getCamera(vId: Int(viewId), args: args)
-        cameraView.run();
+        self.cameraView.run()   
         super.init()
+      
     }
+    
     
     func view() -> UIView {
         return cameraView

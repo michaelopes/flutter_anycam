@@ -36,8 +36,7 @@ class FlutterEventStreamChannel: NSObject, FlutterStreamHandler  {
         DispatchQueue.main.async {
             self.eventSink?(result)
         }
-        
     }
     
-    
 }
+

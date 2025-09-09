@@ -15,7 +15,7 @@ import br.dev.michaellopes.flutter_anycam.utils.ImageAnalysisUtil;
 public abstract class BaseCamera {
     protected int viewId;
 
-    protected  SurfaceHolder surfaceHolder;
+    protected SurfaceHolder surfaceHolder;
     protected SurfaceView surfaceView;
 
     protected ViewCameraSelector cameraSelector;
@@ -26,7 +26,7 @@ public abstract class BaseCamera {
 
 
     public BaseCamera(int viewId, Map<String, Object> params) {
-        if(params.get("cameraSelector") != null) {
+        if (params.get("cameraSelector") != null) {
             final Map<String, Object> cs = (Map<String, Object>) params.get("cameraSelector");
             cameraSelector = ViewCameraSelector.fromMap(cs);
         }
@@ -35,30 +35,30 @@ public abstract class BaseCamera {
     }
 
     protected int getFps() {
-        if(params.get("fps") != null) {
-            return  (int) params.get("fps");
+        if (params.get("fps") != null) {
+            return (int) params.get("fps");
         }
-        return  5;
+        return 5;
     }
 
     public synchronized void run() {
-        CameraPermissionsUtil.getINSTANCE().requestPermissions((String errCode, String errDesc) -> {
-            if(errCode == null) {
-                init();
-            } else {
-               FlutterEventChannel.getINSTANCE().send(viewId, "onUnauthorized", new HashMap());
-            }
-        });
+        if (cameraSelector.getCameraSelectorRTSP() != null) {
+            init();
+        } else if (CameraPermissionsUtil.getInstance().hasCameraPermission()) {
+            init();
+        } else {
+            FlutterEventChannel.getInstance().send(viewId, "onUnauthorized", new HashMap());
+        }
     }
 
     protected abstract void init();
 
-    public  void setSurfaceHolder(SurfaceHolder surfaceHolder) {
+    public void setSurfaceHolder(SurfaceHolder surfaceHolder) {
         this.surfaceHolder = surfaceHolder;
     }
 
 
-    public  SurfaceView createSurfaceView(Context context) {
+    public SurfaceView createSurfaceView(Context context) {
         if (surfaceView == null) {
             surfaceView = new SurfaceView(context);
         }

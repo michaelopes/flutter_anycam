@@ -1,5 +1,6 @@
 import Flutter
 import UIKit
+import AVFoundation
 
 public class FlutterAnycamPlugin: NSObject, FlutterPlugin {
     
@@ -25,8 +26,40 @@ public class FlutterAnycamPlugin: NSObject, FlutterPlugin {
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         switch call.method {
         case "availableCameras":
-            let cameras = CameraUtil.availableCameras();
-            result(cameras)
+            
+            let cameras =  CameraUtil.availableCameras()
+            DispatchQueue.main.async {
+                result(cameras)
+            }
+            
+            
+        case "requestPermission":
+            let status = AVCaptureDevice.authorizationStatus(for: .video)
+            switch status {
+            case .authorized:
+                DispatchQueue.main.async {
+                    result(true)
+                }
+            case .notDetermined:
+                AVCaptureDevice.requestAccess(for: .video) { granted in
+                    DispatchQueue.main.async {
+                        if granted {
+                            DispatchQueue.main.async {
+                                result(true)
+                            }
+                        } else {
+                            DispatchQueue.main.async {
+                                result(false)
+                            }
+                        }
+                    }
+                }
+                
+            default:
+                DispatchQueue.main.async {
+                    result(false)
+                }
+            }
         case "setFlash":
             let data =  call.arguments as? [String: Any?];
             let value = data?["value"] as? Bool
@@ -60,7 +93,7 @@ public class FlutterAnycamPlugin: NSObject, FlutterPlugin {
                                                                width: width!,
                                                                height: height!,
                                                                quality: quality == 0 ? 0 : CGFloat(quality! / 100)
-                
+                                                               
             )
             
             DispatchQueue.main.async {

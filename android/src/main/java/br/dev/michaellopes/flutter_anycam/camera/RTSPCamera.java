@@ -5,14 +5,12 @@ import android.graphics.Bitmap;
 import android.media.Image;
 import android.media.MediaCodec;
 import android.media.MediaFormat;
-import android.util.Log;
 import android.view.Surface;
 import android.view.SurfaceView;
 
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.camera.core.ImageProxy;
 
 import br.dev.michaellopes.flutter_anycam.integration.FlutterEventChannel;
 import br.dev.michaellopes.flutter_anycam.utils.FrameRateLimiterUtil;
@@ -44,7 +42,7 @@ public class RTSPCamera extends BaseCamera {
             int h = frameItem.image.getHeight();
          //   Log.i("RTSPCamera", "Process onVideoFrameReceived");
             Map<String, Object> imageData = imageAnalysisUtil.rtspFrameToFlutterResult(frameItem.frame.getData(), w, h, getCustomRotationDegrees());
-            FlutterEventChannel.getINSTANCE().send(viewId, "onVideoFrameReceived", imageData);
+            FlutterEventChannel.getInstance().send(viewId, "onVideoFrameReceived", imageData);
         }
     };
 
@@ -96,7 +94,7 @@ public class RTSPCamera extends BaseCamera {
 
                 @Override
                 public void onConnected(@NonNull SdpInfo sdpInfo) {
-                    FlutterEventChannel.getINSTANCE().send(viewId, "onConnected", new HashMap());
+                    FlutterEventChannel.getInstance().send(viewId, "onConnected", new HashMap());
                 }
 
                 @Override
@@ -112,7 +110,7 @@ public class RTSPCamera extends BaseCamera {
                     if (vd != null) {
                         vd.dispose();
                     }
-                    FlutterEventChannel.getINSTANCE().send(viewId, "onDisconnected", new HashMap());
+                    FlutterEventChannel.getInstance().send(viewId, "onDisconnected", new HashMap());
                 }
 
                 @Override
@@ -120,7 +118,7 @@ public class RTSPCamera extends BaseCamera {
                     if (vd != null) {
                         vd.dispose();
                     }
-                    FlutterEventChannel.getINSTANCE().send(viewId, "onUnauthorized", new HashMap());
+                    FlutterEventChannel.getInstance().send(viewId, "onUnauthorized", new HashMap());
                 }
 
                 @Override
@@ -128,7 +126,7 @@ public class RTSPCamera extends BaseCamera {
                     if (vd != null) {
                         vd.dispose();
                     }
-                    FlutterEventChannel.getINSTANCE().send(viewId, "onFailed", new HashMap() {{
+                    FlutterEventChannel.getInstance().send(viewId, "onFailed", new HashMap() {{
                         put("message", s);
                     }});
                 }
@@ -139,7 +137,7 @@ public class RTSPCamera extends BaseCamera {
             rtsp.start(true, false);
 
         } catch (Exception e) {
-            FlutterEventChannel.getINSTANCE().send(viewId, "onFailed", new HashMap() {{
+            FlutterEventChannel.getInstance().send(viewId, "onFailed", new HashMap() {{
                 put("message", e.getMessage());
             }});
         }

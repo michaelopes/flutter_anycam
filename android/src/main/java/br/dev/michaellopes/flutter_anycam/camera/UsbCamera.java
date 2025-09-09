@@ -4,15 +4,16 @@ import android.content.Context;
 import android.hardware.usb.UsbInterface;
 import android.hardware.usb.UsbManager;
 import android.hardware.usb.UsbDevice;
-import android.util.Log;
 
-
-import com.jiangdg.usb.USBMonitor;
-import com.jiangdg.uvc.IFrameCallback;
-import com.jiangdg.uvc.UVCCamera;
+import com.serenegiant.usb.IFrameCallback;
+import com.serenegiant.usb.Size;
+import com.serenegiant.usb.USBMonitor;
+import com.serenegiant.usb.UVCCamera;
+import com.serenegiant.usb.UVCParam;
 
 import java.nio.ByteBuffer;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
@@ -32,15 +33,16 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
 
     private final Executor executor = Executors.newSingleThreadExecutor();
 
+    private Size size;
+
     FrameRateLimiterUtil<ByteBuffer> limiter = new FrameRateLimiterUtil<ByteBuffer>(getFps()) {
         @Override
         protected void onFrameLimited(ByteBuffer frame) {
             if(!frameWait ) {
                 frameWait = true;
                 executor.execute(()-> {
-                   // Log.i("UsbCamera", "Process onVideoFrameReceived");
-                    Map<String, Object> imageData = imageAnalysisUtil.usbFrameToFlutterResult(frame, 640, 480, getCustomRotationDegrees());
-                    FlutterEventChannel.getINSTANCE().send(viewId, "onVideoFrameReceived", imageData);
+                    Map<String, Object> imageData = imageAnalysisUtil.usbFrameToFlutterResult(frame, size.width, size.height, getCustomRotationDegrees());
+                    FlutterEventChannel.getInstance().send(viewId, "onVideoFrameReceived", imageData);
                     frameWait = false;
                 });
 
@@ -95,7 +97,6 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
         limiter.onNewFrame(frame);
     }
 
-
     @Override
     public void onAttach(UsbDevice device) {
         String deviceId = String.valueOf(device.getDeviceId());
@@ -106,7 +107,7 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
                     isAttached = true;
                 }
             } else {
-                FlutterEventChannel.getINSTANCE().send(viewId, "onUnauthorized", new HashMap());
+                FlutterEventChannel.getInstance().send(viewId, "onUnauthorized", new HashMap());
             }
         }
     }
@@ -117,29 +118,31 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
     }
 
     @Override
-    public void onConnect(UsbDevice device, USBMonitor.UsbControlBlock ctrlBlock, boolean createNew) {
+    public void onDeviceOpen(UsbDevice device, USBMonitor.UsbControlBlock ctrlBlock, boolean createNew) {
         String deviceId = String.valueOf(device.getDeviceId());
         if (deviceId.equals(cameraSelector.getId())) {
 
             if (surfaceHolder != null) {
                 try {
-                    mUVCCamera = new UVCCamera();
+
+                    UVCParam param = new UVCParam();
+                    mUVCCamera = new UVCCamera(param);
                     mUVCCamera.open(ctrlBlock);
-                    mUVCCamera.setPreviewSize(640, 480, UVCCamera.FRAME_FORMAT_MJPEG);
-                    mUVCCamera.setBrightness(100);
-                    mUVCCamera.setFrameCallback(UsbCamera.this, UVCCamera.PIXEL_FORMAT_YUV420SP);
+                    size = getClosestSize(mUVCCamera.getSupportedSizeList(), 640, 480);
+                    mUVCCamera.setPreviewSize(size);
+                    mUVCCamera.setFrameCallback(UsbCamera.this, UVCCamera.PIXEL_FORMAT_NV21);
                     mUVCCamera.setPreviewDisplay(surfaceHolder);
                     mUVCCamera.startPreview();
 
                     final Map<String, Object> result = new HashMap<>();
-                    result.put("width",640);
-                    result.put("height", 480);
+                    result.put("width",size.width);
+                    result.put("height", size.height);
                     result.put("isPortrait", false);
                     result.put("rotation", 0);
 
-                    FlutterEventChannel.getINSTANCE().send(viewId, "onConnected", result);
+                    FlutterEventChannel.getInstance().send(viewId, "onConnected", result);
                 } catch (Exception e) {
-                    FlutterEventChannel.getINSTANCE().send(viewId, "onFailed", new HashMap() {{
+                    FlutterEventChannel.getInstance().send(viewId, "onFailed", new HashMap() {{
                         put("message", e.getMessage());
                     }});
                     e.printStackTrace();
@@ -150,18 +153,44 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
     }
 
     @Override
-    public void onDisconnect(UsbDevice device, USBMonitor.UsbControlBlock ctrlBlock) {
+    public void onDeviceClose(UsbDevice device, USBMonitor.UsbControlBlock ctrlBlock) {
         if (mUVCCamera != null) {
             mUVCCamera.close();
         }
-        FlutterEventChannel.getINSTANCE().send(viewId, "onDisconnected", new HashMap());
+        FlutterEventChannel.getInstance().send(viewId, "onDisconnected", new HashMap());
     }
+
+
 
     @Override
     public void onCancel(UsbDevice device) {
-
+        if (mUVCCamera != null) {
+            mUVCCamera.close();
+        }
+        FlutterEventChannel.getInstance().send(viewId, "onDisconnected", new HashMap());
     }
 
+    @Override
+    public void onError(UsbDevice device, USBMonitor.USBException e) {
+        USBMonitor.OnDeviceConnectListener.super.onError(device, e);
+    }
+    private Size getClosestSize(List<Size> sizes, int targetWidth, int targetHeight) {
+        if (sizes == null || sizes.isEmpty()) return null;
+
+        Size closest = sizes.get(0);
+        int minDiff = Math.abs(closest.width - targetWidth) + Math.abs(closest.height - targetHeight);
+
+        for (Size s : sizes) {
+            if(s.type == 7) {
+                int diff = Math.abs(s.width - targetWidth) + Math.abs(s.height - targetHeight);
+                if (diff < minDiff) {
+                    closest = s;
+                    minDiff = diff;
+                }
+            }
+        }
+        return closest;
+    }
     @Override
     public void dispose() {
         if (mUSBMonitor != null) {
@@ -174,4 +203,7 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
         }
         mUVCCamera = null;
     }
+
+
+
 }

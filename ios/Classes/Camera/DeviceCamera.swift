@@ -77,6 +77,7 @@ class DeviceCamera : BaseCamera {
         
         captureSession.commitConfiguration()
         
+        
         previewLayer = AVCaptureVideoPreviewLayer(session: captureSession)
         previewLayer?.videoGravity = .resizeAspectFill
         previewLayer?.frame = bounds
@@ -129,8 +130,7 @@ class DeviceCamera : BaseCamera {
                 }
             }
         }
-        
-        
+
         previewLayer?.removeFromSuperlayer()
         previewLayer = nil
         videoOutput = nil

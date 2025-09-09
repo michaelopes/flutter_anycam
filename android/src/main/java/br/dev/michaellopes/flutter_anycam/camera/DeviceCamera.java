@@ -6,29 +6,20 @@ import android.util.Size;
 import android.view.Surface;
 
 import androidx.annotation.NonNull;
-import androidx.camera.camera2.internal.Camera2CameraInfoImpl;
 
 
-import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ImageProxy;
 import androidx.camera.core.Preview;
 import androidx.camera.core.SurfaceRequest;
-import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.camera.core.ImageAnalysis;
-import androidx.core.content.ContextCompat;
-
-import com.google.common.util.concurrent.ListenableFuture;
 
 import java.util.HashMap;
 import java.util.Map;
 
-import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import br.dev.michaellopes.flutter_anycam.integration.FlutterEventChannel;
-import br.dev.michaellopes.flutter_anycam.utils.CameraUtil;
-import br.dev.michaellopes.flutter_anycam.utils.ContextUtil;
 import br.dev.michaellopes.flutter_anycam.utils.DeviceCameraUtils;
 import br.dev.michaellopes.flutter_anycam.utils.FrameRateLimiterUtil;
 
@@ -84,10 +75,10 @@ public class DeviceCamera extends BaseCamera {
                result.put("isPortrait", 0);
                result.put("rotation", 0);
 
-               FlutterEventChannel.getINSTANCE().send(viewId, "onConnected", result);
+               FlutterEventChannel.getInstance().send(viewId, "onConnected", result);
 
            } catch (Exception e) {
-               FlutterEventChannel.getINSTANCE().send(viewId, "onFailed", new HashMap() {{
+               FlutterEventChannel.getInstance().send(viewId, "onFailed", new HashMap() {{
                    put("message", e.getMessage());
                }});
                e.printStackTrace();
@@ -141,7 +132,7 @@ public class DeviceCamera extends BaseCamera {
             //  Log.i("DeviceCamera", "Process onVideoFrameReceived");
 
             Map<String, Object> imageData = imageAnalysisUtil.imageProxyToFlutterResult(image, getCustomRotationDegrees());
-            FlutterEventChannel.getINSTANCE().send(viewId, "onVideoFrameReceived", imageData);
+            FlutterEventChannel.getInstance().send(viewId, "onVideoFrameReceived", imageData);
         } catch (Exception e) {
             throw new RuntimeException(e);
         } finally {

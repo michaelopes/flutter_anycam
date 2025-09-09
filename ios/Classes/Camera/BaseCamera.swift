@@ -8,6 +8,8 @@ import AVFoundation
 
 class BaseCamera: UIView {
     
+    static var waitPermission = false;
+    
     var viewId: Int
     var params:  [String : Any?] = [String: Any?]();
     var cameraSelector: ViewCameraSelector?
@@ -35,18 +37,10 @@ class BaseCamera: UIView {
         let status = AVCaptureDevice.authorizationStatus(for: .video);
         if(status == .authorized) {
             DispatchQueue.main.async {
-                 self.exec()
+                self.exec()
             }
         } else {
-            AVCaptureDevice.requestAccess(for: .video) { granted in
-                if granted {
-                    DispatchQueue.main.async {
-                        self.exec()
-                    }
-                } else {
-                    FlutterEventStreamChannel.shared.send(self.viewId, "onUnauthorized", [String : Any?]());
-                }
-            }
+            FlutterEventStreamChannel.shared.send(self.viewId, "onUnauthorized", [String : Any?]());
         }
     }
     
