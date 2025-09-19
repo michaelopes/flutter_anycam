@@ -30,7 +30,7 @@ class _MyAppState extends State<MyApp> {
   void initState() {
     super.initState();
 
-    Future.delayed(const Duration(milliseconds: 10000), () {
+    /*  Future.delayed(const Duration(milliseconds: 10000), () {
       setState(() {
         key = null;
       });
@@ -46,7 +46,7 @@ class _MyAppState extends State<MyApp> {
           });
         });
       });
-    });
+    });*/
   }
 
   Uint8List? _img;
@@ -54,6 +54,7 @@ class _MyAppState extends State<MyApp> {
   Future<void> _onFrame(FlutterAnycamFrame frame) async {
     //Frame para jpeg
     // ignore: unused_local_variable
+    print(frame);
     final img = await FlutterAnycam.frameConversor.convertToJpeg(
       frame: frame,
     );
@@ -86,21 +87,22 @@ class _MyAppState extends State<MyApp> {
               children: [
                 Column(
                   children: [
-                    if (key != null)
+                    /* if (key != null)
                       Expanded(
                         key: key,
                         child: FlutterAnycamWidget(
                           camera: camera,
                           onFrame: _onFrame,
                         ),
-                      ),
+                      ),*/
                     Expanded(
                       // key: UniqueKey(),
                       child: FlutterAnycamWidget(
+                        preferredSize: const FlutterAnycamSize(1088, 1088),
                         camera: cameras.firstWhere(
-                          (e) => e.lensFacing == FlutterAnycamLensFacing.back,
+                          (e) => e.lensFacing == FlutterAnycamLensFacing.usb,
                         ),
-                        onFrame: (_) {},
+                        onFrame: _onFrame,
                       ),
                     ),
                   ],

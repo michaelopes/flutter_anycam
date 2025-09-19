@@ -1,6 +1,7 @@
 package br.dev.michaellopes.flutter_anycam.camera;
 
 import android.content.Context;
+import android.util.Size;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 
@@ -20,6 +21,8 @@ public abstract class BaseCamera {
 
     protected ViewCameraSelector cameraSelector;
 
+    protected Size preferredSize = new Size(640, 480);
+
     protected final Map<String, Object> params;
 
     protected final ImageAnalysisUtil imageAnalysisUtil = new ImageAnalysisUtil();
@@ -29,6 +32,10 @@ public abstract class BaseCamera {
         if (params.get("cameraSelector") != null) {
             final Map<String, Object> cs = (Map<String, Object>) params.get("cameraSelector");
             cameraSelector = ViewCameraSelector.fromMap(cs);
+        }
+        if (params.get("preferredSize") != null) {
+            final Map<String, Object> cs = (Map<String, Object>) params.get("preferredSize");
+            preferredSize = new Size((int)cs.get("width"), (int)cs.get("height"));;
         }
         this.params = params;
         this.viewId = viewId;

@@ -1,3 +1,4 @@
+// ignore_for_file: public_member_api_docs, sort_constructors_first
 import 'dart:typed_data';
 
 class FlutterAnycamFrame {
@@ -40,6 +41,11 @@ class FlutterAnycamFrame {
       'rotation': rotation,
       'planes': planes.map((p) => p.toMap()).toList(),
     };
+  }
+
+  @override
+  String toString() {
+    return 'FlutterAnycamFrame(format: $format, width: $width, height: $height, rotation: $rotation, bytes: [bytes(${bytes.length})])';
   }
 }
 

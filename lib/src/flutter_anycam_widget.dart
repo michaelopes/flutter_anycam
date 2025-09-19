@@ -13,6 +13,7 @@ import 'flutter_anycam_permission_handler.dart';
 import 'flutter_anycam_platform_interface.dart';
 import 'flutter_anycam_preview_info.dart';
 import 'flutter_anycam_rotation.dart';
+import 'flutter_anycam_size.dart';
 import 'flutter_anycam_stream_listener.dart';
 import 'flutter_anycam_texts.dart';
 import 'flutter_anycam_typedefs.dart';
@@ -30,8 +31,17 @@ class FlutterAnycamWidget extends StatefulWidget {
     this.autoRetry = false,
     this.fps = 5,
     this.aspectRatio,
+
+    /// An Android-only parameter.
+    ///
+    /// This parameter has no effect on iOS platform.
+    this.preferredSize = const FlutterAnycamSize(640, 480),
   });
 
+  /// An Android-only parameter.
+  ///
+  /// This parameter has no effect on iOS platform.
+  final FlutterAnycamSize preferredSize;
   final int? viewId;
   final bool enableDebug;
   final FlutterAnycamTexts texts;
@@ -214,6 +224,7 @@ class _FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
   Map<String, dynamic> get _params => {
         "viewId": widget.viewId,
         "cameraSelector": widget.camera.toMap(),
+        "preferredSize": widget.preferredSize.toMap(),
         "fps": widget.fps,
       };
 
@@ -334,6 +345,19 @@ class _FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
     );
   }
 
+  double getAspectRatio(double width, double height) {
+    if (Platform.isAndroid) {
+      if (widget.camera.lensFacing == FlutterAnycamLensFacing.front ||
+          widget.camera.lensFacing == FlutterAnycamLensFacing.back) {
+        return 1;
+      } else {
+        return width / height;
+      }
+    } else {
+      return width / height;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(builder: (_, constraints) {
@@ -361,11 +385,10 @@ class _FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
                             child: SizedBox(
                               width: x.maxWidth,
                               child: AspectRatio(
-                                aspectRatio: Platform.isAndroid &&
-                                        widget.camera.lensFacing !=
-                                            FlutterAnycamLensFacing.rtsp
-                                    ? .9
-                                    : x.maxWidth / constraints.maxHeight,
+                                aspectRatio: getAspectRatio(
+                                  x.maxWidth,
+                                  constraints.maxHeight,
+                                ),
                                 child: _generateView,
                               ),
                             ),

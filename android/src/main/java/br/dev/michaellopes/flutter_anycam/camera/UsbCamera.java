@@ -128,7 +128,7 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
                     UVCParam param = new UVCParam();
                     mUVCCamera = new UVCCamera(param);
                     mUVCCamera.open(ctrlBlock);
-                    size = getClosestSize(mUVCCamera.getSupportedSizeList(), 640, 480);
+                    size = getClosestSize(mUVCCamera.getSupportedSizeList());
                     mUVCCamera.setPreviewSize(size);
                     mUVCCamera.setFrameCallback(UsbCamera.this, UVCCamera.PIXEL_FORMAT_NV21);
                     mUVCCamera.setPreviewDisplay(surfaceHolder);
@@ -174,10 +174,12 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
     public void onError(UsbDevice device, USBMonitor.USBException e) {
         USBMonitor.OnDeviceConnectListener.super.onError(device, e);
     }
-    private Size getClosestSize(List<Size> sizes, int targetWidth, int targetHeight) {
+    private Size getClosestSize(List<Size> sizes) {
         if (sizes == null || sizes.isEmpty()) return null;
 
         Size closest = sizes.get(0);
+        int targetWidth = preferredSize.getWidth();
+        int targetHeight = preferredSize.getHeight();
         int minDiff = Math.abs(closest.width - targetWidth) + Math.abs(closest.height - targetHeight);
 
         for (Size s : sizes) {
@@ -191,6 +193,7 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
         }
         return closest;
     }
+
     @Override
     public void dispose() {
         if (mUSBMonitor != null) {
