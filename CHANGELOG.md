@@ -37,3 +37,6 @@ Suporte a dispositivos de 16 KB
 
 ## 1.0.12
 Sistema de permissões aprimorado
+
+## 1.0.13
+Suporte a preferredSize para seleção de resolução dos frames
