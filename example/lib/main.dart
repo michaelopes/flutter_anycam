@@ -21,29 +21,30 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  FlutterAnycamCameraSelector camera =
-      cameras.firstWhere((e) => e.lensFacing == FlutterAnycamLensFacing.front);
+  /*FlutterAnycamCameraSelector camera =
+      cameras.firstWhere((e) => e.lensFacing == FlutterAnycamLensFacing.front);*/
 
-  UniqueKey? key = UniqueKey();
+  bool show1 = false;
+  bool show2 = true;
 
   @override
   void initState() {
     super.initState();
 
+    /* Future.delayed(const Duration(seconds: 20), () {
+      setState(() {
+        show1 = true;
+      });
+    });*/
+
     /*  Future.delayed(const Duration(milliseconds: 10000), () {
       setState(() {
-        key = null;
+        show1 = false;
       });
 
       Future.delayed(const Duration(seconds: 20), () {
         setState(() {
-          key = UniqueKey();
-        });
-
-        Future.delayed(const Duration(seconds: 10), () {
-          setState(() {
-            key = UniqueKey();
-          });
+          show2 = false;
         });
       });
     });*/
@@ -63,6 +64,8 @@ class _MyAppState extends State<MyApp> {
       _img = img;
     });
   }
+
+  final k = UniqueKey();
 
   @override
   Widget build(BuildContext _) {
@@ -95,16 +98,33 @@ class _MyAppState extends State<MyApp> {
                           onFrame: _onFrame,
                         ),
                       ),*/
-                    Expanded(
-                      // key: UniqueKey(),
-                      child: FlutterAnycamWidget(
-                        preferredSize: const FlutterAnycamSize(1088, 1088),
-                        camera: cameras.firstWhere(
-                          (e) => e.lensFacing == FlutterAnycamLensFacing.usb,
+                    if (show1)
+                      Expanded(
+                        child: FlutterAnycamWidget(
+                          key: k,
+                          //   preferredSize: const FlutterAnycamSize(1280, 720),
+                          camera: cameras.firstWhere(
+                            (e) => e.lensFacing == FlutterAnycamLensFacing.back,
+                          ),
+                          onFrame: (result) {
+                            print("Frame1");
+                          },
                         ),
-                        onFrame: _onFrame,
                       ),
-                    ),
+                    if (show2)
+                      Expanded(
+                        // key: UniqueKey(),
+                        child: FlutterAnycamWidget(
+                          //   preferredSize: const FlutterAnycamSize(1280, 720),
+                          camera: FlutterAnycamCameraSelector.rtsp(
+                            url:
+                                "rtsp://192.168.18.93:554/mode=real&idc=1&ids=1",
+                            username: "admin",
+                            password: "1",
+                          ).customSensorOrientation(sensorOrientation: 90),
+                          onFrame: _onFrame,
+                        ),
+                      ),
                   ],
                 ),
                 if (_img != null)

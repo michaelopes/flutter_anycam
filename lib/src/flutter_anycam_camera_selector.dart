@@ -49,12 +49,22 @@ class FlutterAnycamCameraSelector {
   FlutterAnycamCameraSelector customSensorOrientation({
     required int sensorOrientation,
   }) {
-    final result = FlutterAnycamCameraSelector(
-      id: id,
-      name: name,
-      lensFacing: lensFacing,
-      sensorOrientation: sensorOrientation,
-    );
+    FlutterAnycamCameraSelector result;
+    if (this is _FlutterAnycamCameraSelectorRtsp) {
+      final thz = this as _FlutterAnycamCameraSelectorRtsp;
+      result = _FlutterAnycamCameraSelectorRtsp(
+        url: thz.url,
+        password: thz.password,
+        username: thz.username,
+      );
+    } else {
+      result = FlutterAnycamCameraSelector(
+        id: id,
+        name: name,
+        lensFacing: lensFacing,
+        sensorOrientation: sensorOrientation,
+      );
+    }
     result._forceSensorOrientation = true;
     return result;
   }

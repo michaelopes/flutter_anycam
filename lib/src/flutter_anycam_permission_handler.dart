@@ -11,9 +11,9 @@ class FlutterAnycamPermissionHandler {
 
   Future<void> requestPermission({
     required int viewId,
-    required PermissionCallback onResult,
+    PermissionCallback? onResult,
   }) async {
-    _listeners[viewId] = onResult;
+    _listeners[viewId] = onResult ?? (bool result) {};
     if (!_inProgress) {
       _inProgress = true;
       try {
@@ -21,6 +21,7 @@ class FlutterAnycamPermissionHandler {
         for (var item in _listeners.values) {
           item(res);
         }
+        FlutterAnycamPlatform.instance.broadcastPermissionGranted();
       } catch (_) {
         for (var item in _listeners.values) {
           item(false);

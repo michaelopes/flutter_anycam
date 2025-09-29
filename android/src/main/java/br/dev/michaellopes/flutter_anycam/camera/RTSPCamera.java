@@ -1,21 +1,28 @@
 package br.dev.michaellopes.flutter_anycam.camera;
 
-import android.content.Context;
 import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.SurfaceTexture;
 import android.media.Image;
 import android.media.MediaCodec;
 import android.media.MediaFormat;
 import android.view.Surface;
+import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import br.dev.michaellopes.flutter_anycam.integration.FlutterEventChannel;
+import br.dev.michaellopes.flutter_anycam.utils.ContextUtil;
 import br.dev.michaellopes.flutter_anycam.utils.FrameRateLimiterUtil;
+import io.flutter.Log;
+import io.flutter.view.TextureRegistry;
 import ir.am3n.rtsp.client.Rtsp;
 import ir.am3n.rtsp.client.data.SdpInfo;
+import ir.am3n.rtsp.client.data.VideoTrack;
 import ir.am3n.rtsp.client.data.YuvFrame;
 import ir.am3n.rtsp.client.interfaces.Frame;
 import ir.am3n.rtsp.client.interfaces.RtspFrameListener;
@@ -25,32 +32,33 @@ import ir.am3n.rtsp.client.widget.RtspSurfaceView;
 import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 public class RTSPCamera extends BaseCamera {
 
     private Rtsp rtsp;
     private RSTPVideoDecoder vd;
 
-    public RTSPCamera(int viewId, Map<String, Object> params) {
-        super(viewId, params);
-    }
-
     FrameRateLimiterUtil<FrameItem> limiter = new FrameRateLimiterUtil<FrameItem>(getFps()) {
         @Override
         protected void onFrameLimited(FrameItem frameItem) {
             int w = frameItem.image.getWidth();
             int h = frameItem.image.getHeight();
-         //   Log.i("RTSPCamera", "Process onVideoFrameReceived");
+            //   Log.i("RTSPCamera", "Process onVideoFrameReceived");
             Map<String, Object> imageData = imageAnalysisUtil.rtspFrameToFlutterResult(frameItem.frame.getData(), w, h, getCustomRotationDegrees());
-            FlutterEventChannel.getInstance().send(viewId, "onVideoFrameReceived", imageData);
+            onVideoFrameReceived(imageData);
         }
     };
 
+    public RTSPCamera(TextureRegistry.SurfaceTextureEntry texture, Map<String, Object> params) {
+        super(texture, params);
+    }
+
     private Integer getCustomRotationDegrees() {
-        if(cameraSelector.isForceSensorOrientation()) {
+        if (cameraSelector.isForceSensorOrientation()) {
             return cameraSelector.getSensorOrientation();
         }
-        return  null;
+        return null;
     }
 
     @Override
@@ -63,7 +71,7 @@ public class RTSPCamera extends BaseCamera {
             String password = cameraSelector.getCameraSelectorRTSP().password;
 
             vd = null;
-            vd = new RSTPVideoDecoder(surfaceView.getHolder().getSurface(), surfaceView.getWidth(), surfaceView.getHeight());
+            Surface surface = getSurface();
 
             rtsp.init(url, username, password, null, 3000);
 
@@ -82,7 +90,6 @@ public class RTSPCamera extends BaseCamera {
 
                 @Override
                 public void onAudioSampleReceived(@Nullable Frame frame) {
-
                 }
 
             });
@@ -94,11 +101,28 @@ public class RTSPCamera extends BaseCamera {
 
                 @Override
                 public void onConnected(@NonNull SdpInfo sdpInfo) {
-                    FlutterEventChannel.getInstance().send(viewId, "onConnected", new HashMap());
+                    try {
+                        int width = sdpInfo.getVideoTrack().getFrameWidth();
+                        int height = sdpInfo.getVideoTrack().getFrameHeight();
+
+                       vd = new RSTPVideoDecoder(surface, width, height);
+
+                        final Map<String, Object> result = new HashMap<>();
+                        result.put("width", width);
+                        result.put("height", height);
+
+                        RTSPCamera.this.onConnected(result);
+
+
+                    } catch (Exception e) {
+                        onFailed(e.getMessage());
+                    }
+
                 }
 
                 @Override
                 public void onFirstFrameRendered() {
+
                 }
 
                 @Override
@@ -110,7 +134,7 @@ public class RTSPCamera extends BaseCamera {
                     if (vd != null) {
                         vd.dispose();
                     }
-                    FlutterEventChannel.getInstance().send(viewId, "onDisconnected", new HashMap());
+                    RTSPCamera.this.onDisconnected();
                 }
 
                 @Override
@@ -118,7 +142,7 @@ public class RTSPCamera extends BaseCamera {
                     if (vd != null) {
                         vd.dispose();
                     }
-                    FlutterEventChannel.getInstance().send(viewId, "onUnauthorized", new HashMap());
+                    RTSPCamera.this.onUnauthorized();
                 }
 
                 @Override
@@ -126,20 +150,17 @@ public class RTSPCamera extends BaseCamera {
                     if (vd != null) {
                         vd.dispose();
                     }
-                    FlutterEventChannel.getInstance().send(viewId, "onFailed", new HashMap() {{
-                        put("message", s);
-                    }});
+                    RTSPCamera.this.onFailed(s);
                 }
             });
+
 
             rtsp.setRequestYuv(true);
             rtsp.setRequestMediaImage(true);
             rtsp.start(true, false);
 
         } catch (Exception e) {
-            FlutterEventChannel.getInstance().send(viewId, "onFailed", new HashMap() {{
-                put("message", e.getMessage());
-            }});
+            onFailed(e.getMessage());
         }
     }
 
@@ -154,15 +175,9 @@ public class RTSPCamera extends BaseCamera {
             vd.dispose();
             vd = null;
         }
+        super.dispose();
     }
 
-    @Override
-    public SurfaceView createSurfaceView(Context context) {
-        if (surfaceView == null) {
-            surfaceView = new RtspSurfaceView(context);
-        }
-        return surfaceView;
-    }
 
     public static class RSTPVideoDecoder {
         private MediaCodec mediaCodec;
@@ -212,4 +227,5 @@ public class RTSPCamera extends BaseCamera {
             this.image = image;
         }
     }
+
 }

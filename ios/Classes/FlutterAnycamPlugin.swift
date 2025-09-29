@@ -7,32 +7,47 @@ public class FlutterAnycamPlugin: NSObject, FlutterPlugin {
     
     
     public static func register(with registrar: FlutterPluginRegistrar) {
+        CameraViewFactory.shared.load(textureRegistry: registrar.textures());
         
         let channel = FlutterMethodChannel(name: "br.dev.michaellopes.flutter_anycam/channel", binaryMessenger: registrar.messenger())
         
         let eventChannel = FlutterEventChannel(name: "br.dev.michaellopes.flutter_anycam/event", binaryMessenger: registrar.messenger())
         
-        let viewFactory = FlutterViewFactory() as FlutterPlatformViewFactory;
-        registrar.register(viewFactory, withId: "br.dev.michaellopes.flutter_anycam/view")
         
         let instance = FlutterAnycamPlugin()
         eventChannel.setStreamHandler(FlutterEventStreamChannel.shared)
         
         registrar.addMethodCallDelegate(instance, channel: channel)
-        
     }
     
     
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         switch call.method {
+        case "createView":
+            let data =  call.arguments as? [String: Any?];
+            let id = CameraViewFactory.shared.createView(args: data!)
+            DispatchQueue.main.async {
+                result(id)
+            }
+            break;
+        case "disposeView":
+            let data =  call.arguments as? [String: Any?];
+            CameraViewFactory.shared.disposeView(args: data!)
+            DispatchQueue.main.async {
+                result(true)
+            }
+            break;
         case "availableCameras":
             
             let cameras =  CameraUtil.availableCameras()
             DispatchQueue.main.async {
                 result(cameras)
             }
-            
-            
+            break;
+        case "broadcastPermissionGranted":
+            CameraViewFactory.shared.broadcastPermissionGranted()
+            result(true);
+            break;
         case "requestPermission":
             let status = AVCaptureDevice.authorizationStatus(for: .video)
             switch status {
@@ -40,6 +55,7 @@ public class FlutterAnycamPlugin: NSObject, FlutterPlugin {
                 DispatchQueue.main.async {
                     result(true)
                 }
+                break;
             case .notDetermined:
                 AVCaptureDevice.requestAccess(for: .video) { granted in
                     DispatchQueue.main.async {
@@ -54,17 +70,19 @@ public class FlutterAnycamPlugin: NSObject, FlutterPlugin {
                         }
                     }
                 }
-                
+                break;
             default:
                 DispatchQueue.main.async {
                     result(false)
                 }
             }
+            break;
         case "setFlash":
             let data =  call.arguments as? [String: Any?];
             let value = data?["value"] as? Bool
             AVCaptureUtil.shared.setFlash(value!)
             result(true)
+            break;
         case "convertBGRA8888ToJpeg":
             
             let data =  call.arguments as? [String: Any?];
@@ -99,7 +117,7 @@ public class FlutterAnycamPlugin: NSObject, FlutterPlugin {
             DispatchQueue.main.async {
                 result(res)
             }
-            
+            break;
         default:
             result(FlutterMethodNotImplemented)
         }

@@ -61,9 +61,22 @@ abstract class FlutterAnycamPlatform extends PlatformInterface {
     throw UnimplementedError('requestPermission() has not been implemented.');
   }
 
+  Future<void> broadcastPermissionGranted() {
+    throw UnimplementedError(
+        'broadcastPermissionGranted() has not been implemented.');
+  }
+
   FlutterAnycamStreamListenerDisposer addStreamListener(
     FlutterAnycamStreamListener listener,
   ) {
     throw UnimplementedError('addStreamListener() has not been implemented.');
+  }
+
+  Future<int?> createView(Map<String, dynamic> args) {
+    throw UnimplementedError('createView() has not been implemented.');
+  }
+
+  Future<bool> disposeView(Map<String, dynamic> args) {
+    throw UnimplementedError('disposeView() has not been implemented.');
   }
 }

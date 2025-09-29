@@ -1,10 +1,9 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_anycam/src/flutter_anycam_frame.dart';
+import 'package:flutter_anycam/src/flutter_anycam_view_factory.dart';
 
 import 'flutter_anycam_camera_selector.dart';
 import 'flutter_anycam_lifecycle.dart';
@@ -19,6 +18,8 @@ import 'flutter_anycam_texts.dart';
 import 'flutter_anycam_typedefs.dart';
 
 const kDefaultFrameChangePercent = 6.0;
+
+typedef ConnectResult = ({int textureId, double width, double height});
 
 class FlutterAnycamWidget extends StatefulWidget {
   const FlutterAnycamWidget({
@@ -64,12 +65,13 @@ class _FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
 
   FlutterAnycamMesure? _mesureFrames;
   int _framesPerSecond = 0;
-  late UniqueKey _viewKey;
+
+  final _factory = FlutterAnycamViewFactory();
+
   _Debouncer? _disconnectDeboucer;
   bool autoRetryTrigged = false;
 
   bool _isInactive = false;
-  int vId = -1;
 
   late final _livecicle = FlutterAnycamLifecycle(
     onExecute: _refresh,
@@ -78,35 +80,56 @@ class _FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
   // ignore: unused_field
   FlutterAnycamPreviewInfo? _previewInfo;
 
+  ConnectResult? _connectResult;
+
   @override
   void initState() {
-    _viewKey = UniqueKey();
     WidgetsBinding.instance.addObserver(this);
+    _createView();
+    _onPlatformViewCreated();
     super.initState();
+  }
+
+  Future<void> _createView() async {
+    _factory.createView(
+      viewId: viewId,
+      camera: widget.camera,
+      preferredSize: widget.preferredSize,
+      fps: widget.fps,
+    );
+  }
+
+  int get viewId {
+    return widget.viewId ?? hashCode;
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _listenerDisposer?.call();
+    _factory.disposeView(viewId);
     super.dispose();
   }
 
-  void _onPlatformViewCreated(int id) {
+  void _onPlatformViewCreated() {
     if (_listenerDisposer != null) {
       _listenerDisposer?.call();
     }
 
-    vId = widget.viewId ?? id;
     _listenerDisposer = FlutterAnycamPlatform.instance.addStreamListener(
       FlutterAnycamStreamListener(
-        viewId: vId,
+        viewId: viewId,
         onConnected: (data) {
           _disconnectDeboucer?.cancel();
           debugPrint("CM: onConnected");
           if (mounted) {
             Future.delayed(const Duration(milliseconds: 500), () {
               setState(() {
+                _connectResult = (
+                  width: (data["width"] as num).toDouble(),
+                  height: (data["height"] as num).toDouble(),
+                  textureId: data["textureId"]
+                );
                 _viewState = _ViewState.connected;
               });
             });
@@ -126,7 +149,7 @@ class _FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
               callback: (counter) {
                 setState(() {
                   if (kDebugMode) {
-                    print("FPS $id: $counter");
+                    print("FPS $viewId: $counter");
                   }
                   _framesPerSecond = counter;
                 });
@@ -142,12 +165,7 @@ class _FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
             });
             if (widget.camera.lensFacing != FlutterAnycamLensFacing.rtsp) {
               FlutterAnycamPermissionHandler.I.requestPermission(
-                viewId: vId,
-                onResult: (result) {
-                  if (result) {
-                    _refresh();
-                  }
-                },
+                viewId: viewId,
               );
             }
           }
@@ -213,39 +231,26 @@ class _FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
     setState(() {
       _viewState = _ViewState.loading;
     });
-
+    _factory.disposeView(viewId);
     Future.delayed(const Duration(milliseconds: 200), () {
-      setState(() {
-        _viewKey = UniqueKey();
-      });
+      _createView();
     });
   }
 
-  Map<String, dynamic> get _params => {
-        "viewId": widget.viewId,
-        "cameraSelector": widget.camera.toMap(),
-        "preferredSize": widget.preferredSize.toMap(),
-        "fps": widget.fps,
-      };
-
-  Widget get _generateView => FlutterAnycamRotation(
-        degress: widget.camera.previewRotation,
-        child: Platform.isAndroid
-            ? AndroidView(
-                key: _viewKey,
-                viewType: 'br.dev.michaellopes.flutter_anycam/view',
-                onPlatformViewCreated: _onPlatformViewCreated,
-                creationParams: _params,
-                creationParamsCodec: const StandardMessageCodec(),
-              )
-            : UiKitView(
-                key: _viewKey,
-                viewType: 'br.dev.michaellopes.flutter_anycam/view',
-                onPlatformViewCreated: _onPlatformViewCreated,
-                creationParams: _params,
-                creationParamsCodec: const StandardMessageCodec(),
+  Widget get _generateView => _connectResult == null
+      ? const SizedBox.shrink()
+      : AspectRatio(
+          aspectRatio: getAspectRatio,
+          child: Container(
+            color: Colors.amber,
+            child: FlutterAnycamRotation(
+              degress: widget.camera.previewRotation,
+              child: Texture(
+                textureId: _connectResult!.textureId,
               ),
-      );
+            ),
+          ),
+        );
 
   Widget get _buildStates {
     switch (_viewState) {
@@ -284,7 +289,7 @@ class _FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
                 if (_viewState == _ViewState.unauthorized &&
                     widget.camera.lensFacing != FlutterAnycamLensFacing.rtsp) {
                   FlutterAnycamPermissionHandler.I.requestPermission(
-                    viewId: vId,
+                    viewId: viewId,
                     onResult: (result) {
                       if (result) {
                         _refresh();
@@ -345,17 +350,10 @@ class _FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
     );
   }
 
-  double getAspectRatio(double width, double height) {
-    if (Platform.isAndroid) {
-      if (widget.camera.lensFacing == FlutterAnycamLensFacing.front ||
-          widget.camera.lensFacing == FlutterAnycamLensFacing.back) {
-        return 1;
-      } else {
-        return width / height;
-      }
-    } else {
-      return width / height;
-    }
+  double get getAspectRatio {
+    final dstWidth = _connectResult!.width;
+    final dstHeight = _connectResult!.height;
+    return dstWidth / dstHeight;
   }
 
   @override
@@ -379,18 +377,12 @@ class _FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
                         width: x.maxWidth,
                         height: constraints.maxHeight,
                         child: ClipRect(
-                          clipBehavior: Clip.hardEdge,
+                          clipBehavior: Clip.none,
                           child: FittedBox(
                             fit: BoxFit.cover,
                             child: SizedBox(
                               width: x.maxWidth,
-                              child: AspectRatio(
-                                aspectRatio: getAspectRatio(
-                                  x.maxWidth,
-                                  constraints.maxHeight,
-                                ),
-                                child: _generateView,
-                              ),
+                              child: _generateView,
                             ),
                           ),
                         ),
