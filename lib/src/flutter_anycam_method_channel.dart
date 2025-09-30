@@ -77,6 +77,17 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
   }
 
   @override
+  Future<int?> createView(Map<String, dynamic> args) async {
+    return await methodChannel.invokeMethod('createView', args);
+  }
+
+  @override
+  Future<bool> disposeView(Map<String, dynamic> args) async {
+    final res = await methodChannel.invokeMethod('disposeView', args);
+    return res ?? false;
+  }
+
+  @override
   Future<Uint8List?> convertBGRA8888ToJpeg({
     required Uint8List bytes,
     required int width,
@@ -122,5 +133,10 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
   Future<bool> requestPermission() async {
     final res = await methodChannel.invokeMethod('requestPermission');
     return res ?? false;
+  }
+
+  @override
+  Future<void> broadcastPermissionGranted() async {
+    await methodChannel.invokeMethod('broadcastPermissionGranted');
   }
 }

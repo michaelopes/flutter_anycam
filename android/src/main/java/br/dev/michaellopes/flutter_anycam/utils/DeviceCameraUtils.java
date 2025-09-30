@@ -44,7 +44,7 @@ public class DeviceCameraUtils {
 
     }
 
-    public synchronized void bind(String cameraId, Preview preview, ImageAnalysis imageAnalysis) {
+    public synchronized Camera2CameraInfoImpl bind(String cameraId, Preview preview, ImageAnalysis imageAnalysis) {
         CameraUtil.CameraItem camera = CameraUtil.getInstance().getCameraById(cameraId);
         if(camera != null) {
             CameraRef existingCamera = getCameraIfExistsById(cameraId);
@@ -53,7 +53,9 @@ public class DeviceCameraUtils {
             }
             binds.add(new CameraRef(cameraId, camera.getCameraInfo().getCameraSelector(), preview, imageAnalysis));
             updateLifecycle();
+            return camera.getCameraInfo();
         }
+        return null;
     }
 
 

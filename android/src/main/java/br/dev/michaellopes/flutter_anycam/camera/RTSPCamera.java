@@ -1,56 +1,67 @@
 package br.dev.michaellopes.flutter_anycam.camera;
 
-import android.content.Context;
 import android.graphics.Bitmap;
-import android.media.Image;
-import android.media.MediaCodec;
-import android.media.MediaFormat;
-import android.view.Surface;
-import android.view.SurfaceView;
 
+import android.media.Image;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import br.dev.michaellopes.flutter_anycam.integration.FlutterEventChannel;
 import br.dev.michaellopes.flutter_anycam.utils.FrameRateLimiterUtil;
+import br.dev.michaellopes.flutter_anycam.utils.RtspDecoderUtil;
+import io.flutter.view.TextureRegistry;
 import ir.am3n.rtsp.client.Rtsp;
 import ir.am3n.rtsp.client.data.SdpInfo;
 import ir.am3n.rtsp.client.data.YuvFrame;
 import ir.am3n.rtsp.client.interfaces.Frame;
 import ir.am3n.rtsp.client.interfaces.RtspFrameListener;
 import ir.am3n.rtsp.client.interfaces.RtspStatusListener;
-import ir.am3n.rtsp.client.widget.RtspSurfaceView;
 
-import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 public class RTSPCamera extends BaseCamera {
 
     private Rtsp rtsp;
-    private RSTPVideoDecoder vd;
 
-    public RTSPCamera(int viewId, Map<String, Object> params) {
-        super(viewId, params);
-    }
+    CompletableFuture<Map<String, Object>> connectionFuture = new CompletableFuture<>();
 
-    FrameRateLimiterUtil<FrameItem> limiter = new FrameRateLimiterUtil<FrameItem>(getFps()) {
+    private final RtspDecoderUtil rtspDecoder = new RtspDecoderUtil(getSurface(), (width, height) -> {
+        frameWidth = width;
+        frameHeight = height;
+
+        texture.surfaceTexture().setDefaultBufferSize(width, height);
+
+        final Map<String, Object> result = new HashMap<>();
+        result.put("width", width);
+        result.put("height", height);
+        if (!connectionFuture.isDone()) {
+            connectionFuture.complete(result);
+        }
+
+    }, e -> onFailed(e.getMessage()));
+
+    private int frameWidth;
+    private int frameHeight;
+
+    FrameRateLimiterUtil<YuvFrame> limiter = new FrameRateLimiterUtil<YuvFrame>(getFps()) {
         @Override
-        protected void onFrameLimited(FrameItem frameItem) {
-            int w = frameItem.image.getWidth();
-            int h = frameItem.image.getHeight();
-         //   Log.i("RTSPCamera", "Process onVideoFrameReceived");
-            Map<String, Object> imageData = imageAnalysisUtil.rtspFrameToFlutterResult(frameItem.frame.getData(), w, h, getCustomRotationDegrees());
-            FlutterEventChannel.getInstance().send(viewId, "onVideoFrameReceived", imageData);
+        protected void onFrameLimited(YuvFrame yuvFrame) {
+            Map<String, Object> imageData = imageAnalysisUtil.rtspFrameToFlutterResult(yuvFrame.getData(), frameWidth, frameHeight, getCustomRotationDegrees());
+            onVideoFrameReceived(imageData);
         }
     };
 
+    public RTSPCamera(TextureRegistry.SurfaceTextureEntry texture, Map<String, Object> params) {
+        super(texture, params);
+    }
+
     private Integer getCustomRotationDegrees() {
-        if(cameraSelector.isForceSensorOrientation()) {
+        if (cameraSelector.isForceSensorOrientation()) {
             return cameraSelector.getSensorOrientation();
         }
-        return  null;
+        return null;
     }
 
     @Override
@@ -62,27 +73,22 @@ public class RTSPCamera extends BaseCamera {
             String username = cameraSelector.getCameraSelectorRTSP().username;
             String password = cameraSelector.getCameraSelectorRTSP().password;
 
-            vd = null;
-            vd = new RSTPVideoDecoder(surfaceView.getHolder().getSurface(), surfaceView.getWidth(), surfaceView.getHeight());
 
             rtsp.init(url, username, password, null, 3000);
 
             rtsp.setFrameListener(new RtspFrameListener() {
                 @Override
                 public void onVideoNalUnitReceived(@Nullable Frame frame) {
-                    if (vd != null) {
-                        vd.decode(frame.getData());
-                    }
+                    rtspDecoder.decode(frame.getData(), frame.getOffset(), frame.getLength(), frame.getTimestamp());
                 }
 
                 @Override
                 public void onVideoFrameReceived(int width, int height, @Nullable Image image, @Nullable YuvFrame yuvFrame, @Nullable Bitmap b) {
-                    limiter.onNewFrame(new FrameItem(yuvFrame, image));
+                    limiter.onNewFrame(yuvFrame);
                 }
 
                 @Override
                 public void onAudioSampleReceived(@Nullable Frame frame) {
-
                 }
 
             });
@@ -94,11 +100,12 @@ public class RTSPCamera extends BaseCamera {
 
                 @Override
                 public void onConnected(@NonNull SdpInfo sdpInfo) {
-                    FlutterEventChannel.getInstance().send(viewId, "onConnected", new HashMap());
+                    connectionFuture.thenAccept(RTSPCamera.this::onConnected);
                 }
 
                 @Override
                 public void onFirstFrameRendered() {
+
                 }
 
                 @Override
@@ -107,39 +114,26 @@ public class RTSPCamera extends BaseCamera {
 
                 @Override
                 public void onDisconnected() {
-                    if (vd != null) {
-                        vd.dispose();
-                    }
-                    FlutterEventChannel.getInstance().send(viewId, "onDisconnected", new HashMap());
+                    RTSPCamera.this.onDisconnected();
                 }
 
                 @Override
                 public void onUnauthorized() {
-                    if (vd != null) {
-                        vd.dispose();
-                    }
-                    FlutterEventChannel.getInstance().send(viewId, "onUnauthorized", new HashMap());
+                    RTSPCamera.this.onUnauthorized();
                 }
 
                 @Override
                 public void onFailed(@Nullable String s) {
-                    if (vd != null) {
-                        vd.dispose();
-                    }
-                    FlutterEventChannel.getInstance().send(viewId, "onFailed", new HashMap() {{
-                        put("message", s);
-                    }});
+                    RTSPCamera.this.onFailed(s);
                 }
             });
 
             rtsp.setRequestYuv(true);
-            rtsp.setRequestMediaImage(true);
+            rtsp.setRequestMediaImage(false);
             rtsp.start(true, false);
 
         } catch (Exception e) {
-            FlutterEventChannel.getInstance().send(viewId, "onFailed", new HashMap() {{
-                put("message", e.getMessage());
-            }});
+            onFailed(e.getMessage());
         }
     }
 
@@ -150,66 +144,8 @@ public class RTSPCamera extends BaseCamera {
             rtsp.stop();
             rtsp = null;
         }
-        if (vd != null) {
-            vd.dispose();
-            vd = null;
-        }
+        rtspDecoder.release();
+        super.dispose();
     }
 
-    @Override
-    public SurfaceView createSurfaceView(Context context) {
-        if (surfaceView == null) {
-            surfaceView = new RtspSurfaceView(context);
-        }
-        return surfaceView;
-    }
-
-    public static class RSTPVideoDecoder {
-        private MediaCodec mediaCodec;
-
-        public RSTPVideoDecoder(Surface surface, int width, int height) throws Exception {
-            mediaCodec = MediaCodec.createDecoderByType("video/avc");
-            MediaFormat format = MediaFormat.createVideoFormat("video/avc", width, height);
-            mediaCodec.configure(format, surface, null, 0);
-            mediaCodec.start();
-        }
-
-        public void decode(byte[] nalUnit) {
-            int inputBufferIndex = mediaCodec.dequeueInputBuffer(10000);
-            if (inputBufferIndex >= 0) {
-                ByteBuffer inputBuffer = mediaCodec.getInputBuffer(inputBufferIndex);
-
-                if (inputBuffer != null) {
-                    inputBuffer.clear();
-                    inputBuffer.put(nalUnit);
-                    mediaCodec.queueInputBuffer(inputBufferIndex, 0, nalUnit.length, System.nanoTime(), 0);
-                }
-            }
-
-            MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
-            int outputBufferIndex = mediaCodec.dequeueOutputBuffer(bufferInfo, 10000);
-
-            if (outputBufferIndex >= 0) {
-                mediaCodec.releaseOutputBuffer(outputBufferIndex, true);
-            }
-        }
-
-        public void dispose() {
-            if (mediaCodec != null) {
-                mediaCodec.stop();
-                mediaCodec.release();
-                mediaCodec = null;
-            }
-        }
-    }
-
-    private static class FrameItem {
-        public final YuvFrame frame;
-        public final Image image;
-
-        private FrameItem(YuvFrame frame, Image image) {
-            this.frame = frame;
-            this.image = image;
-        }
-    }
 }

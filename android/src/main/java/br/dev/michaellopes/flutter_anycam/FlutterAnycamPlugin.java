@@ -8,15 +8,14 @@ import androidx.annotation.NonNull;
 import java.util.HashMap;
 import java.util.Map;
 
+import br.dev.michaellopes.flutter_anycam.integration.CameraViewFactory;
 import br.dev.michaellopes.flutter_anycam.integration.FlutterEventChannel;
-import br.dev.michaellopes.flutter_anycam.integration.FlutterViewFactory;
 import br.dev.michaellopes.flutter_anycam.utils.CameraUtil;
 import br.dev.michaellopes.flutter_anycam.utils.ContextUtil;
 import br.dev.michaellopes.flutter_anycam.utils.DeviceCameraUtils;
 import br.dev.michaellopes.flutter_anycam.utils.ImageConverterUtil;
 import br.dev.michaellopes.flutter_anycam.utils.LivecycleUtil;
 import br.dev.michaellopes.flutter_anycam.utils.CameraPermissionsUtil;
-import br.dev.michaellopes.flutter_anycam.utils.SurfaceTextureUtil;
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.embedding.engine.plugins.activity.ActivityAware;
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding;
@@ -32,8 +31,6 @@ import io.flutter.plugin.common.MethodChannel.Result;
 public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, ActivityAware {
     private MethodChannel channel;
     private EventChannel eventChannel;
-
-    private final FlutterViewFactory viewFactory = new FlutterViewFactory();
 
     @Override
     public void onAttachedToActivity(@NonNull ActivityPluginBinding binding) {
@@ -58,10 +55,9 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
 
     @Override
     public void onAttachedToEngine(@NonNull FlutterPluginBinding flutterPluginBinding) {
-        SurfaceTextureUtil.init(flutterPluginBinding.getTextureRegistry());
 
+        CameraViewFactory.getInstance().init(flutterPluginBinding.getTextureRegistry());
 
-        flutterPluginBinding.getPlatformViewRegistry().registerViewFactory("br.dev.michaellopes.flutter_anycam/view", viewFactory);
         channel = new MethodChannel(flutterPluginBinding.getBinaryMessenger(), "br.dev.michaellopes.flutter_anycam/channel");
         eventChannel = new EventChannel(flutterPluginBinding.getBinaryMessenger(), "br.dev.michaellopes.flutter_anycam/event");
 
@@ -72,8 +68,22 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
     @Override
     public void onMethodCall(@NonNull MethodCall call, @NonNull Result result) {
         switch (call.method) {
+            case "createView":
+                HashMap<String, Object> args1 = (HashMap<String, Object>) call.arguments;
+                Long id = CameraViewFactory.getInstance().createView(args1);
+                result.success(id);
+                break;
+            case "disposeView":
+                HashMap<String, Object> args2 = (HashMap<String, Object>) call.arguments;
+                CameraViewFactory.getInstance().disposeView(args2);
+                result.success(true);
+                break;
             case "availableCameras":
                 CameraUtil.getInstance().availableCameras(result::success);
+                break;
+            case "broadcastPermissionGranted":
+                CameraViewFactory.getInstance().broadcastPermissionGranted();
+                result.success(true);
                 break;
             case "requestPermission":
                 CameraPermissionsUtil.getInstance().requestPermissions((String errCode, String errDesc) -> {
@@ -88,8 +98,8 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
                 convertNv21ToJpeg(call, result);
                 break;
             case "setFlash":
-                HashMap<?, ?> args = (HashMap<?, ?>) call.arguments;
-                boolean value = (boolean) args.get("value");
+                HashMap<?, ?> args3 = (HashMap<?, ?>) call.arguments;
+                boolean value = (boolean) args3.get("value");
                 DeviceCameraUtils.getInstance().setFlash(value);
                 result.success(true);
                 break;
@@ -129,6 +139,7 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
 
     @Override
     public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
+        CameraViewFactory.getInstance().disposeAll();
         channel.setMethodCallHandler(null);
     }
 }

@@ -5,42 +5,58 @@
 //  Created by Michael Lopes on 08/08/25.
 //
 import AVFoundation
+import Flutter
 
-class BaseCamera: UIView {
+class BaseCamera: NSObject, FlutterTexture {
     
     static var waitPermission = false;
+    var latestPixelBuffer: CVPixelBuffer?
     
-    var viewId: Int
-    var params:  [String : Any?] = [String: Any?]();
-    var cameraSelector: ViewCameraSelector?
+    let params:  [String : Any?];
+    let cameraSelector: ViewCameraSelector?
     
-    init(frame: CGRect, viewId: Int, params: [String: Any?]) {
-        self.viewId = viewId;
+    private var bridges: [CameraBridge] = []
+    
+    public var textureId: Int64?;
+    private var frameAvailableCallback: ((Int64) -> Void)?
+    
+    private var lastAction: ActionCall?;
+    
+    private var isInitied = false;
+    
+    func copyPixelBuffer() -> Unmanaged<CVPixelBuffer>? {
+        guard let buffer = latestPixelBuffer else { return nil }
+        return Unmanaged.passRetained(buffer)
+    }
+    
+    required init(params: [String: Any?], frameAvailableCallback: ((Int64) -> Void)? = nil) {
         self.params = params
+        self.frameAvailableCallback = frameAvailableCallback;
         let map = params["cameraSelector"] as? [String : Any?];
         cameraSelector = ViewCameraSelector.fromMap(map!);
-        super.init(frame: frame)
     }
     
-    required convenience init?(coder: NSCoder, viewId: Int, params: [String: Any?]) {
-        self.init(coder: coder)
-        self.viewId = viewId;
-        self.params = params
+    func getCameraId() -> String? {
+        return cameraSelector?.id;
     }
-    
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented. Use init(coder:viewId:params:) instead.")
-    }
-    
     
     func run() -> Void {
+        if(textureId != nil) {
+            run(textureId: textureId!);
+        }
+    }
+    
+    func run(textureId: Int64) -> Void {
+        self.textureId = textureId;
         let status = AVCaptureDevice.authorizationStatus(for: .video);
-        if(status == .authorized) {
+        if(status == .authorized && !isInitied) {
             DispatchQueue.main.async {
                 self.exec()
             }
+            isInitied = true;
         } else {
-            FlutterEventStreamChannel.shared.send(self.viewId, "onUnauthorized", [String : Any?]());
+            onUnauthorized();
+            isInitied = false;
         }
     }
     
@@ -55,8 +71,105 @@ class BaseCamera: UIView {
     }
     
     
+    func frameAvailable() -> Void {
+        if(frameAvailableCallback != nil) {
+            frameAvailableCallback!(textureId!);
+        }
+    }
+    
+    func onConnected() -> Void {
+        for bridge in bridges {
+            bridge.onConnected(textureId: textureId!)
+        }
+        lastAction = BaseCamera.ActionCall(method: "onConnected", data: textureId!);
+    }
+    
+    func onDisconnected() -> Void {
+        for bridge in bridges {
+            bridge.onDisconnected()
+        }
+        
+        lastAction = BaseCamera.ActionCall(method: "onDisconnected");
+    }
+    
+    func onUnauthorized() -> Void {
+        for bridge in bridges {
+            bridge.onUnauthorized()
+        }
+        lastAction = BaseCamera.ActionCall(method: "onUnauthorized");
+    }
+    
+    func onFailed(message: String) -> Void {
+        for bridge in bridges {
+            bridge.onFailed(message: message)
+        }
+        lastAction = BaseCamera.ActionCall(method: "onFailed", data: message);
+    }
+    
+    func onVideoFrameReceived(imageData: [String: Any]) -> Void {
+        for bridge in bridges {
+            bridge.onVideoFrameReceived(imageData: imageData)
+        }
+    }
+    
+    
+    func getBridgeByViewId(_ viewId: Int) -> CameraBridge? {
+        return bridges.first { $0.viewId == viewId }
+    }
+    
+    func containsBridgeByViewId(_ viewId: Int) -> Bool {
+        return getBridgeByViewId(viewId) != nil
+    }
+    
+    func existsBridge() -> Bool {
+        return !bridges.isEmpty
+    }
+    
+    func removeBridge(_ bridge: CameraBridge) {
+        if let index = bridges.firstIndex(where: { $0 === bridge }) {
+            bridges.remove(at: index)
+        }
+    }
+    
+    func addBridge(_ bridge: CameraBridge) {
+        let runCall = !bridges.isEmpty;
+        let filter = bridges.filter { $0.viewId == bridge.viewId }
+        if filter.isEmpty {
+            bridges.append(bridge)
+        }
+        
+        if(runCall && lastAction != nil) {
+            switch lastAction!.method {
+            case "onDisconnected":
+                bridge.onDisconnected()
+                break;
+            case "onUnauthorized":
+                bridge.onUnauthorized()
+                break;
+            case "onFailed":
+                bridge.onFailed(message: (lastAction!.data as? String)!)
+                break;
+            default:
+                bridge.onConnected(textureId: (lastAction!.data as? Int64)!)
+                break;
+            }
+        }
+        
+    }
+    
     internal func exec() -> Void {
         fatalError("Unimplemented method exec()!")
     };
+    
+    class ActionCall {
+        let method: String;
+        let data: Any?;
+        
+        init(method: String, data: Any? = nil) {
+            self.method = method
+            self.data = data
+        }
+        
+    }
 }
 

@@ -8,6 +8,7 @@ import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraManager;
 import android.hardware.camera2.params.StreamConfigurationMap;
+import android.renderscript.Matrix4f;
 import android.util.Log;
 import android.util.Size;
 import android.view.Surface;
@@ -15,11 +16,11 @@ import android.view.Surface;
 import androidx.annotation.NonNull;
 
 
+import androidx.camera.camera2.internal.Camera2CameraInfoImpl;
 import androidx.camera.core.ImageProxy;
 import androidx.camera.core.Preview;
 import androidx.camera.core.SurfaceRequest;
 import androidx.camera.core.ImageAnalysis;
-import androidx.camera.core.resolutionselector.AspectRatioStrategy;
 import androidx.camera.core.resolutionselector.ResolutionSelector;
 import androidx.camera.core.resolutionselector.ResolutionStrategy;
 
@@ -32,10 +33,10 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-import br.dev.michaellopes.flutter_anycam.integration.FlutterEventChannel;
 import br.dev.michaellopes.flutter_anycam.utils.ContextUtil;
 import br.dev.michaellopes.flutter_anycam.utils.DeviceCameraUtils;
 import br.dev.michaellopes.flutter_anycam.utils.FrameRateLimiterUtil;
+import io.flutter.view.TextureRegistry;
 
 
 public class DeviceCamera extends BaseCamera {
@@ -43,6 +44,8 @@ public class DeviceCamera extends BaseCamera {
     private final ExecutorService cameraExecutor = Executors.newSingleThreadExecutor();
 
     private ImageAnalysis imageAnalysis;
+
+    private boolean resolutionStrategy = true;
 
     FrameRateLimiterUtil<ImageProxy> limiter = new FrameRateLimiterUtil<ImageProxy>(getFps()) {
         @Override
@@ -57,31 +60,30 @@ public class DeviceCamera extends BaseCamera {
         }
     };
 
-    public DeviceCamera(int viewId, Map<String, Object> params) {
-        super(viewId, params);
+    public DeviceCamera(TextureRegistry.SurfaceTextureEntry texture, Map<String, Object> params) {
+        super(texture, params);
     }
-
 
     @Override
     @SuppressLint("RestrictedApi")
     public void init() {
         synchronized (DeviceCameraUtils.getInstance()) {
             Preview.SurfaceProvider surfaceProvider = createSurfaceProvider();
+
             Preview preview = new Preview.Builder()
                     .build();
 
             preview.setSurfaceProvider(surfaceProvider);
 
             try {
-
                 ImageAnalysis.Builder aBuilder = new ImageAnalysis.Builder()
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888);
 
                 List<Size> supportedSizes = getSupportedResolutions();
 
-                if (!supportedSizes.isEmpty()) {
-                    Size pSize =  getClosestSize(supportedSizes);
+                if (!supportedSizes.isEmpty() && resolutionStrategy) {
+                    Size pSize = getClosestSize(supportedSizes);
                     ResolutionSelector resolutionSelector = new ResolutionSelector.Builder()
                             .setResolutionStrategy(
                                     new ResolutionStrategy(
@@ -90,7 +92,6 @@ public class DeviceCamera extends BaseCamera {
                                     )
                             )
                             .build();
-                    aBuilder.setMaxResolution(pSize);
                     aBuilder.setResolutionSelector(resolutionSelector);
                 }
 
@@ -98,21 +99,37 @@ public class DeviceCamera extends BaseCamera {
                         .build();
 
                 imageAnalysis.setAnalyzer(cameraExecutor, limiter::onNewFrame);
-                DeviceCameraUtils.getInstance().bind(cameraSelector.getId(), preview, imageAnalysis);
+
+                Camera2CameraInfoImpl cameraInfo = DeviceCameraUtils.getInstance().bind(cameraSelector.getId(), preview, imageAnalysis);
                 Size ps = preview.getAttachedSurfaceResolution();
 
+                int sensorOrientation = cameraInfo.getSensorRotationDegrees();
+
+                int width = ps.getWidth();
+                int height = ps.getHeight();
+
+                if (sensorOrientation == 90 || sensorOrientation == 270) {
+                    int temp = width;
+                    width = height;
+                    height = temp;
+                }
+
                 final Map<String, Object> result = new HashMap<>();
-                result.put("width", 0);
-                result.put("height", 0);
-                result.put("isPortrait", 0);
-                result.put("rotation", 0);
+                result.put("width", width);
+                result.put("height", height);
 
-                FlutterEventChannel.getInstance().send(viewId, "onConnected", result);
+                onConnected(result);
 
+            } catch (IllegalArgumentException e) {
+                if (resolutionStrategy) {
+                    resolutionStrategy = false;
+                    init();
+                } else {
+                    onFailed(e.getMessage());
+                    e.printStackTrace();
+                }
             } catch (Exception e) {
-                FlutterEventChannel.getInstance().send(viewId, "onFailed", new HashMap() {{
-                    put("message", e.getMessage());
-                }});
+                onFailed(e.getMessage());
                 e.printStackTrace();
             }
         }
@@ -162,7 +179,9 @@ public class DeviceCamera extends BaseCamera {
 
     private @NonNull Preview.SurfaceProvider createSurfaceProvider() {
         return request -> {
-            Surface flutterSurface = surfaceHolder.getSurface();
+            Size resolution = request.getResolution();
+            texture.surfaceTexture().setDefaultBufferSize(resolution.getWidth(), resolution.getHeight());
+            Surface flutterSurface = getSurface();
             request.provideSurface(
                     flutterSurface,
                     Executors.newSingleThreadExecutor(),
@@ -190,7 +209,9 @@ public class DeviceCamera extends BaseCamera {
             imageAnalysis.clearAnalyzer();
             cameraExecutor.shutdown();
         }
+
         DeviceCameraUtils.getInstance().dispose(cameraSelector);
+        super.dispose();
     }
 
     private Integer getCustomRotationDegrees() {
@@ -202,10 +223,8 @@ public class DeviceCamera extends BaseCamera {
 
     public void analyze(@NonNull ImageProxy image) {
         try {
-            //  Log.i("DeviceCamera", "Process onVideoFrameReceived");
-
             Map<String, Object> imageData = imageAnalysisUtil.imageProxyToFlutterResult(image, getCustomRotationDegrees());
-            FlutterEventChannel.getInstance().send(viewId, "onVideoFrameReceived", imageData);
+            onVideoFrameReceived(imageData);
         } catch (Exception e) {
             throw new RuntimeException(e);
         } finally {
