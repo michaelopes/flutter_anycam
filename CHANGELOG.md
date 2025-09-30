@@ -49,3 +49,6 @@ Migração de AndroidView e UiKitView para Texture
 
 ## 1.1.1
 Correção da proporção do preview no iOS
+
+## 1.1.2
+Textos e traduções

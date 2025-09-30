@@ -55,7 +55,6 @@ class _MyAppState extends State<MyApp> {
   Future<void> _onFrame(FlutterAnycamFrame frame) async {
     //Frame para jpeg
     // ignore: unused_local_variable
-    print(frame);
     final img = await FlutterAnycam.frameConversor.convertToJpeg(
       frame: frame,
     );
@@ -107,7 +106,7 @@ class _MyAppState extends State<MyApp> {
                             (e) => e.lensFacing == FlutterAnycamLensFacing.back,
                           ),
                           onFrame: (result) {
-                            print("Frame1");
+                            //print("Frame1");
                           },
                         ),
                       ),
@@ -115,7 +114,7 @@ class _MyAppState extends State<MyApp> {
                       Expanded(
                         // key: UniqueKey(),
                         child: FlutterAnycamWidget(
-                          //   preferredSize: const FlutterAnycamSize(1280, 720),
+                          //preferredSize: const FlutterAnycamSize(1280, 720),
                           camera: cameras.firstWhere(
                             (e) =>
                                 e.lensFacing == FlutterAnycamLensFacing.front,
