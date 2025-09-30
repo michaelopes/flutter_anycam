@@ -77,11 +77,14 @@ class BaseCamera: NSObject, FlutterTexture {
         }
     }
     
-    func onConnected() -> Void {
+    func onConnected(data: [String: Any?]) -> Void {
+        var newData = data;
+        newData["textureId"] = textureId;
         for bridge in bridges {
-            bridge.onConnected(textureId: textureId!)
+            bridge.onConnected(data: newData)
         }
-        lastAction = BaseCamera.ActionCall(method: "onConnected", data: textureId!);
+       
+        lastAction = BaseCamera.ActionCall(method: "onConnected", data: newData);
     }
     
     func onDisconnected() -> Void {
@@ -150,7 +153,7 @@ class BaseCamera: NSObject, FlutterTexture {
                 bridge.onFailed(message: (lastAction!.data as? String)!)
                 break;
             default:
-                bridge.onConnected(textureId: (lastAction!.data as? Int64)!)
+                bridge.onConnected(data: (lastAction!.data as? [String: Any])!)
                 break;
             }
         }

@@ -116,12 +116,10 @@ class _MyAppState extends State<MyApp> {
                         // key: UniqueKey(),
                         child: FlutterAnycamWidget(
                           //   preferredSize: const FlutterAnycamSize(1280, 720),
-                          camera: FlutterAnycamCameraSelector.rtsp(
-                            url:
-                                "rtsp://192.168.18.93:554/mode=real&idc=1&ids=1",
-                            username: "admin",
-                            password: "1",
-                          ).customSensorOrientation(sensorOrientation: 90),
+                          camera: cameras.firstWhere(
+                            (e) =>
+                                e.lensFacing == FlutterAnycamLensFacing.front,
+                          ),
                           onFrame: _onFrame,
                         ),
                       ),

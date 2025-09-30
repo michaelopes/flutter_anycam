@@ -8,6 +8,13 @@
 import AVFoundation
 import Flutter
 
+enum CameraSensorOrientation: Int {
+    case rotation0   = 0
+    case rotation90  = 90
+    case rotation180 = 180
+    case rotation270 = 270
+}
+
 class DeviceCamera : BaseCamera {
     
     private let captureSession = AVCaptureUtil.shared.get();
@@ -43,41 +50,97 @@ class DeviceCamera : BaseCamera {
         
         
         captureSession.beginConfiguration()
+        
         captureSession.addInput(input);
         
+        
+        let sensorRotation = getFinalRotation(for: input.device.position);
         
         if let output = videoOutput, captureSession.canAddOutput(output) {
             captureSession.addOutput(output)
         }
         
-        
+        var correntOrientation: AVCaptureVideoOrientation?;
         for connection in videoOutput!.connections {
-            connection.videoOrientation = getVideoOrientation(forDegrees: 0);
-            if cameraSelector?.lensFacing == "front" && connection.isVideoMirroringSupported {
+            correntOrientation = getVideoOrientation();
+            connection.videoOrientation = correntOrientation!;
+            if input.device.position == .front && connection.isVideoMirroringSupported {
                 connection.isVideoMirrored = true
             }
+            
         }
         
         
         captureSession.commitConfiguration()
         
         captureSession.startRunning()
+        
         isCapturing = true;
         
-        onConnected();
-        
+        let format =  input.device.activeFormat as AVCaptureDevice.Format?
+        if(format != nil && correntOrientation != nil) {
+            let dimensions = CMVideoFormatDescriptionGetDimensions(format!.formatDescription)
+            
+            var width = dimensions.width;
+            var height = dimensions.height;
+            
+            if(sensorRotation == 90 || sensorRotation == 270) {
+                let temp = width;
+                width = height;
+                height = temp;
+            }
+            
+            onConnected(data: [
+                "width": width,
+                "height": height
+            ]);
+        }
     }
     
-    private func getVideoOrientation(forDegrees degrees: Int) -> AVCaptureVideoOrientation {
-        switch degrees {
-        case 0:
+    
+    func getFinalRotation(for position: AVCaptureDevice.Position) -> Int {
+        let sensor = getSensorOrientation(for: position)
+        let device = getDeviceRotation()
+        return (sensor + device) % 360
+    }
+    
+    func getSensorOrientation(for position: AVCaptureDevice.Position) -> Int {
+        switch position {
+        case .back:
+            return 90
+        case .front:
+            return 270
+        default:
+            return 90
+        }
+    }
+    
+    func getDeviceRotation() -> Int {
+        switch UIDevice.current.orientation {
+        case .portrait:
+            return 0
+        case .landscapeLeft:
+            return 90
+        case .portraitUpsideDown:
+            return 180
+        case .landscapeRight:
+            return 270
+        default:
+            return 0
+        }
+    }
+    
+    private func getVideoOrientation() -> AVCaptureVideoOrientation {
+        let orientation = UIDevice.current.orientation
+        switch orientation {
+        case .portrait:
             return .portrait
-        case 180:
-            return .portraitUpsideDown
-        case 90:
-            return .landscapeLeft
-        case -90:
+        case .portraitUpsideDown:
+            return  .portraitUpsideDown
+        case .landscapeLeft:
             return .landscapeRight
+        case .landscapeRight:
+            return .landscapeLeft
         default:
             return .portrait
         }

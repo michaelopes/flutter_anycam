@@ -14,11 +14,9 @@ class CameraBridge {
         self.viewId = viewId;
     }
     
-    func onConnected(textureId: Int64) -> Void {
+    func onConnected(data: [String: Any?]) -> Void {
         isConnectedCalled = true;
-        FlutterEventStreamChannel.shared.send(self.viewId, "onConnected", [
-            "textureId": textureId,
-        ]);
+        FlutterEventStreamChannel.shared.send(self.viewId, "onConnected", data);
     }
     
     func onDisconnected() -> Void {
