@@ -45,3 +45,7 @@ Suporte a preferredSize para seleção de resolução dos frames
 Migração de AndroidView e UiKitView para Texture
 - Melhoria de performance
 - Maior estabilidade da usabilidade
+
+
+## 1.1.1
+Correção da proporção do preview no iOS
