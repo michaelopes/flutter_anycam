@@ -40,3 +40,8 @@ Sistema de permissões aprimorado
 
 ## 1.0.13
 Suporte a preferredSize para seleção de resolução dos frames
+
+## 1.1.0
+Migração de AndroidView e UiKitView para texture
+- Melhoria de performance
+- Maior estabilidade da usabilidade
