@@ -55,3 +55,6 @@ Textos e traduções
 
 ## 1.1.3
 Correção refresh camera USB
+
+## 1.1.4
+Correção buffer textura camera USB

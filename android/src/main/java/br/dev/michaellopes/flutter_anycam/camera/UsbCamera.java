@@ -35,7 +35,7 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
 
     private final Executor executor = Executors.newSingleThreadExecutor();
 
-    private Size size;
+    private android.util.Size size;
 
     FrameRateLimiterUtil<ByteBuffer> limiter = new FrameRateLimiterUtil<ByteBuffer>(getFps()) {
         @Override
@@ -43,8 +43,8 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
             if(!frameWait && size != null) {
                 frameWait = true;
                 executor.execute(()-> {
-                    Map<String, Object> imageData = imageAnalysisUtil.usbFrameToFlutterResult(frame, size.width, size.height, getCustomRotationDegrees());
-                   onVideoFrameReceived(imageData);
+                    Map<String, Object> imageData = imageAnalysisUtil.usbFrameToFlutterResult(frame, size.getWidth(), size.getHeight(), getCustomRotationDegrees());
+                    onVideoFrameReceived(imageData);
                     frameWait = false;
                 });
 
@@ -130,17 +130,22 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
                     UVCParam param = new UVCParam();
                     mUVCCamera = new UVCCamera(param);
                     mUVCCamera.open(ctrlBlock);
-                    size = getClosestSize(mUVCCamera.getSupportedSizeList());
-                    mUVCCamera.setPreviewSize(size);
+                     Size camSize = getClosestSize(mUVCCamera.getSupportedSizeList());
+                     if(camSize != null) {
+                         mUVCCamera.setPreviewSize(camSize);
+                         size = new android.util.Size(camSize.width, camSize.height);
+                     } else {
+                         size = new android.util.Size(640, 480);
+                     }
                     mUVCCamera.setFrameCallback(UsbCamera.this, UVCCamera.PIXEL_FORMAT_NV21);
                     mUVCCamera.setPreviewDisplay(getSurface());
                     mUVCCamera.startPreview();
 
-                    texture.surfaceTexture().setDefaultBufferSize(size.width,  size.height);
+                    texture.surfaceTexture().setDefaultBufferSize(size.getWidth(),  size.getHeight());
 
                     final Map<String, Object> result = new HashMap<>();
-                    result.put("width",size.width);
-                    result.put("height", size.height);
+                    result.put("width", size.getWidth());
+                    result.put("height", size.getHeight());
                     onConnected(result);
 
                 } catch (Exception e) {
@@ -152,6 +157,7 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
 
     @Override
     public void onDeviceClose(UsbDevice device, USBMonitor.UsbControlBlock ctrlBlock) {
+        size = null;
         if (mUVCCamera != null) {
             mUVCCamera.close();
         }
@@ -160,6 +166,7 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
 
     @Override
     public void onCancel(UsbDevice device) {
+        size = null;
         if (mUVCCamera != null) {
             mUVCCamera.close();
         }
@@ -196,11 +203,14 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
             if (mUSBMonitor.isRegistered()) {
                 mUSBMonitor.unregister();
             }
+
         }
         if (mUVCCamera != null) {
             mUVCCamera.close();
         }
+        size = null;
         mUVCCamera = null;
+        mUSBMonitor = null;
         super.dispose();
     }
 
