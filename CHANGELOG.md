@@ -52,3 +52,6 @@ Correção da proporção do preview no iOS
 
 ## 1.1.2
 Textos e traduções
+
+## 1.1.3
+Correção refresh camera USB

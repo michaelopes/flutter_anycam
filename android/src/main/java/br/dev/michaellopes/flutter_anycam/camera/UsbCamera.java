@@ -27,7 +27,7 @@ import io.flutter.view.TextureRegistry;
 
 public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.OnDeviceConnectListener{
 
-    private final USBMonitor mUSBMonitor;
+    private USBMonitor mUSBMonitor;
     private UVCCamera mUVCCamera;
     private boolean isAttached = false;
 
@@ -40,7 +40,7 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
     FrameRateLimiterUtil<ByteBuffer> limiter = new FrameRateLimiterUtil<ByteBuffer>(getFps()) {
         @Override
         protected void onFrameLimited(ByteBuffer frame) {
-            if(!frameWait ) {
+            if(!frameWait && size != null) {
                 frameWait = true;
                 executor.execute(()-> {
                     Map<String, Object> imageData = imageAnalysisUtil.usbFrameToFlutterResult(frame, size.width, size.height, getCustomRotationDegrees());
@@ -54,7 +54,7 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
 
     public UsbCamera(TextureRegistry.SurfaceTextureEntry texture, Map<String, Object> params) {
         super(texture, params);
-        mUSBMonitor = new USBMonitor(ContextUtil.get(), this);
+
     }
 
 
@@ -69,6 +69,7 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
 
     @Override
     public void init() {
+        mUSBMonitor = new USBMonitor(ContextUtil.get(), this);
         mUSBMonitor.register();
     }
 
@@ -124,8 +125,6 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
     public void onDeviceOpen(UsbDevice device, USBMonitor.UsbControlBlock ctrlBlock, boolean createNew) {
         String deviceId = String.valueOf(device.getDeviceId());
         if (deviceId.equals(cameraSelector.getId())) {
-
-
                 try {
 
                     UVCParam param = new UVCParam();
@@ -148,8 +147,6 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
                     onFailed(e.getMessage());
                     e.printStackTrace();
                 }
-
-
         }
     }
 

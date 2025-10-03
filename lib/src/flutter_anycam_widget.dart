@@ -241,13 +241,10 @@ class _FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
       ? const SizedBox.shrink()
       : AspectRatio(
           aspectRatio: getAspectRatio,
-          child: Container(
-            color: Colors.amber,
-            child: FlutterAnycamRotation(
-              degress: widget.camera.previewRotation,
-              child: Texture(
-                textureId: _connectResult!.textureId,
-              ),
+          child: FlutterAnycamRotation(
+            degress: widget.camera.previewRotation,
+            child: Texture(
+              textureId: _connectResult!.textureId,
             ),
           ),
         );

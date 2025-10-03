@@ -116,8 +116,7 @@ class _MyAppState extends State<MyApp> {
                         child: FlutterAnycamWidget(
                           //preferredSize: const FlutterAnycamSize(1280, 720),
                           camera: cameras.firstWhere(
-                            (e) =>
-                                e.lensFacing == FlutterAnycamLensFacing.front,
+                            (e) => e.lensFacing == FlutterAnycamLensFacing.usb,
                           ),
                           onFrame: _onFrame,
                         ),
