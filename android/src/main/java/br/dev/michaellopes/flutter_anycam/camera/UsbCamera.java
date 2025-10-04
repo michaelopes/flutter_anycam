@@ -103,15 +103,17 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
 
     @Override
     public void onAttach(UsbDevice device) {
-        String deviceId = String.valueOf(device.getDeviceId());
-        if (isUsbCamera(device) && deviceId.equals(cameraSelector.getId())) {
-            mUSBMonitor.requestPermission(device);
-            if (mUSBMonitor.hasPermission(device)) {
-                if (!isAttached) {
-                    isAttached = true;
+        if(mUSBMonitor != null) {
+            String deviceId = String.valueOf(device.getDeviceId());
+            if (isUsbCamera(device) && deviceId.equals(cameraSelector.getId())) {
+                mUSBMonitor.requestPermission(device);
+                if (mUSBMonitor.hasPermission(device)) {
+                    if (!isAttached) {
+                        isAttached = true;
+                    }
+                } else {
+                    onUnauthorized();
                 }
-            } else {
-                onUnauthorized();
             }
         }
     }
@@ -126,7 +128,6 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
         String deviceId = String.valueOf(device.getDeviceId());
         if (deviceId.equals(cameraSelector.getId())) {
                 try {
-
                     UVCParam param = new UVCParam();
                     mUVCCamera = new UVCCamera(param);
                     mUVCCamera.open(ctrlBlock);
@@ -203,10 +204,11 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
             if (mUSBMonitor.isRegistered()) {
                 mUSBMonitor.unregister();
             }
-
+            mUSBMonitor.destroy();
         }
         if (mUVCCamera != null) {
             mUVCCamera.close();
+            mUVCCamera.destroy();
         }
         size = null;
         mUVCCamera = null;

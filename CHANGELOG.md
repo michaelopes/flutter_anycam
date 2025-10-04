@@ -58,3 +58,6 @@ Correção refresh camera USB
 
 ## 1.1.4
 Correção buffer textura camera USB
+
+## 1.1.5
+Corrreções no dispose camera USB
