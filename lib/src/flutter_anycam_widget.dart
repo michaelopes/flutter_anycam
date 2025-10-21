@@ -32,6 +32,7 @@ class FlutterAnycamWidget extends StatefulWidget {
     this.autoRetry = false,
     this.fps = 5,
     this.aspectRatio,
+    this.previewScale = 1,
 
     /// An Android-only parameter.
     ///
@@ -51,6 +52,7 @@ class FlutterAnycamWidget extends StatefulWidget {
   final FlutterAnycamStreamFrameCallback? onFrame;
   final int fps;
   final double? aspectRatio;
+  final double previewScale;
 
   @override
   State<FlutterAnycamWidget> createState() => _FlutterAnycamWidgetState();
@@ -243,9 +245,16 @@ class _FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
           aspectRatio: getAspectRatio,
           child: FlutterAnycamRotation(
             degress: widget.camera.previewRotation,
-            child: Texture(
-              textureId: _connectResult!.textureId,
-            ),
+            child: widget.previewScale > 1
+                ? Transform.scale(
+                    scale: widget.previewScale,
+                    child: Texture(
+                      textureId: _connectResult!.textureId,
+                    ),
+                  )
+                : Texture(
+                    textureId: _connectResult!.textureId,
+                  ),
           ),
         );
 
