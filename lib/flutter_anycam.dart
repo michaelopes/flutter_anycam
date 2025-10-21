@@ -12,6 +12,7 @@ import 'src/flutter_anycam_platform_interface.dart';
 
 class FlutterAnycam {
   static final frameConversor = FlutterAnycamFrameConversor();
+
   static Future<List<FlutterAnycamCameraSelector>> availableCameras() {
     return FlutterAnycamPlatform.instance.availableCameras();
   }

@@ -82,8 +82,9 @@ dependencies {
     implementation "androidx.camera:camera-lifecycle:${camerax_version}"
     implementation "androidx.concurrent:concurrent-futures:1.3.0"
     implementation "com.google.guava:guava:31.1-android"
+    implementation 'com.github.alexeyvasilyev:rtsp-client-android:5.5.0'
 
-    implementation "com.github.michaelopes:RTSP-Client-Android:5.1.1"
+    //implementation "com.github.michaelopes:RTSP-Client-Android:5.1.1"
     implementation 'com.herohan:UVCAndroid:1.0.10'
 
    //implementation "com.github.am3n:rtsp-client-android:5.1.0"

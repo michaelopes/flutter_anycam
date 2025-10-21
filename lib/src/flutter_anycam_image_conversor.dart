@@ -10,10 +10,21 @@ class FlutterAnycamFrameConversor {
   }) {
     return Platform.isIOS
         ? _bgra888ToJpeg(frame: frame, quality: quality)
-        : _n21ToJpeg(frame: frame, quality: quality);
+        : _nv21ToJpeg(frame: frame, quality: quality);
   }
 
-  Future<Uint8List?> _n21ToJpeg({
+  Future<
+      ({
+        Uint8List bytes,
+        int height,
+        int width,
+      })> jpegToNv21(Uint8List bytes) async {
+    return FlutterAnycamPlatform.instance.convertJpegToNV21(
+      bytes: bytes,
+    );
+  }
+
+  Future<Uint8List?> _nv21ToJpeg({
     required FlutterAnycamFrame frame,
     int quality = 100,
   }) async {

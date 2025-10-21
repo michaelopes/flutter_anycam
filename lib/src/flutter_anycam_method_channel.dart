@@ -130,6 +130,24 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
   }
 
   @override
+  Future<({Uint8List bytes, int width, int height})> convertJpegToNV21({
+    required Uint8List bytes,
+  }) async {
+    final result = await methodChannel.invokeMethod(
+      'convertJpegToNv21',
+      {
+        "bytes": bytes,
+      },
+    );
+    final map = Map<String, dynamic>.from(result);
+    return (
+      bytes: map["bytes"] as Uint8List,
+      width: map["width"] as int,
+      height: map["height"] as int,
+    );
+  }
+
+  @override
   Future<bool> requestPermission() async {
     final res = await methodChannel.invokeMethod('requestPermission');
     return res ?? false;

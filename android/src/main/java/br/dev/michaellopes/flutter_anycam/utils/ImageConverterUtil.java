@@ -10,6 +10,8 @@ import android.graphics.YuvImage;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
+import java.util.HashMap;
+import java.util.Map;
 
 public class ImageConverterUtil {
 
@@ -77,6 +79,81 @@ public class ImageConverterUtil {
         return new FrameImageProxy(i420Data, width, height);
     }
 
+    public static N21Image jpegToNV21(byte[] jpegBytes) {
+        Bitmap bitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.length);
+        int width = bitmap.getWidth();
+        int height = bitmap.getHeight();
+        int frameSize = width * height;
+        byte[] nv21 = new byte[frameSize * 3 / 2];
+
+        int[] argb = new int[frameSize];
+        bitmap.getPixels(argb, 0, width, 0, 0, width, height);
+
+        int yIndex = 0;
+        int uvIndex = frameSize;
+
+        for (int j = 0; j < height; j++) {
+            for (int i = 0; i < width; i++) {
+                int color = argb[j * width + i];
+                int r = (color >> 16) & 0xFF;
+                int g = (color >> 8) & 0xFF;
+                int b = color & 0xFF;
+
+                int y = ((66 * r + 129 * g + 25 * b + 128) >> 8) + 16;
+                int u = ((-38 * r - 74 * g + 112 * b + 128) >> 8) + 128;
+                int v = ((112 * r - 94 * g - 18 * b + 128) >> 8) + 128;
+
+                y = clamp(y);
+                u = clamp(u);
+                v = clamp(v);
+
+                nv21[yIndex++] = (byte) y;
+
+                // Para NV21, intercalamos VU (não UV)
+                if (j % 2 == 0 && i % 2 == 0 && uvIndex + 1 < nv21.length) {
+                    nv21[uvIndex++] = (byte) v;
+                    nv21[uvIndex++] = (byte) u;
+                }
+            }
+        }
+
+        return new N21Image(nv21, width, height);
+    }
+
+    private static int clamp(int v) {
+        return v < 0 ? 0 : Math.min(v, 255);
+    }
+
+    public static byte[] nv21ToJpeg(byte[] bytes, Integer width, Integer height, Integer quality, Float rotation) {
+        YuvImage yuv = new YuvImage(bytes, ImageFormat.NV21, width, height, null);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        yuv.compressToJpeg(new Rect(0, 0, width, height), quality, out);
+        byte[] jpegBytes = out.toByteArray();
+
+        Bitmap bitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.length);
+
+        Matrix matrix = new Matrix();
+        int centerX = width / 2;
+        int centerY = height / 2;
+
+        matrix.postRotate(rotation, centerX, centerY);
+
+        if(rotation == 270) {
+            matrix.postScale(-1, 1, centerX, centerY);
+        }
+
+        Bitmap rotatedBitmap = Bitmap.createBitmap(bitmap, 0, 0, width, height, matrix, true);
+
+        ByteArrayOutputStream finalOut = new ByteArrayOutputStream();
+        rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, quality, finalOut);
+        byte[] rotatedBytes = finalOut.toByteArray();
+
+        bitmap.recycle();
+        rotatedBitmap.recycle();
+
+        return rotatedBytes;
+    }
+
     public static class FrameImageProxy {
         private final int width;
         private final int height;
@@ -141,33 +218,37 @@ public class ImageConverterUtil {
         }
     }
 
-    public static byte[] nv21ToJpeg(byte[] bytes, Integer width, Integer height, Integer quality, Float rotation) {
-        YuvImage yuv = new YuvImage(bytes, ImageFormat.NV21, width, height, null);
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        yuv.compressToJpeg(new Rect(0, 0, width, height), quality, out);
-        byte[] jpegBytes = out.toByteArray();
 
-        Bitmap bitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.length);
+   public static class N21Image {
+        private final byte[] bytes;
+        private final int width;
+        private final int height;
 
-        Matrix matrix = new Matrix();
-        int centerX = width / 2;
-        int centerY = height / 2;
-
-        matrix.postRotate(rotation, centerX, centerY);
-
-        if(rotation == 270) {
-            matrix.postScale(-1, 1, centerX, centerY);
+        N21Image(byte[] bytes, int width, int height) {
+            this.bytes = bytes;
+            this.width = width;
+            this.height = height;
         }
 
-        Bitmap rotatedBitmap = Bitmap.createBitmap(bitmap, 0, 0, width, height, matrix, true);
+        public int getWidth() {
+            return width;
+        }
 
-        ByteArrayOutputStream finalOut = new ByteArrayOutputStream();
-        rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, quality, finalOut);
-        byte[] rotatedBytes = finalOut.toByteArray();
+        public int getHeight() {
+            return height;
+        }
 
-        bitmap.recycle();
-        rotatedBitmap.recycle();
+        public byte[] getBytes() {
+            return bytes;
+        }
 
-        return rotatedBytes;
+        public Map<String, Object> getMap() {
+            Map<String, Object> result = new HashMap<>();
+            result.put("bytes", bytes);
+            result.put("width", width);
+            result.put("height", height);
+            return result;
+        }
     }
+
 }

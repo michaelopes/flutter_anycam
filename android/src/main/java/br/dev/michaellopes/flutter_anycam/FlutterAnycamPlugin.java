@@ -97,6 +97,9 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
             case "convertNv21ToJpeg":
                 convertNv21ToJpeg(call, result);
                 break;
+            case "convertJpegToNv21":
+                convertJpegToNv21(call, result);
+                break;
             case "setFlash":
                 HashMap<?, ?> args3 = (HashMap<?, ?>) call.arguments;
                 boolean value = (boolean) args3.get("value");
@@ -107,6 +110,23 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
                 result.notImplemented();
                 break;
         }
+    }
+
+
+    private void convertJpegToNv21(final MethodCall call, final MethodChannel.Result result) {
+        @SuppressWarnings("unchecked") final Map<String, Object> arg = (Map<String, Object>) call.arguments;
+
+        final byte[] bytes = arg != null ? (byte[]) arg.get("bytes") : null;
+
+        new Thread(() -> {
+            try {
+                ImageConverterUtil.N21Image n21 = ImageConverterUtil.jpegToNV21(bytes);
+                result.success(n21.getMap());
+            } catch (final Exception e) {
+                new Handler(Looper.getMainLooper()).post(() -> result.error("Processing error", e.getMessage(), null)
+                );
+            }
+        }).start();
     }
 
 
