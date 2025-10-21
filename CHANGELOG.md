@@ -61,3 +61,6 @@ Correção buffer textura camera USB
 
 ## 1.1.5
 Corrreções no dispose camera USB
+
+## 1.1.6
+Implementação de previewScale
