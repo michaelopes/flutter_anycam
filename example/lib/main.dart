@@ -24,7 +24,7 @@ class _MyAppState extends State<MyApp> {
   /*FlutterAnycamCameraSelector camera =
       cameras.firstWhere((e) => e.lensFacing == FlutterAnycamLensFacing.front);*/
 
-  bool show1 = false;
+  bool show1 = true;
   bool show2 = true;
 
   @override
@@ -116,7 +116,8 @@ class _MyAppState extends State<MyApp> {
                         child: FlutterAnycamWidget(
                           //preferredSize: const FlutterAnycamSize(1280, 720),
                           camera: cameras.firstWhere(
-                            (e) => e.lensFacing == FlutterAnycamLensFacing.usb,
+                            (e) =>
+                                e.lensFacing == FlutterAnycamLensFacing.front,
                           ),
                           onFrame: _onFrame,
                         ),

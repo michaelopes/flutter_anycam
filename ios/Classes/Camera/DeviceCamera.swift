@@ -31,8 +31,7 @@ class DeviceCamera : BaseCamera {
             // Implementação opcional para frames pulados
         }
     }()
-    
-    
+
     override func exec() -> Void {
         
         guard let input = AVCaptureUtil.shared.getCameraInput(cameraSelector: self.cameraSelector!) else {
@@ -42,7 +41,7 @@ class DeviceCamera : BaseCamera {
         
         videoInput = input;
         videoOutput = AVCaptureVideoDataOutput()
-        videoOutput?.setSampleBufferDelegate(self, queue: DispatchQueue(label: "cameraFrameQueue"))
+        videoOutput?.setSampleBufferDelegate(self, queue: DispatchQueue.main)
         videoOutput?.alwaysDiscardsLateVideoFrames = true
         videoOutput?.videoSettings = [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
@@ -76,6 +75,12 @@ class DeviceCamera : BaseCamera {
         captureSession.startRunning()
         
         isCapturing = true;
+        
+        print("🧩 Starting camera setup")
+        print("🧩 Input: \(input.device.localizedName)")
+        print("🧩 Can add output: \(captureSession.canAddOutput(videoOutput!))")
+        print("🧩 Delegate: \(videoOutput?.sampleBufferDelegate != nil)")
+        print("🧩 Before startRunning: \(captureSession.isRunning)")
         
         let format =  input.device.activeFormat as AVCaptureDevice.Format?
         if(format != nil && correntOrientation != nil) {

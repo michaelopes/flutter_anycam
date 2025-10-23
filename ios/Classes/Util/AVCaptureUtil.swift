@@ -7,7 +7,7 @@
 import AVFoundation
 
 class AVCaptureUtil {
-    private var captureSession: AVCaptureMultiCamSession?
+    private var captureSession: AVCaptureSession?
     static let shared = AVCaptureUtil();
     
     var backCamInput: AVCaptureDeviceInput?;
@@ -17,23 +17,45 @@ class AVCaptureUtil {
     
     private func check() {
         if(captureSession == nil) {
-            captureSession = AVCaptureMultiCamSession();
+            if(isMultiCamAvailable()) {
+                captureSession = AVCaptureMultiCamSession();
+            } else {
+                captureSession = AVCaptureSession();
+            }
         }
     }
     
     
-    public func get() ->  AVCaptureMultiCamSession{
+    
+    func isMultiCamAvailable() -> Bool {
+        if #available(iOS 13.0, *) {
+            return AVCaptureMultiCamSession.isMultiCamSupported
+        } else {
+            return false
+        }
+    }
+    
+    
+    public func get() ->  AVCaptureSession{
         check();
         return captureSession!
     }
     
-    func resetCameraInput(cameraSelector: ViewCameraSelector) -> Void {
-        if(cameraSelector.lensFacing == "back" && backCamInput != nil) {
+    func removeByType(_ type: String) {
+        if(type == "back" && backCamInput != nil) {
             captureSession?.removeInput(backCamInput!)
             backCamInput = nil;
-        } else if(cameraSelector.lensFacing == "front" && frontCamInput != nil) {
+        } else if(type == "front" && frontCamInput != nil) {
             captureSession?.removeInput(frontCamInput!)
             frontCamInput = nil;
+        }
+    }
+    
+    func resetCameraInput(cameraSelector: ViewCameraSelector) -> Void {
+        if(cameraSelector.lensFacing == "back" && backCamInput != nil) {
+            removeByType("back");
+        } else if(cameraSelector.lensFacing == "front" && frontCamInput != nil) {
+            removeByType("front");
         }
     }
     
@@ -56,6 +78,15 @@ class AVCaptureUtil {
     }
     
     func getCameraInput(cameraSelector: ViewCameraSelector) -> AVCaptureDeviceInput?  {
+        
+        if(!isMultiCamAvailable()) {
+            if(backCamInput != nil) {
+               removeByType("back");
+            } else if(frontCamInput != nil) {
+               removeByType("front");
+            }
+        }
+        
         if(cameraSelector.lensFacing == "back" && backCamInput == nil) {
             
             let backCam = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
@@ -65,7 +96,6 @@ class AVCaptureUtil {
             self.backCamInput = backCamInput
             
             return backCamInput
-            
             
         } else if(cameraSelector.lensFacing == "front" && frontCamInput == nil) {
             

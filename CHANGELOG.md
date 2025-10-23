@@ -64,3 +64,6 @@ Corrreções no dispose camera USB
 
 ## 1.1.6
 Implementação de previewScale
+
+## 1.1.7
+Correção para iPhones mais antigos
