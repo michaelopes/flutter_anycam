@@ -51,6 +51,7 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
 
     @Override
     public void onDetachedFromActivity() {
+        FlutterEventChannel.getInstance().release();
     }
 
     @Override
@@ -140,6 +141,7 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
     @Override
     public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
         CameraViewFactory.getInstance().disposeAll();
+        FlutterEventChannel.getInstance().release();
         channel.setMethodCallHandler(null);
     }
 }

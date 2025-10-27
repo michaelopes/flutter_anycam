@@ -67,3 +67,6 @@ Implementação de previewScale
 
 ## 1.1.7
 Correção para iPhones mais antigos
+
+## 1.1.8
+Adição de controle de thread e fila para o gerênciamento de frames no Android

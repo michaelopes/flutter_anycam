@@ -105,9 +105,7 @@ class _MyAppState extends State<MyApp> {
                           camera: cameras.firstWhere(
                             (e) => e.lensFacing == FlutterAnycamLensFacing.back,
                           ),
-                          onFrame: (result) {
-                            //print("Frame1");
-                          },
+                          onFrame: _onFrame,
                         ),
                       ),
                     if (show2)
