@@ -70,3 +70,6 @@ Correção para iPhones mais antigos
 
 ## 1.1.8
 Adição de controle de thread e fila para o gerênciamento de frames no Android
+
+## 1.1.9
+Melhorias no gerênciamento de threads

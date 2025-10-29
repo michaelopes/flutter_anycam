@@ -30,8 +30,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 import br.dev.michaellopes.flutter_anycam.utils.ContextUtil;
 import br.dev.michaellopes.flutter_anycam.utils.DeviceCameraUtils;
@@ -41,7 +45,13 @@ import io.flutter.view.TextureRegistry;
 
 public class DeviceCamera extends BaseCamera {
 
-    private final ExecutorService cameraExecutor = Executors.newSingleThreadExecutor();
+    private volatile boolean processing = false;
+
+    private final BlockingQueue<ImageProxy> frameQueue = new LinkedBlockingQueue<>(1);
+
+    private final ExecutorService queueExecutor = Executors.newFixedThreadPool(1);
+
+    private final ExecutorService cameraExecutor = Executors.newFixedThreadPool(3);
 
     private ImageAnalysis imageAnalysis;
 
@@ -50,8 +60,10 @@ public class DeviceCamera extends BaseCamera {
     FrameRateLimiterUtil<ImageProxy> limiter = new FrameRateLimiterUtil<ImageProxy>(getFps()) {
         @Override
         protected void onFrameLimited(ImageProxy image) {
-            DeviceCamera.this.analyze(image);
-            image.close();
+            boolean added = frameQueue.offer(image);
+            if (added && !processing) {
+                startProcessingWorker();
+            }
         }
 
         @Override
@@ -207,8 +219,10 @@ public class DeviceCamera extends BaseCamera {
     public void dispose() {
         if (imageAnalysis != null) {
             imageAnalysis.clearAnalyzer();
-            cameraExecutor.shutdown();
         }
+
+        cameraExecutor.shutdown();
+        queueExecutor.shutdown();
 
         DeviceCameraUtils.getInstance().dispose(cameraSelector);
         super.dispose();
@@ -219,6 +233,31 @@ public class DeviceCamera extends BaseCamera {
             return cameraSelector.getSensorOrientation();
         }
         return null;
+    }
+
+    private void startProcessingWorker() {
+        processing = true;
+        queueExecutor.execute(() -> {
+            while (!Thread.currentThread().isInterrupted()) {
+                try {
+                     ImageProxy task = frameQueue.poll(100, TimeUnit.MILLISECONDS);
+                    if (task != null) {
+                        analyze(task);
+                    } else {
+                        break;
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+            processing = false;
+            if (!frameQueue.isEmpty()) {
+                startProcessingWorker();
+            }
+        });
     }
 
     public void analyze(@NonNull ImageProxy image) {

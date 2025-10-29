@@ -4,28 +4,23 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.hardware.camera2.CameraManager;
 
-import androidx.annotation.NonNull;
+
 import androidx.camera.camera2.internal.Camera2CameraInfoImpl;
-import androidx.camera.camera2.interop.Camera2CameraInfo;
 import androidx.camera.core.Camera;
-import androidx.camera.core.CameraFilter;
-import androidx.camera.core.CameraInfo;
+
 import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ConcurrentCamera;
 import androidx.camera.core.ImageAnalysis;
 import androidx.camera.core.Preview;
 import androidx.camera.core.UseCaseGroup;
 import androidx.camera.lifecycle.ProcessCameraProvider;
-import androidx.core.content.ContextCompat;
-import androidx.lifecycle.LifecycleOwner;
 
-import com.google.common.util.concurrent.ListenableFuture;
+import androidx.lifecycle.LifecycleOwner;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executor;
+
 
 import br.dev.michaellopes.flutter_anycam.model.ViewCameraSelector;
 @SuppressLint("RestrictedApi")
@@ -41,7 +36,6 @@ public class DeviceCameraUtils {
     public static synchronized DeviceCameraUtils getInstance() {
         if (instance == null) instance = new DeviceCameraUtils();
         return instance;
-
     }
 
     public synchronized Camera2CameraInfoImpl bind(String cameraId, Preview preview, ImageAnalysis imageAnalysis) {
@@ -132,7 +126,21 @@ public class DeviceCameraUtils {
         CameraRef existingCamera = getCameraIfExistsById(cameraSelector.getId());
         if (existingCamera != null) {
             binds.remove(existingCamera);
+            disposeCameraRef(existingCamera);
             updateLifecycle();
+        }
+    }
+
+
+    private void disposeCameraRef(CameraRef cameraRef) {
+        if (cameraRef != null) {
+            if (cameraRef.preview != null) {
+                cameraRef.preview.setSurfaceProvider(null);
+            }
+
+            if (cameraRef.imageAnalysis != null) {
+                cameraRef.imageAnalysis.clearAnalyzer();
+            }
         }
     }
 

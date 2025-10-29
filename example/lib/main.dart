@@ -102,9 +102,7 @@ class _MyAppState extends State<MyApp> {
                         child: FlutterAnycamWidget(
                           key: k,
                           //   preferredSize: const FlutterAnycamSize(1280, 720),
-                          camera: cameras.firstWhere(
-                            (e) => e.lensFacing == FlutterAnycamLensFacing.back,
-                          ),
+                          camera: cameras.last,
                           onFrame: _onFrame,
                         ),
                       ),
@@ -114,8 +112,7 @@ class _MyAppState extends State<MyApp> {
                         child: FlutterAnycamWidget(
                           //preferredSize: const FlutterAnycamSize(1280, 720),
                           camera: cameras.firstWhere(
-                            (e) =>
-                                e.lensFacing == FlutterAnycamLensFacing.front,
+                            (e) => e.lensFacing == FlutterAnycamLensFacing.back,
                           ),
                           onFrame: _onFrame,
                         ),
