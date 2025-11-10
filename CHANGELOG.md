@@ -73,3 +73,6 @@ Adição de controle de thread e fila para o gerênciamento de frames no Android
 
 ## 1.1.9
 Melhorias no gerênciamento de threads
+
+## 1.1.10
+Bug fix camera usb

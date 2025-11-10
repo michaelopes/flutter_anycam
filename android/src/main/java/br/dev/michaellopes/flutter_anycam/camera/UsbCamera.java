@@ -18,12 +18,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 
 import br.dev.michaellopes.flutter_anycam.utils.ContextUtil;
@@ -43,6 +41,7 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
 
     private volatile boolean processing = false;
 
+    private ExecutorService mainExecutor;
 
     private final BlockingQueue<FrameTask> frameQueue = new LinkedBlockingQueue<>(1);
 
@@ -82,7 +81,10 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
 
     private void startProcessingWorker() {
         processing = true;
-        Executors.newSingleThreadExecutor().execute(() -> {
+        if(mainExecutor == null) {
+            mainExecutor = Executors.newSingleThreadExecutor();
+        }
+        mainExecutor.execute(() -> {
             while (!Thread.currentThread().isInterrupted()) {
                 try {
                     FrameTask task = frameQueue.poll(100, TimeUnit.MILLISECONDS);
@@ -279,6 +281,12 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
         if (mUVCCamera != null) {
             mUVCCamera.close();
             mUVCCamera.destroy();
+        }
+
+        if(mainExecutor != null) {
+            mainExecutor.shutdown();
+            processing = false;
+            mainExecutor = null;
         }
 
         size = null;
