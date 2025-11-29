@@ -8,6 +8,7 @@ class FlutterAnycamFrame {
   final int rotation;
   final List<FlutterAnycamPlane> planes;
   final Uint8List bytes;
+  final Map<String, dynamic>? extras;
 
   FlutterAnycamFrame({
     required this.format,
@@ -16,6 +17,7 @@ class FlutterAnycamFrame {
     required this.planes,
     required this.bytes,
     required this.rotation,
+    this.extras,
   });
 
   factory FlutterAnycamFrame.fromMap(Map<String, dynamic> map) {
@@ -25,10 +27,15 @@ class FlutterAnycamFrame {
       height: map['height'] as int,
       rotation: map['rotation'] as int,
       bytes: Uint8List.fromList(map['bytes']),
-      planes: (map['planes'] as List<dynamic>)
-          .map((planeMap) =>
-              FlutterAnycamPlane.fromMap(Map<String, dynamic>.from(planeMap)))
-          .toList(),
+      extras: map['extras'] != null
+          ? Map<String, dynamic>.from(map['extras'])
+          : null,
+      planes: map['planes'] != null
+          ? (map['planes'] as List<dynamic>)
+              .map((planeMap) => FlutterAnycamPlane.fromMap(
+                  Map<String, dynamic>.from(planeMap)))
+              .toList()
+          : [],
     );
   }
 
@@ -40,6 +47,7 @@ class FlutterAnycamFrame {
       'height': height,
       'rotation': rotation,
       'planes': planes.map((p) => p.toMap()).toList(),
+      'extras': extras,
     };
   }
 

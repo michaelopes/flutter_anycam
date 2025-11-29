@@ -29,7 +29,7 @@ abstract class FlutterAnycamPlatform extends PlatformInterface {
   }
 
   Future<List<FlutterAnycamCameraSelector>> availableCameras() {
-    throw UnimplementedError('platformVersion() has not been implemented.');
+    throw UnimplementedError('availableCameras() has not been implemented.');
   }
 
   Future<Uint8List?> convertNv21ToJpeg({

@@ -111,6 +111,7 @@ public abstract class BaseCamera {
     public boolean existsBridge() {
        return !bridges.isEmpty();
     }
+
     public void removeBridge(CameraBridge bridge) {
         bridges.remove(bridge);
     }

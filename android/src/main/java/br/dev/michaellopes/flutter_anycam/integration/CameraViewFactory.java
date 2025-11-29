@@ -15,7 +15,7 @@ import io.flutter.view.TextureRegistry;
 
 public class CameraViewFactory {
 
-    private static final CameraViewFactory instance = new CameraViewFactory();
+
 
     private TextureRegistry textureRegistry;
 
@@ -23,6 +23,7 @@ public class CameraViewFactory {
 
     private List<BaseCamera> cameras = new ArrayList<>();
 
+    private static final CameraViewFactory instance = new CameraViewFactory();
 
     public static CameraViewFactory getInstance() {
 
@@ -59,7 +60,6 @@ public class CameraViewFactory {
             if (filter.length >= 1) {
                 BaseCamera camera = (BaseCamera) filter[0];
                 long textureId = camera.getTextureId();
-
                 camera.addBridge(new CameraBridge(viewId));
                 return textureId;
             } else {

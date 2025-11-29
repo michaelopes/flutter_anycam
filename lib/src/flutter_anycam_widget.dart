@@ -55,12 +55,12 @@ class FlutterAnycamWidget extends StatefulWidget {
   final double previewScale;
 
   @override
-  State<FlutterAnycamWidget> createState() => _FlutterAnycamWidgetState();
+  State<FlutterAnycamWidget> createState() => FlutterAnycamWidgetState();
 }
 
 enum _ViewState { loading, disconnected, failure, unauthorized, connected }
 
-class _FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
+class FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
     with WidgetsBindingObserver {
   _ViewState _viewState = _ViewState.loading;
   FlutterAnycamStreamListenerDisposer? _listenerDisposer;
@@ -84,6 +84,9 @@ class _FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
 
   ConnectResult? _connectResult;
 
+  final _internalBoxKey = GlobalKey();
+  final _externalBoxKey = GlobalKey();
+
   @override
   void initState() {
     WidgetsBinding.instance.addObserver(this);
@@ -98,6 +101,34 @@ class _FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
       camera: widget.camera,
       preferredSize: widget.preferredSize,
       fps: widget.fps,
+    );
+  }
+
+  ({
+    double scaleX,
+    double scaleY,
+    Size flutterPreviewSize,
+    Size nativePreviewSize
+  }) getSceneData() {
+    final internalBox =
+        _internalBoxKey.currentContext!.findRenderObject() as RenderBox;
+    final extenalBox =
+        _externalBoxKey.currentContext!.findRenderObject() as RenderBox;
+
+    final internalBoxSize = internalBox.size;
+    final externalBoxSize = extenalBox.size;
+
+    final scaleX = internalBoxSize.width / externalBoxSize.width;
+    final scaleY = internalBoxSize.height / externalBoxSize.height;
+
+    return (
+      scaleX: widget.previewScale > 0 ? scaleX * widget.previewScale : scaleX,
+      scaleY: widget.previewScale > 0 ? scaleY * widget.previewScale : scaleY,
+      flutterPreviewSize: externalBoxSize,
+      nativePreviewSize: Size(
+        _connectResult?.width ?? -1,
+        _connectResult?.height ?? -1,
+      )
     );
   }
 
@@ -243,18 +274,21 @@ class _FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
       ? const SizedBox.shrink()
       : AspectRatio(
           aspectRatio: getAspectRatio,
-          child: FlutterAnycamRotation(
-            degress: widget.camera.previewRotation,
-            child: widget.previewScale > 1
-                ? Transform.scale(
-                    scale: widget.previewScale,
-                    child: Texture(
+          child: SizedBox(
+            key: _internalBoxKey,
+            child: FlutterAnycamRotation(
+              degress: widget.camera.previewRotation,
+              child: widget.previewScale > 1
+                  ? Transform.scale(
+                      scale: widget.previewScale,
+                      child: Texture(
+                        textureId: _connectResult!.textureId,
+                      ),
+                    )
+                  : Texture(
                       textureId: _connectResult!.textureId,
                     ),
-                  )
-                : Texture(
-                    textureId: _connectResult!.textureId,
-                  ),
+            ),
           ),
         );
 
@@ -380,6 +414,7 @@ class _FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
                     _buildStates,
                     LayoutBuilder(builder: (_, x) {
                       return SizedBox(
+                        key: _externalBoxKey,
                         width: x.maxWidth,
                         height: constraints.maxHeight,
                         child: ClipRect(

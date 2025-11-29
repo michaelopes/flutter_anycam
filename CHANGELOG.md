@@ -76,3 +76,6 @@ Melhorias no gerênciamento de threads
 
 ## 1.1.10
 Bug fix camera usb
+
+## 1.1.11
+Adicionado suporte para que terceiros possam realizar integrações externas ao plugin v1.0

@@ -9,6 +9,7 @@ class FlutterAnycamCameraSelector {
   final String name;
   final FlutterAnycamLensFacing lensFacing;
   final int sensorOrientation;
+  final Map<String, dynamic>? extras;
   bool _forceSensorOrientation = false;
 
   FlutterAnycamCameraSelector({
@@ -16,6 +17,7 @@ class FlutterAnycamCameraSelector {
     required this.name,
     required this.lensFacing,
     required this.sensorOrientation,
+    this.extras,
   });
 
   int get previewRotation {
@@ -32,6 +34,7 @@ class FlutterAnycamCameraSelector {
       'lensFacing': lensFacing.name,
       'sensorOrientation': sensorOrientation,
       'forceSensorOrientation': _forceSensorOrientation,
+      'extras': extras,
     };
   }
 
@@ -41,6 +44,9 @@ class FlutterAnycamCameraSelector {
       name: map['name'] as String,
       lensFacing: FlutterAnycamLensFacing.values.byName(map['lensFacing']),
       sensorOrientation: map['sensorOrientation'] as int,
+      extras: map['extras'] != null
+          ? Map<String, dynamic>.from(map['extras'])
+          : null,
     );
   }
 
