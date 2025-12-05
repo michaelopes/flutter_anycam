@@ -25,6 +25,9 @@ abstract class FlutterAnycamPlatform extends PlatformInterface {
   /// they register themselves.
   static set instance(FlutterAnycamPlatform instance) {
     PlatformInterface.verifyToken(instance, _token);
+    if (_instance is MethodChannelFlutterAnycam) {
+      (_instance as MethodChannelFlutterAnycam).dispose();
+    }
     _instance = instance;
   }
 
