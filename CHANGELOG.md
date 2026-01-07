@@ -82,3 +82,6 @@ Adicionado suporte para que terceiros possam realizar integrações externas ao 
 
 ## 1.1.12
 Melhorias suporte na integrações externas
+
+## 1.1.13
+RTSP camera support has been discontinued in this package because it does not comply with the new 16 KB paging requirement mandated by the Play Store.
