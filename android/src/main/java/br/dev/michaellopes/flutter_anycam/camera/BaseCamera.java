@@ -10,11 +10,12 @@ import java.util.List;
 import java.util.Map;
 
 import br.dev.michaellopes.flutter_anycam.model.ViewCameraSelector;
+import br.dev.michaellopes.flutter_anycam.result_process.BaseResultProcessor;
 import br.dev.michaellopes.flutter_anycam.utils.CameraPermissionsUtil;
 import br.dev.michaellopes.flutter_anycam.utils.ImageAnalysisUtil;
 import io.flutter.view.TextureRegistry;
 
-public abstract class BaseCamera {
+public abstract class BaseCamera<T> {
 
     private boolean isInitied = false;
     protected final TextureRegistry.SurfaceTextureEntry texture;
@@ -28,10 +29,12 @@ public abstract class BaseCamera {
     protected final ImageAnalysisUtil imageAnalysisUtil = new ImageAnalysisUtil();
 
     private final List<CameraBridge> bridges = new ArrayList<>();
-
     private ActionCall lastAction = null;
 
-    public BaseCamera(TextureRegistry.SurfaceTextureEntry texture, Map<String, Object> params) {
+    protected BaseResultProcessor<T> resultProcessor;
+
+    public BaseCamera(TextureRegistry.SurfaceTextureEntry texture, Map<String, Object> params, BaseResultProcessor<T> resultProcessor) {
+        this.resultProcessor = resultProcessor;
         this.texture = texture;
         if (params.get("cameraSelector") != null) {
             final Map<String, Object> cs = (Map<String, Object>) params.get("cameraSelector");
@@ -43,6 +46,8 @@ public abstract class BaseCamera {
         }
         this.params = params;
     }
+
+
 
     public String getCameraId() {
         return cameraSelector.getId();

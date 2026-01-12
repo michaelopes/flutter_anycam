@@ -68,6 +68,11 @@ class _MyAppState extends State<MyApp> {
 
   @override
   Widget build(BuildContext _) {
+    final rtspCamera = FlutterAnycamCameraSelector.rtsp(
+      url: "rtsp://192.168.1.23:554/mode=real&idc=1&ids=1",
+      username: "admin",
+      password: "1",
+    );
     /* final usbCamera = cameras
         .where((e) => e.lensFacing == FlutterAnycamLensFacing.usb)
         .firstOrNull;
@@ -111,7 +116,7 @@ class _MyAppState extends State<MyApp> {
                         // key: UniqueKey(),
                         child: FlutterAnycamWidget(
                           //preferredSize: const FlutterAnycamSize(1280, 720),
-                          camera: cameras.last,
+                          camera: rtspCamera,
                           onFrame: _onFrame,
                         ),
                       ),

@@ -24,11 +24,12 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 
+import br.dev.michaellopes.flutter_anycam.result_process.UsbCameraProcessor;
 import br.dev.michaellopes.flutter_anycam.utils.ContextUtil;
 import br.dev.michaellopes.flutter_anycam.utils.FrameRateLimiterUtil;
 import io.flutter.view.TextureRegistry;
 
-public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.OnDeviceConnectListener {
+public class UsbCamera extends BaseCamera<ByteBuffer> implements IFrameCallback, USBMonitor.OnDeviceConnectListener {
 
     private USBMonitor mUSBMonitor;
     private UVCCamera mUVCCamera;
@@ -64,13 +65,13 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
         }
     };
     public UsbCamera(TextureRegistry.SurfaceTextureEntry texture, Map<String, Object> params) {
-        super(texture, params);
+        super(texture, params, new UsbCameraProcessor());
 
     }
+
     private void processFrame(FrameTask task) {
         try {
-            Map<String, Object> imageData = imageAnalysisUtil.usbFrameToFlutterResult(
-                    task.frame, task.width, task.height, task.rotation);
+            Map<String, Object> imageData = resultProcessor.process(task.frame, task.width, task.height, getCustomRotationDegrees());
             onVideoFrameReceived(imageData);
         } catch (Exception e) {
             e.printStackTrace();

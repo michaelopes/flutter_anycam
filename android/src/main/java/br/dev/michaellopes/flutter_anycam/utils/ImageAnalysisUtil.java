@@ -20,6 +20,8 @@ public class ImageAnalysisUtil {
         Map<String, Object> adapter = imageProxyBaseAdapter(image);
         byte[] bytes = ImageUtil.yuv_420_888toNv21(image);
 
+
+
         adapter.put("bytes", bytes);
         adapter.put("planes", planesAdapter);
         if(customRotationDegrees != null) {
