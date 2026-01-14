@@ -19,9 +19,9 @@ public class DeviceCameraProcessor extends BaseResultProcessor<ImageProxy> {
 
         List<Map<String, Object>> planesAdapter = imagePlanesAdapter(input);
         Map<String, Object> adapter = imageProxyBaseAdapter(input);
-        byte[] bytes = ImageUtil.yuv_420_888toNv21(input);
+        /*byte[] bytes = ImageUtil.yuv_420_888toNv21(input);
 
-        adapter.put("bytes", bytes);
+        adapter.put("bytes", bytes);*/
         adapter.put("planes", planesAdapter);
         if(customRotationDegrees != null) {
             adapter.put("rotation", customRotationDegrees);

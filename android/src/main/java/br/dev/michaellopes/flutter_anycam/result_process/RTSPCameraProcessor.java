@@ -14,74 +14,59 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-public class RTSPCameraProcessor extends BaseResultProcessor<Image> {
+import br.dev.michaellopes.flutter_anycam.model.FrameImage;
+
+public class RTSPCameraProcessor extends BaseResultProcessor<FrameImage> {
 
     public int rotationDegrees = 0;
-
 
     public void setRotationDegrees(int rotationDegrees) {
         this.rotationDegrees = rotationDegrees;
     }
 
     @Override
-    public Map<String, Object> process(Image input, int width, int height, Integer customRotationDegrees) {
+    public Map<String, Object> process(FrameImage input, int width, int height, Integer customRotationDegrees) {
+        Map<String, Object> adapter = new HashMap<>();
+        adapter.put("height", width);
+        adapter.put("width", height);
+        adapter.put("format", "YUV_420_888");
+        adapter.put("rotation", rotationDegrees);
+
         List<Map<String, Object>> planesAdapter = imagePlanesAdapter(input);
-        /*Map<String, Object> adapter = imageProxyBaseAdapter(input);
-      //  byte[] bytes = imageToNV21(input);
-        byte[] bytes = null;
+
+        byte[] bytes = imageToNV21(input);
         adapter.put("bytes", bytes);
         adapter.put("planes", planesAdapter);
         if (customRotationDegrees != null) {
             adapter.put("rotation", customRotationDegrees);
         }
-        return adapter;*/
-        return Collections.emptyMap();
+        return adapter;
     }
 
-    @SuppressLint({"RestrictedApi", "UnsafeOptInUsageError"})
-    private Map<String, Object> imageProxyBaseAdapter(Image image) {
-        if (image == null) return new HashMap<>();
-        Map<String, Object> result = new HashMap<>();
-        result.put("height", image.getHeight());
-        result.put("width", image.getWidth());
-        result.put("format", "YUV_420_888");
-        result.put("rotation", rotationDegrees);
-        return result;
-    }
 
     @SuppressLint({"RestrictedApi", "UnsafeOptInUsageError"})
-    private List<Map<String, Object>> imagePlanesAdapter(Image image) {
+    private List<Map<String, Object>> imagePlanesAdapter(FrameImage image) {
         if (image == null) return new ArrayList<>();
-        Image.Plane[] planes = image.getPlanes();
+        FrameImage.FramePlane[] planes = image.getPlanes();
         List<Map<String, Object>> planeData = new ArrayList<>();
 
-        for (Image.Plane plane : planes) {
-            ByteBuffer buffer = plane.getBuffer().duplicate();
-            buffer.rewind();
-            byte[] bytes = new byte[buffer.remaining()];
-            System.out.println("teste");
-            try {
-                buffer.get(bytes);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
- /*
+        for (FrameImage.FramePlane plane : planes) {
             Map<String, Object> planeMap = new HashMap<>();
-            planeMap.put("bytes", bytes);
+            planeMap.put("bytes", plane.getBuffer());
             planeMap.put("rowStride", plane.getRowStride());
             planeMap.put("pixelStride", plane.getPixelStride());
 
-            planeData.add(planeMap);*/
+            planeData.add(planeMap);
         }
 
         return planeData;
     }
 
-    private byte[] imageToNV21(Image image) {
+    private byte[] imageToNV21(FrameImage image) {
         int width = image.getWidth();
         int height = image.getHeight();
 
-        Image.Plane[] planes = image.getPlanes();
+        FrameImage.FramePlane[] planes = image.getPlanes();
 
         ByteBuffer yBuf = planes[0].getBuffer().duplicate();
         ByteBuffer uBuf = planes[1].getBuffer().duplicate();
@@ -127,6 +112,19 @@ public class RTSPCameraProcessor extends BaseResultProcessor<Image> {
 
         return nv21;
     }
+
+    static class Data {
+       public final byte[] yData;
+        public final byte[] uData;
+        public final byte[] vData;
+
+        public Data(byte[] yData, byte[] uData, byte[] vData) {
+            this.yData = yData;
+            this.uData = uData;
+            this.vData = vData;
+        }
+    }
+
 
 }
 

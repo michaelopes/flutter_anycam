@@ -1,22 +1,30 @@
 package br.dev.michaellopes.flutter_anycam.camera;
 
 import android.graphics.ImageFormat;
+import android.graphics.PixelFormat;
 import android.media.Image;
 import android.media.ImageReader;
 import android.media.ImageWriter;
 import android.net.Uri;
 import android.os.Handler;
-import android.os.HandlerThread;
+
 import android.os.Looper;
 
+
 import androidx.annotation.NonNull;
-import androidx.camera.core.ImageProxy;
+
+import androidx.media3.common.Format;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
+
 import androidx.media3.common.VideoSize;
+import androidx.media3.common.util.UnstableApi;
+
+import androidx.media3.effect.DefaultVideoFrameProcessor;
 import androidx.media3.exoplayer.ExoPlayer;
 
+import br.dev.michaellopes.flutter_anycam.model.FrameImage;
 import br.dev.michaellopes.flutter_anycam.result_process.RTSPCameraProcessor;
 import br.dev.michaellopes.flutter_anycam.utils.ContextUtil;
 import br.dev.michaellopes.flutter_anycam.utils.FrameRateLimiterUtil;
@@ -29,25 +37,35 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 
-public class RTSPCamera extends BaseCamera<Image> {
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
-   final AtomicBoolean isProcessing = new AtomicBoolean(false);
-   final Object lock = new Object();
+
+@UnstableApi
+public class RTSPCamera extends BaseCamera<FrameImage> {
+
 
     private ExoPlayer player;
-    private ImageReader imageReader = ImageReader.newInstance(
-            4,
-            3,
-            ImageFormat.YUV_420_888,
-            1
-    );
+    private ExecutorService executorService = Executors.newFixedThreadPool(1);
 
     private VideoSize videoSize;
 
-    FrameRateLimiterUtil<Image> limiter = new FrameRateLimiterUtil<Image>(getFps()) {
+    final AtomicBoolean setuped = new AtomicBoolean(false);
+
+    private ImageReader imageReader = ImageReader.newInstance(
+            4,
+            3,
+            PixelFormat.RGBA_8888,
+            1
+    );
+
+
+    FrameRateLimiterUtil<FrameImage> limiter = new FrameRateLimiterUtil<FrameImage>(getFps()) {
         @Override
-        protected void onFrameLimited(Image image) {
-            analyze(image);
+        protected void onFrameLimited(FrameImage image) {
+            executorService.execute(() -> {
+                analyze(image);
+            });
         }
     };
 
@@ -57,17 +75,15 @@ public class RTSPCamera extends BaseCamera<Image> {
 
     @Override
     protected void init() {
-
         player = new ExoPlayer.Builder(ContextUtil.get()).build();
+        player.setRepeatMode(Player.REPEAT_MODE_ONE);
         player.addListener(new Player.Listener() {
-
             @Override
             public void onPlaybackStateChanged(int state) {
-                if(state == Player.STATE_READY ) {
-                    if(videoSize == null) {
+                if (state == Player.STATE_READY) {
+                    if (videoSize == null) {
                         videoSize = player.getVideoSize();
                         setupImageReader();
-
                         Log.d("RTSP", "Resolução: " + videoSize.width + "x" + videoSize.height);
                     }
 
@@ -82,120 +98,92 @@ public class RTSPCamera extends BaseCamera<Image> {
                 onFailed(error.getMessage());
             }
         });
+
         final MediaItem mediaItem = buildRtspMediaItem();
+        player.setVideoSurface(imageReader.getSurface());
         player.setMediaItem(mediaItem);
         player.prepare();
-        player.play();
-        player.setVideoSurface(imageReader.getSurface());
+        player.setPlayWhenReady(true);
+
     }
 
 
     private void setupImageReader() {
-
-        if (imageReader != null) {
-            player.clearVideoSurface();
-            imageReader.close();
-            imageReader = null;
-        }
-
-        int width = videoSize.width;
-        int height = videoSize.height;
-
-        imageReader = ImageReader.newInstance(
-                width,
-                height,
-                ImageFormat.YUV_420_888,
-                1
-        );
-
-        ImageWriter imageWriter = ImageWriter.newInstance(getSurface(), 2);
-
-
-        player.setVideoSurface(imageReader.getSurface());
-
-        imageReader.setOnImageAvailableListener(reader -> {
-            synchronized(lock) {
-                if (isProcessing.get()) return;
-
-                isProcessing.set(true);
-                // NÃO use try-with-resources aqui
-                Image image = reader.acquireLatestImage();
-                if (image == null) return;
-
-                if (image.getFormat() != ImageFormat.YUV_420_888) {
-                    // Enfileirar de volta imediatamente sem processar
-                    if (imageWriter != null) {
-                        imageWriter.queueInputImage(image);
-                    } else {
-                        image.close();
-                    }
-                    isProcessing.set(false);
-                    return;
-                }
-
+        synchronized (setuped) {
+            if (!setuped.getAndSet(true)) {
                 try {
-                    Image.Plane[] planes = image.getPlanes();
-                    if (planes == null || planes.length < 3) {
-                        return;
+                    player.clearVideoSurface();
+
+                    if (imageReader != null) {
+                        imageReader.close();
+                        imageReader = null;
                     }
 
-                    ByteBuffer yByteBuffer = planes[0].getBuffer().duplicate();
-                    ByteBuffer uByteBuffer = planes[1].getBuffer().duplicate();
-                    ByteBuffer vByteBuffer = planes[2].getBuffer().duplicate();
+                    int width = videoSize.width;
+                    int height = videoSize.height;
 
-                    yByteBuffer.rewind();
-                    uByteBuffer.rewind();
-                    vByteBuffer.rewind();
+                    imageReader = ImageReader.newInstance(
+                            width,
+                            height,
+                            ImageFormat.YUV_420_888,
+                            30
+                    );
 
-                    int ySize = yByteBuffer.remaining();
-                    int uSize = uByteBuffer.remaining();
-                    int vSize = vByteBuffer.remaining();
+                    ImageWriter imageWriter = ImageWriter.newInstance(getSurface(), 2);
 
-                    byte[] yData = new byte[width * height];
-                    byte[] uData = new byte[uSize];
-                    byte[] vData = new byte[vSize];
+                    imageReader.setOnImageAvailableListener(reader -> {
+                        Image image = reader.acquireLatestImage();
+                      //  imageWriter.queueInputImage(image);
+                        if (image == null) return;
+                        try {
+                            Image.Plane[] planes = image.getPlanes();
+                            if (planes == null || planes.length < 3) {
+                                return;
+                            }
 
-                    int yCapacity = yByteBuffer.capacity();
-                    int yRemaining = yByteBuffer.remaining();
-                    System.out.println("DEBUG yCapacity: "  + yCapacity + " yRemaining: " + yRemaining);
-                    Log.d("DEBUG", "yData.length: " + yData.length);
-                    Log.d("DEBUG", "Image width: " + image.getWidth() + ", height: " + image.getHeight());
+                            ByteBuffer yByteBuffer = planes[0].getBuffer().duplicate();
+                            ByteBuffer uByteBuffer = planes[1].getBuffer().duplicate();
+                            ByteBuffer vByteBuffer = planes[2].getBuffer().duplicate();
 
-                    // COPIAR IMEDIATAMENTE - sincronamente
-                    yByteBuffer.get(yData);
-                    uByteBuffer.get(uData);
-                    vByteBuffer.get(vData);
+                            yByteBuffer.rewind();
+                            uByteBuffer.rewind();
+                            vByteBuffer.rewind();
+
+                            int ySize = yByteBuffer.remaining();
+                            int uSize = uByteBuffer.remaining();
+                            int vSize = vByteBuffer.remaining();
+
+                            byte[] yData = new byte[ySize];
+                            byte[] uData = new byte[uSize];
+                            byte[] vData = new byte[vSize];
+
+                            yByteBuffer.get(yData);
+                            uByteBuffer.get(uData);
+                            vByteBuffer.get(vData);
+
+                          //  image.close();
+
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                          //
+                        } finally {
+                            image.close();
+                        }
+                    }, new Handler(Looper.getMainLooper()));
+
+                    player.setVideoSurface(imageReader.getSurface());
+                    ((RTSPCameraProcessor) resultProcessor).setRotationDegrees(0);
+                    final Map<String, Object> result = new HashMap<>();
+                    result.put("width", width);
+                    result.put("height", height);
+                    onConnected(result);
 
                 } catch (Exception e) {
                     e.printStackTrace();
-                } finally {
-                    isProcessing.set(false);
-                    image.close();
+                    onFailed(e.getMessage());
                 }
             }
-        }, new Handler(Looper.getMainLooper()));
-
-
-        ((RTSPCameraProcessor) resultProcessor).setRotationDegrees(videoSize.unappliedRotationDegrees);
-
-        final Map<String, Object> result = new HashMap<>();
-        result.put("width", width);
-        result.put("height", height);
-        onConnected(result);
-
-//            if(wait.get()) {
-//                Image img = reader.acquireLatestImage();
-//                if (img != null) img.close();
-//                return;
-//            }
-//
-//            wait.set(true);
-//            Image image = reader.acquireLatestImage();
-//            if (image == null) return;
-//            limiter.onNewFrame(image);
-//            //imageWriter.queueInputImage(image);
-//         //   image.close();
-//            wait.set(false);
+        }
     }
 
 
@@ -214,14 +202,12 @@ public class RTSPCamera extends BaseCamera<Image> {
         return MediaItem.fromUri(authenticatedUri);
     }
 
-    public void analyze(@NonNull Image image) {
+    public void analyze(@NonNull FrameImage image) {
         try {
             Map<String, Object> imageData = resultProcessor.process(image, image.getWidth(), image.getHeight(), getCustomRotationDegrees());
-        //    onVideoFrameReceived(imageData);
+            onVideoFrameReceived(imageData);
         } catch (Exception e) {
-            throw new RuntimeException(e);
-        } finally {
-            //image.close();
+          e.printStackTrace();
         }
     }
 
@@ -241,7 +227,6 @@ public class RTSPCamera extends BaseCamera<Image> {
             player.release();
             player = null;
         }
-
         super.dispose();
     }
 

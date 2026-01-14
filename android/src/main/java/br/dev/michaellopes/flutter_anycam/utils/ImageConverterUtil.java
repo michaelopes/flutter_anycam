@@ -11,8 +11,9 @@ import android.graphics.YuvImage;
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 
-public class ImageConverterUtil {
+import br.dev.michaellopes.flutter_anycam.model.FrameImage;
 
+public class ImageConverterUtil {
 
     public static byte[] yv12ToNv21(byte[] yv12Bytes, int width, int height) {
         int frameSize = width * height;
@@ -58,7 +59,7 @@ public class ImageConverterUtil {
         return nv21;
     }
 
-    public static FrameImageProxy convertNV21ToFrameImageProxy(byte[] nv21Data, int width, int height) {
+    public static FrameImage convertNV21ToFrameImageProxy(byte[] nv21Data, int width, int height) {
         int frameSize = width * height;
         int qFrameSize = frameSize / 4;
         byte[] i420Data = new byte[frameSize + 2 * qFrameSize];
@@ -74,71 +75,7 @@ public class ImageConverterUtil {
             i420Data[vIndex++] = nv21Data[uvStart + i];     // V
         }
 
-        return new FrameImageProxy(i420Data, width, height);
-    }
-
-    public static class FrameImageProxy {
-        private final int width;
-        private final int height;
-        private final FramePlane[] planes;
-
-        public FrameImageProxy(byte[] i420Data, int width, int height) {
-            this.width = width;
-            this.height = height;
-            this.planes = buildPlanes(i420Data, width, height);
-        }
-
-        public int getWidth() {
-            return width;
-        }
-
-        public int getHeight() {
-            return height;
-        }
-
-        public FramePlane[] getPlanes() {
-            return planes;
-        }
-
-        private FramePlane[] buildPlanes(byte[] data, int width, int height) {
-            int ySize = width * height;
-            int uSize = ySize / 4;
-            int vSize = ySize / 4;
-
-            ByteBuffer yBuffer = ByteBuffer.wrap(data, 0, ySize);
-            ByteBuffer uBuffer = ByteBuffer.wrap(data, ySize, uSize);
-            ByteBuffer vBuffer = ByteBuffer.wrap(data, ySize + uSize, vSize);
-
-            return new FramePlane[]{
-                    new FramePlane(yBuffer, width, 1),           // Y plane
-                    new FramePlane(uBuffer, width / 2, 2),       // U plane
-                    new FramePlane(vBuffer, width / 2, 2)        // V plane
-            };
-        }
-    }
-
-    public static class FramePlane {
-        private final ByteBuffer buffer;
-        private final int rowStride;
-        private final int pixelStride;
-
-        public FramePlane(ByteBuffer buffer, int rowStride, int pixelStride) {
-            this.buffer = buffer;
-            this.rowStride = rowStride;
-            this.pixelStride = pixelStride;
-        }
-
-        public ByteBuffer getBuffer() {
-            return buffer;
-        }
-
-        public int getRowStride() {
-            return rowStride;
-        }
-
-        public int getPixelStride() {
-            return pixelStride;
-        }
+        return new FrameImage(i420Data, width, height);
     }
 
     public static byte[] nv21ToJpeg(byte[] bytes, Integer width, Integer height, Integer quality, Float rotation) {

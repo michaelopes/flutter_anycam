@@ -7,6 +7,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import br.dev.michaellopes.flutter_anycam.model.FrameImage;
 import br.dev.michaellopes.flutter_anycam.utils.ImageConverterUtil;
 
 public class UsbCameraProcessor extends BaseResultProcessor<ByteBuffer> {
@@ -15,9 +16,9 @@ public class UsbCameraProcessor extends BaseResultProcessor<ByteBuffer> {
         byte[] nv21Bytes = new byte[input.remaining()];
         input.get(nv21Bytes);
 
-        ImageConverterUtil.FrameImageProxy imageProxy = ImageConverterUtil.convertNV21ToFrameImageProxy(nv21Bytes, width, height);
+        FrameImage imageProxy = ImageConverterUtil.convertNV21ToFrameImageProxy(nv21Bytes, width, height);
         List<Map<String, Object>> planes = new ArrayList<>();
-        for (ImageConverterUtil.FramePlane item :
+        for (FrameImage.FramePlane item :
                 imageProxy.getPlanes()) {
             Map<String, Object> plane = new HashMap<>();
 
