@@ -10,6 +10,7 @@ import java.util.Map;
 
 import br.dev.michaellopes.flutter_anycam.integration.CameraViewFactory;
 import br.dev.michaellopes.flutter_anycam.integration.FlutterEventChannel;
+import br.dev.michaellopes.flutter_anycam.stream.CameraStreamManager;
 import br.dev.michaellopes.flutter_anycam.utils.CameraUtil;
 import br.dev.michaellopes.flutter_anycam.utils.ContextUtil;
 import br.dev.michaellopes.flutter_anycam.utils.DeviceCameraUtils;
@@ -97,6 +98,19 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
                 break;
             case "convertNv21ToJpeg":
                 convertNv21ToJpeg(call, result);
+                break;
+            case "registerRawStream":
+                HashMap<?, ?> p1 = (HashMap<?, ?>) call.arguments;
+                String cameraId = (String) p1.get("cameraId");
+                int fps = (int) p1.get("fps");
+                boolean res = CameraStreamManager.getInstance().add(cameraId, fps);
+                result.success(res);
+                break;
+            case "disposeRawStream":
+                HashMap<?, ?> p2 = (HashMap<?, ?>) call.arguments;
+                String cId = (String) p2.get("cameraId");
+                CameraStreamManager.getInstance().dispose(cId);
+                result.success(true);
                 break;
             case "setFlash":
                 HashMap<?, ?> args3 = (HashMap<?, ?>) call.arguments;

@@ -4,44 +4,47 @@ import android.annotation.SuppressLint;
 import android.media.Image;
 
 import androidx.camera.core.ImageProxy;
-import androidx.camera.core.internal.utils.ImageUtil;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
 
 import br.dev.michaellopes.flutter_anycam.stream.RtspStreamer;
 import io.flutter.Log;
 
 public class ImageAnalysisUtil {
 
-    private final  FastYuvToNv21Converter fastYuvToNv21Converter = new FastYuvToNv21Converter();
-//    private final RtspStreamer rtspStreamer = new RtspStreamer("admin", "1", 30);
+  //  RtspStreamer rtspStreamer = new RtspStreamer("admin", "1");
 
     @SuppressLint("RestrictedApi")
-    public Map<String, Object> imageProxyToFlutterResult(ImageProxy image, Integer customRotationDegrees) {
+    public Map<String, Object> imageProxyToFlutterResult(ImageProxy image, byte[] nv21, Integer customRotationDegrees) {
+        try {
+            List<Map<String, Object>> planesAdapter = imagePlanesAdapter(image);
+            Map<String, Object> adapter = imageProxyBaseAdapter(image);
 
-        List<Map<String, Object>> planesAdapter = imagePlanesAdapter(image);
-        Map<String, Object> adapter = imageProxyBaseAdapter(image);
+            long start = System.nanoTime();
+            @SuppressLint("UnsafeOptInUsageError")
+            byte[] bytes = nv21 != null ? nv21 : YuvUtil.yuv420ToNv21(image.getImage()).get();
+            // rtspStreamer.sendFrame(bytes, image.getWidth(), image.getHeight(), image.getImageInfo().getRotationDegrees());
+            long end = System.nanoTime();
+            long durationNs = end - start;
 
-        long start = System.nanoTime();
-        byte[] bytes = fastYuvToNv21Converter.convert(image); //ImageUtil.yuv_420_888toNv21(image);
-       // rtspStreamer.sendFrame(bytes, image.getWidth(), image.getHeight(), image.getImageInfo().getRotationDegrees());
-        long end = System.nanoTime();
-        long durationNs = end - start;
+            double durationMs = durationNs / 1_000_000.0;
 
-        double durationMs = durationNs / 1_000_000.0;
+            Log.d("PERF", "Tempo: " + durationMs + " ms");
 
-        Log.d("PERF", "Tempo: " + durationMs + " ms");
-
-        adapter.put("bytes", bytes);
-        adapter.put("planes", planesAdapter);
-        if(customRotationDegrees != null) {
-            adapter.put("rotation", customRotationDegrees);
+            adapter.put("bytes", bytes);
+            adapter.put("planes", planesAdapter);
+            if (customRotationDegrees != null) {
+                adapter.put("rotation", customRotationDegrees);
+            }
+            return adapter;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
-        return adapter;
     }
 
     @SuppressLint({"RestrictedApi", "UnsafeOptInUsageError"})
@@ -103,7 +106,7 @@ public class ImageAnalysisUtil {
         Map<String, Object> image = new HashMap<>();
         image.put("width", width);
         image.put("height", height);
-        if(customRotationDegrees != null) {
+        if (customRotationDegrees != null) {
             image.put("rotation", customRotationDegrees);
         } else {
             image.put("rotation", 0);
@@ -138,7 +141,7 @@ public class ImageAnalysisUtil {
         Map<String, Object> image = new HashMap<>();
         image.put("width", width);
         image.put("height", height);
-        if(customRotationDegrees != null) {
+        if (customRotationDegrees != null) {
             image.put("rotation", customRotationDegrees);
         } else {
             image.put("rotation", 0);
@@ -151,7 +154,4 @@ public class ImageAnalysisUtil {
         return image;
     }
 
-    public void dispose() {
-        fastYuvToNv21Converter.dispose();
-    }
 }

@@ -31,6 +31,14 @@ class _MyAppState extends State<MyApp> {
   void initState() {
     super.initState();
 
+    FlutterAnycamH264Stream.I.register(
+      cameraId: cameras.first.id,
+      fps: 15,
+      listener: (data) {
+        
+      },
+    );
+
     /* Future.delayed(const Duration(seconds: 20), () {
       setState(() {
         show1 = true;
@@ -110,7 +118,7 @@ class _MyAppState extends State<MyApp> {
                       Expanded(
                         // key: UniqueKey(),
                         child: FlutterAnycamWidget(
-                          fps: 5,
+                          fps: 3,
                           //preferredSize: const FlutterAnycamSize(1280, 720),
                           camera: cameras.first,
                           onFrame: _onFrame,

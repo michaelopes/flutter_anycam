@@ -82,4 +82,12 @@ abstract class FlutterAnycamPlatform extends PlatformInterface {
   Future<bool> disposeView(Map<String, dynamic> args) {
     throw UnimplementedError('disposeView() has not been implemented.');
   }
+
+  Future<bool> registerRawStream(String cameraId, int fps) {
+    throw UnimplementedError('registerRawStream() has not been implemented.');
+  }
+
+  Future<bool> disposeRawStream(String cameraId) {
+    throw UnimplementedError('disposeRawStream() has not been implemented.');
+  }
 }

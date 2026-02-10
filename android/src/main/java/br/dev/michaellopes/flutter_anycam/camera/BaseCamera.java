@@ -10,12 +10,12 @@ import java.util.List;
 import java.util.Map;
 
 import br.dev.michaellopes.flutter_anycam.model.ViewCameraSelector;
+import br.dev.michaellopes.flutter_anycam.stream.CameraRawStream;
 import br.dev.michaellopes.flutter_anycam.utils.CameraPermissionsUtil;
 import br.dev.michaellopes.flutter_anycam.utils.ImageAnalysisUtil;
 import io.flutter.view.TextureRegistry;
 
 public abstract class BaseCamera {
-
     private boolean isInitied = false;
     protected final TextureRegistry.SurfaceTextureEntry texture;
 
@@ -166,7 +166,6 @@ public abstract class BaseCamera {
     public void dispose() {
         bridges.clear();
         texture.release();
-        imageAnalysisUtil.dispose();
     }
 
    static class ActionCall {

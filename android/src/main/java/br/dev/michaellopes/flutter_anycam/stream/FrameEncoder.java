@@ -1,7 +1,6 @@
 package br.dev.michaellopes.flutter_anycam.stream;
 
 import android.annotation.SuppressLint;
-import android.content.Context;
 import android.media.MediaCodec;
 import android.media.MediaCodecInfo;
 import android.media.MediaFormat;
@@ -11,13 +10,10 @@ import android.util.Log;
 
 import androidx.annotation.NonNull;
 
-import androidx.lifecycle.LifecycleOwner;
-
-import java.nio.Buffer;
 import java.nio.ByteBuffer;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import br.dev.michaellopes.flutter_anycam.utils.FastNv21ToNv12Converter;
+import br.dev.michaellopes.flutter_anycam.utils.YuvUtil;
 
 public class FrameEncoder {
 
@@ -28,13 +24,12 @@ public class FrameEncoder {
     }
 
 
-    private static final String TAG = "CameraXStreamer";
+    private static final String TAG = "FrameEncoder";
     private final AtomicBoolean isStarted = new AtomicBoolean(false);
     private int width;
     private int height;
     private final int bitrate;
     private final int fps;
-    private final FastNv21ToNv12Converter fastNv21ToNv12Converter;
     private OnH264FrameListener listener;
     private MediaCodec encoder;
     private HandlerThread encoderThread;
@@ -44,7 +39,6 @@ public class FrameEncoder {
     private byte[] spsPpsCache;
 
     public FrameEncoder(int bitrate, int fps) {
-        fastNv21ToNv12Converter = new FastNv21ToNv12Converter();
         this.bitrate = bitrate;
         this.fps = fps;
     }
@@ -83,14 +77,23 @@ public class FrameEncoder {
     private long frameIndex = 0;
 
     @SuppressLint("UnsafeOptInUsageError")
-    public synchronized void sendFrame(@NonNull byte[] nv21, int width, int height) {
-        this.width = width;
-        this.height = height;
+    public synchronized void sendFrame(@NonNull byte[] nv21, int width, int height, int rotation) {
+
+        boolean inverse = rotation  == 90 || rotation == 270;
+
+        this.width = inverse ? height :  width;
+        this.height = inverse ? width :  height;
 
         start();
 
+        byte[] inputNv21 = rotation == 0 ? nv21 :  YuvUtil.rotateNV21(nv21, width, height, rotation);
+
         long ptsUs = computePresentationTimeUs(frameIndex++);
-        byte[] nv12 = fastNv21ToNv12Converter.convert(nv21, width, height);
+        ByteBuffer bt = YuvUtil.nv21ToNv12(inputNv21, width, height);
+
+        byte[] nv12 = new byte[bt.capacity()];
+        bt.get(nv12);
+
         encoderHandler.post(() -> encodeFrame(nv12, ptsUs));
     }
 

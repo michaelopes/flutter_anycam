@@ -7,6 +7,7 @@ class FlutterAnycamStreamListener {
   final FlutterAnycamStreamMethod? onUnauthorized;
   final FlutterAnycamStreamMethod? onFailed;
   final FlutterAnycamStreamMethod? onVideoFrameReceived;
+  final FlutterAnycamStreamMethod? onVideoH264Frame;
 
   FlutterAnycamStreamListener({
     this.viewId = -1,
@@ -15,5 +16,6 @@ class FlutterAnycamStreamListener {
     this.onUnauthorized,
     this.onFailed,
     this.onVideoFrameReceived,
+    this.onVideoH264Frame,
   });
 }

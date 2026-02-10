@@ -33,6 +33,7 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
           "onUnauthorized": listener.onUnauthorized,
           "onFailed": listener.onFailed,
           "onVideoFrameReceived": listener.onVideoFrameReceived,
+          "onVideoH264Frame": listener.onVideoH264Frame,
         };
         if (methods[method] != null) {
           methods[method]!(data);
@@ -137,5 +138,26 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
   @override
   Future<void> broadcastPermissionGranted() async {
     await methodChannel.invokeMethod('broadcastPermissionGranted');
+  }
+
+  @override
+  Future<bool> registerRawStream(String cameraId, int fps) async {
+    return await methodChannel.invokeMethod(
+      'registerRawStream',
+      {
+        "cameraId": cameraId,
+        "fps": fps,
+      },
+    );
+  }
+
+  @override
+  Future<bool> disposeRawStream(String cameraId) async {
+    return await methodChannel.invokeMethod(
+      'disposeRawStream',
+      {
+        "cameraId": cameraId,
+      },
+    );
   }
 }

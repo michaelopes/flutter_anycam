@@ -7,6 +7,7 @@ export './src/flutter_anycam_size.dart';
 export './src/flutter_anycam_texts.dart';
 export './src/flutter_anycam_platform_interface.dart';
 export './src/flutter_anycam_method_channel.dart';
+export './src/flutter_anycam_h264_stream.dart';
 
 import 'src/flutter_anycam_camera_selector.dart';
 import 'src/flutter_anycam_image_conversor.dart';
