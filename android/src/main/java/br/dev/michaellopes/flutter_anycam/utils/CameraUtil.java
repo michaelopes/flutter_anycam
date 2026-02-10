@@ -78,6 +78,8 @@ public class CameraUtil {
     public void init(Context context) {
         synchronized (instance) {
 
+            io.flutter.Log.i("REQUEST_MAX_NUM_OUTPUT_STREAMS", String.valueOf(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_BACKWARD_COMPATIBLE));
+
             cameraProviderFuture = ProcessCameraProvider.getInstance(context);
             cameraProviderFuture.addListener(() -> {
                 try {

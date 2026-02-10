@@ -166,6 +166,7 @@ public abstract class BaseCamera {
     public void dispose() {
         bridges.clear();
         texture.release();
+        imageAnalysisUtil.dispose();
     }
 
    static class ActionCall {

@@ -12,13 +12,29 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import br.dev.michaellopes.flutter_anycam.stream.RtspStreamer;
+import io.flutter.Log;
+
 public class ImageAnalysisUtil {
+
+    private final  FastYuvToNv21Converter fastYuvToNv21Converter = new FastYuvToNv21Converter();
+//    private final RtspStreamer rtspStreamer = new RtspStreamer("admin", "1", 30);
+
     @SuppressLint("RestrictedApi")
     public Map<String, Object> imageProxyToFlutterResult(ImageProxy image, Integer customRotationDegrees) {
 
         List<Map<String, Object>> planesAdapter = imagePlanesAdapter(image);
         Map<String, Object> adapter = imageProxyBaseAdapter(image);
-        byte[] bytes = ImageUtil.yuv_420_888toNv21(image);
+
+        long start = System.nanoTime();
+        byte[] bytes = fastYuvToNv21Converter.convert(image); //ImageUtil.yuv_420_888toNv21(image);
+       // rtspStreamer.sendFrame(bytes, image.getWidth(), image.getHeight(), image.getImageInfo().getRotationDegrees());
+        long end = System.nanoTime();
+        long durationNs = end - start;
+
+        double durationMs = durationNs / 1_000_000.0;
+
+        Log.d("PERF", "Tempo: " + durationMs + " ms");
 
         adapter.put("bytes", bytes);
         adapter.put("planes", planesAdapter);
@@ -135,4 +151,7 @@ public class ImageAnalysisUtil {
         return image;
     }
 
+    public void dispose() {
+        fastYuvToNv21Converter.dispose();
+    }
 }

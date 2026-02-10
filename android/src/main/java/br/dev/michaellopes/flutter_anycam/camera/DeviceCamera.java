@@ -110,6 +110,8 @@ public class DeviceCamera extends BaseCamera {
                 imageAnalysis = aBuilder
                         .build();
 
+
+
                 imageAnalysis.setAnalyzer(cameraExecutor, limiter::onNewFrame);
 
                 Camera2CameraInfoImpl cameraInfo = DeviceCameraUtils.getInstance().bind(cameraSelector.getId(), preview, imageAnalysis);

@@ -2,6 +2,7 @@ package br.dev.michaellopes.flutter_anycam.utils;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.hardware.camera2.CameraDevice;
 import android.hardware.camera2.CameraManager;
 
 

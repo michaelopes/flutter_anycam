@@ -110,8 +110,9 @@ class _MyAppState extends State<MyApp> {
                       Expanded(
                         // key: UniqueKey(),
                         child: FlutterAnycamWidget(
+                          fps: 5,
                           //preferredSize: const FlutterAnycamSize(1280, 720),
-                          camera: cameras.last,
+                          camera: cameras.first,
                           onFrame: _onFrame,
                         ),
                       ),
