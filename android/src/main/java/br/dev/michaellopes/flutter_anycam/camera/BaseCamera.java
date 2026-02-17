@@ -6,17 +6,17 @@ import android.view.Surface;
 import androidx.annotation.CallSuper;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import br.dev.michaellopes.flutter_anycam.model.ViewCameraSelector;
-import br.dev.michaellopes.flutter_anycam.stream.CameraRawStream;
 import br.dev.michaellopes.flutter_anycam.utils.CameraPermissionsUtil;
 import br.dev.michaellopes.flutter_anycam.utils.ImageAnalysisUtil;
 import io.flutter.view.TextureRegistry;
 
 public abstract class BaseCamera {
-    private boolean isInitied = false;
+    private boolean isInitialed = false;
     protected final TextureRegistry.SurfaceTextureEntry texture;
 
     protected ViewCameraSelector cameraSelector;
@@ -134,7 +134,9 @@ public abstract class BaseCamera {
                     bridge.onFailed((String)lastAction.data);
                     break;
                 default:
-                    bridge.onConnected((Map<String, Object>)lastAction.data);
+                    bridge.onConnected(new HashMap<String, Object>() {{
+                        putAll((Map<String, Object>)lastAction.data);
+                    }});
                     break;
             }
         }
@@ -150,13 +152,13 @@ public abstract class BaseCamera {
     public synchronized void run() {
         if (cameraSelector.getCameraSelectorRTSP() != null) {
             init();
-            isInitied = true;
-        } else if (CameraPermissionsUtil.getInstance().hasCameraPermission() && !isInitied) {
+            isInitialed = true;
+        } else if (CameraPermissionsUtil.getInstance().hasCameraPermission() && !isInitialed) {
             init();
-            isInitied = true;
+            isInitialed = true;
         } else {
            onUnauthorized();
-            isInitied = false;
+            isInitialed = false;
         }
     }
 

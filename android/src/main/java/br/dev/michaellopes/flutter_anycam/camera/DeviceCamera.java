@@ -8,7 +8,6 @@ import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraManager;
 import android.hardware.camera2.params.StreamConfigurationMap;
-import android.renderscript.Matrix4f;
 import android.util.Log;
 import android.util.Size;
 import android.view.Surface;
@@ -31,7 +30,6 @@ import java.util.List;
 import java.util.Map;
 
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -48,7 +46,7 @@ public class DeviceCamera extends BaseCamera {
 
     private volatile boolean processing = false;
 
-    private final BlockingQueue<LimiterFrame> frameQueue = new LinkedBlockingQueue<>(1);
+    private final BlockingQueue<ImageProxy> frameQueue = new LinkedBlockingQueue<>(1);
 
     private final ExecutorService queueExecutor = Executors.newFixedThreadPool(1);
 
@@ -58,9 +56,9 @@ public class DeviceCamera extends BaseCamera {
 
     private boolean resolutionStrategy = true;
 
-    FrameRateLimiterUtil<LimiterFrame> limiter = new FrameRateLimiterUtil<LimiterFrame>(getFps()) {
+    FrameRateLimiterUtil<ImageProxy> limiter = new FrameRateLimiterUtil<ImageProxy>(getFps()) {
         @Override
-        protected void onFrameLimited(LimiterFrame image) {
+        protected void onFrameLimited(ImageProxy image) {
             boolean added = frameQueue.offer(image);
             if (added && !processing) {
                 startProcessingWorker();
@@ -68,8 +66,8 @@ public class DeviceCamera extends BaseCamera {
         }
 
         @Override
-        protected void onFrameSkipped(LimiterFrame image) {
-            image.imageProxy.close();
+        protected void onFrameSkipped(ImageProxy image) {
+            image.close();
         }
     };
 
@@ -114,8 +112,8 @@ public class DeviceCamera extends BaseCamera {
 
 
                 imageAnalysis.setAnalyzer(cameraExecutor, (imageProxy) -> {
-                    byte[] nv21 = CameraStreamManager.getInstance().sendFrame(getCameraId(), imageProxy);
-                    limiter.onNewFrame(new LimiterFrame(imageProxy, nv21));
+                    CameraStreamManager.getInstance().sendFrame(getCameraId(), imageProxy, getCustomRotationDegrees());
+                    limiter.onNewFrame(imageProxy);
                 });
 
                 Camera2CameraInfoImpl cameraInfo = DeviceCameraUtils.getInstance().bind(cameraSelector.getId(), preview, imageAnalysis);
@@ -246,7 +244,7 @@ public class DeviceCamera extends BaseCamera {
         queueExecutor.execute(() -> {
             while (!Thread.currentThread().isInterrupted()) {
                 try {
-                    LimiterFrame task = frameQueue.poll(100, TimeUnit.MILLISECONDS);
+                    ImageProxy task = frameQueue.poll(100, TimeUnit.MILLISECONDS);
                     if (task != null) {
                         analyze(task);
                     } else {
@@ -266,14 +264,14 @@ public class DeviceCamera extends BaseCamera {
         });
     }
 
-    public void analyze(@NonNull LimiterFrame image) {
+    public void analyze(@NonNull ImageProxy image) {
         try {
-            Map<String, Object> imageData = imageAnalysisUtil.imageProxyToFlutterResult(image.imageProxy, image.nv21, getCustomRotationDegrees());
+            Map<String, Object> imageData = imageAnalysisUtil.imageProxyToNV21Map(image, getCustomRotationDegrees());
             onVideoFrameReceived(imageData);
         } catch (Exception e) {
             throw new RuntimeException(e);
         } finally {
-            image.imageProxy.close();
+            image.close();
         }
     }
 

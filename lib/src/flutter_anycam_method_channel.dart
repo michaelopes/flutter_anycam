@@ -33,7 +33,7 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
           "onUnauthorized": listener.onUnauthorized,
           "onFailed": listener.onFailed,
           "onVideoFrameReceived": listener.onVideoFrameReceived,
-          "onVideoH264Frame": listener.onVideoH264Frame,
+          "onCameraRawFrame": listener.onCameraRawFrame,
         };
         if (methods[method] != null) {
           methods[method]!(data);

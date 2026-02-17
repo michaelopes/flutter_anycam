@@ -10,7 +10,7 @@
 
 extern "C"
 JNIEXPORT jbyteArray JNICALL
-Java_br_dev_michaellopes_flutter_1anycam_utils_YuvUtil_yuv420ToNv21JNI(
+Java_br_dev_michaellopes_flutter_1anycam_utils_YuvUtil_yuv420888ToNv21JNI(
         JNIEnv* env,
         jclass clazz,
         jobject yBuffer,
@@ -19,42 +19,131 @@ Java_br_dev_michaellopes_flutter_1anycam_utils_YuvUtil_yuv420ToNv21JNI(
         jint width,
         jint height,
         jint yRowStride,
-        jint uvRowStride,
-        jint uvPixelStride) {
-
-    int ySize = width * height;
-    int uvSize = width * height / 2;
-
-    jbyteArray nv21Array = env->NewByteArray(ySize + uvSize);
-    jbyte* nv21 = env->GetByteArrayElements(nv21Array, nullptr);
+        jint uRowStride,
+        jint vRowStride,
+        jint uPixelStride,
+        jint vPixelStride) {
 
     uint8_t* yData = (uint8_t*) env->GetDirectBufferAddress(yBuffer);
     uint8_t* uData = (uint8_t*) env->GetDirectBufferAddress(uBuffer);
     uint8_t* vData = (uint8_t*) env->GetDirectBufferAddress(vBuffer);
 
-    // Copy Y plane
+    if (!yData || !uData || !vData) return nullptr;
+
+    const int ySize  = width * height;
+    const int uvSize = ySize >> 1;
+
+    // Aloca buffer nativo diretamente, evita GetByteArrayElements + lock
+    uint8_t* nv21 = (uint8_t*) malloc(ySize + uvSize);
+    if (!nv21) return nullptr;
+
+    // === Y plane ===
     if (yRowStride == width) {
+        // Caso ideal: cópia única sem loop
         memcpy(nv21, yData, ySize);
     } else {
-        for (int i = 0; i < height; i++) {
-            memcpy(nv21 + i * width, yData + i * yRowStride, width);
+        uint8_t* dst = nv21;
+        for (int row = 0; row < height; row++) {
+            memcpy(dst, yData + row * yRowStride, width);
+            dst += width;
         }
     }
 
-    // Copy interleaved VU
-    int uvIndex = ySize;
-    for (int row = 0; row < height / 2; row++) {
-        uint8_t* uRow = uData + row * uvRowStride;
-        uint8_t* vRow = vData + row * uvRowStride;
-        for (int col = 0; col < width / 2; col++) {
-            nv21[uvIndex++] = vRow[col * uvPixelStride]; // V
-            nv21[uvIndex++] = uRow[col * uvPixelStride]; // U
+    // === UV plane ===
+    const int chromaHeight = height >> 1;
+    const int chromaWidth  = width  >> 1;
+    uint8_t* uvDst = nv21 + ySize;
+
+    // Caso ideal: UV já está interleaved e contíguo (maioria dos dispositivos)
+    // vData + 1 == uData (ou vice-versa) → cópia direta
+    if (vPixelStride == 2 && uPixelStride == 2 &&
+        vRowStride == uRowStride &&
+        (vData + 1 == uData || uData + 1 == vData)) {
+
+        uint8_t* src = (vData < uData) ? vData : vData; // começa pelo V (NV21)
+        const int rowBytes = chromaWidth * 2;
+
+        if (vRowStride == rowBytes) {
+            // Plano inteiro contíguo
+            memcpy(uvDst, vData, chromaHeight * rowBytes);
+        } else {
+            for (int row = 0; row < chromaHeight; row++) {
+                memcpy(uvDst, vData + row * vRowStride, rowBytes);
+                uvDst += rowBytes;
+            }
+        }
+    } else {
+        // Fallback: interleave manual por pixel
+        for (int row = 0; row < chromaHeight; row++) {
+            const uint8_t* uRow = uData + row * uRowStride;
+            const uint8_t* vRow = vData + row * vRowStride;
+
+            for (int col = 0; col < chromaWidth; col++) {
+                *uvDst++ = vRow[col * vPixelStride]; // V
+                *uvDst++ = uRow[col * uPixelStride]; // U
+            }
         }
     }
 
-    env->ReleaseByteArrayElements(nv21Array, nv21, 0);
-    return nv21Array;
+    // Cria o jbyteArray copiando do buffer nativo (sem lock de GC)
+    jbyteArray result = env->NewByteArray(ySize + uvSize);
+    env->SetByteArrayRegion(result, 0, ySize + uvSize, (jbyte*) nv21);
+    free(nv21);
+
+    return result;
 }
+//Java_br_dev_michaellopes_flutter_1anycam_utils_YuvUtil_yuv420888ToNv21JNI(
+//        JNIEnv* env,
+//        jclass clazz,
+//        jobject yBuffer,
+//        jobject uBuffer,
+//        jobject vBuffer,
+//        jint width,
+//        jint height,
+//        jint yRowStride,
+//        jint uRowStride,
+//        jint vRowStride,
+//        jint uPixelStride,
+//        jint vPixelStride) {
+//
+//    uint8_t* yData = (uint8_t*) env->GetDirectBufferAddress(yBuffer);
+//    uint8_t* uData = (uint8_t*) env->GetDirectBufferAddress(uBuffer);
+//    uint8_t* vData = (uint8_t*) env->GetDirectBufferAddress(vBuffer);
+//
+//    if (!yData || !uData || !vData) {
+//        return nullptr;
+//    }
+//
+//    int ySize = width * height;
+//    int uvSize = width * height / 2;
+//
+//    jbyteArray nv21Array = env->NewByteArray(ySize + uvSize);
+//    jbyte* nv21 = env->GetByteArrayElements(nv21Array, nullptr);
+//
+//    // Copy Y plane (respeitando rowStride)
+//    int pos = 0;
+//    for (int row = 0; row < height; row++) {
+//        memcpy(nv21 + pos, yData + row * yRowStride, width);
+//        pos += width;
+//    }
+//
+//    // Copy UV (VU interleaved = NV21)
+//    int chromaHeight = height / 2;
+//    int chromaWidth = width / 2;
+//
+//    for (int row = 0; row < chromaHeight; row++) {
+//        uint8_t* uRow = uData + row * uRowStride;
+//        uint8_t* vRow = vData + row * vRowStride;
+//
+//        for (int col = 0; col < chromaWidth; col++) {
+//            nv21[pos++] = vRow[col * vPixelStride]; // V
+//            nv21[pos++] = uRow[col * uPixelStride]; // U
+//        }
+//    }
+//
+//    env->ReleaseByteArrayElements(nv21Array, nv21, 0);
+//    return nv21Array;
+//}
 
 extern "C"
 JNIEXPORT void JNICALL

@@ -141,33 +141,39 @@ public class ImageConverterUtil {
         }
     }
 
-    public static byte[] nv21ToJpeg(byte[] bytes, Integer width, Integer height, Integer quality, Float rotation) {
+    public static byte[] nv21ToJpeg(byte[] bytes, int width, int height, int quality, int rotation) {
+
         YuvImage yuv = new YuvImage(bytes, ImageFormat.NV21, width, height, null);
+
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         yuv.compressToJpeg(new Rect(0, 0, width, height), quality, out);
-        byte[] jpegBytes = out.toByteArray();
 
+        byte[] jpegBytes = out.toByteArray();
         Bitmap bitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.length);
 
         Matrix matrix = new Matrix();
-        int centerX = width / 2;
-        int centerY = height / 2;
+        matrix.postRotate(rotation);
 
-        matrix.postRotate(rotation, centerX, centerY);
-
-        if(rotation == 270) {
-            matrix.postScale(-1, 1, centerX, centerY);
+        if (rotation == 270) {
+            matrix.postScale(-1f, 1f);
         }
 
-        Bitmap rotatedBitmap = Bitmap.createBitmap(bitmap, 0, 0, width, height, matrix, true);
+        Bitmap rotatedBitmap = Bitmap.createBitmap(
+                bitmap,
+                0,
+                0,
+                bitmap.getWidth(),
+                bitmap.getHeight(),
+                matrix,
+                true
+        );
 
         ByteArrayOutputStream finalOut = new ByteArrayOutputStream();
         rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, quality, finalOut);
-        byte[] rotatedBytes = finalOut.toByteArray();
 
         bitmap.recycle();
         rotatedBitmap.recycle();
 
-        return rotatedBytes;
+        return finalOut.toByteArray();
     }
 }

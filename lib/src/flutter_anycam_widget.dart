@@ -96,12 +96,14 @@ class FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
   }
 
   Future<void> _createView() async {
-    _factory.createView(
-      viewId: viewId,
-      camera: widget.camera,
-      preferredSize: widget.preferredSize,
-      fps: widget.fps,
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _factory.createView(
+        viewId: viewId,
+        camera: widget.camera,
+        preferredSize: widget.preferredSize,
+        fps: widget.fps,
+      );
+    });
   }
 
   ({

@@ -143,7 +143,7 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
 
         new Thread(() -> {
             try {
-                byte[] bs = ImageConverterUtil.nv21ToJpeg(bytes, width, height, quality, rotation);
+                byte[] bs = ImageConverterUtil.nv21ToJpeg(bytes, width, height, quality, Math.round(rotation));
                 result.success(bs);
             } catch (final Exception e) {
                 new Handler(Looper.getMainLooper()).post(() -> result.error("Processing error", e.getMessage(), null)

@@ -1,6 +1,9 @@
 package br.dev.michaellopes.flutter_anycam.utils;
 
 import android.media.Image;
+
+import androidx.camera.core.internal.utils.ImageUtil;
+
 import java.nio.ByteBuffer;
 import java.util.concurrent.CompletableFuture;
 
@@ -33,24 +36,37 @@ public class YuvUtil {
             throw new RuntimeException(e);
         }
     }
-    
-    public static native byte[] yuv420ToNv21JNI(ByteBuffer yBuffer, ByteBuffer uBuffer, ByteBuffer vBuffer,
-                                                int width, int height,
-                                                int yRowStride, int uvRowStride, int uvPixelStride);
+
+    private static native byte[] yuv420888ToNv21JNI(
+            ByteBuffer y,
+            ByteBuffer u,
+            ByteBuffer v,
+            int width,
+            int height,
+            int yRowStride,
+            int uRowStride,
+            int vRowStride,
+            int uPixelStride,
+            int vPixelStride
+    );
     public static CompletableFuture<byte[]> yuv420ToNv21(Image image) {
         return CompletableFuture.supplyAsync(() -> {
-            ByteBuffer y = image.getPlanes()[0].getBuffer();
-            ByteBuffer u = image.getPlanes()[1].getBuffer();
-            ByteBuffer v = image.getPlanes()[2].getBuffer();
+            Image.Plane yPlane = image.getPlanes()[0];
+            Image.Plane uPlane = image.getPlanes()[1];
+            Image.Plane vPlane = image.getPlanes()[2];
 
-            int width = image.getWidth();
-            int height = image.getHeight();
-
-            int yRowStride = image.getPlanes()[0].getRowStride();
-            int uvRowStride = image.getPlanes()[1].getRowStride();
-            int uvPixelStride = image.getPlanes()[1].getPixelStride();
-
-            return yuv420ToNv21JNI(y, u, v, width, height, yRowStride, uvRowStride, uvPixelStride);
+            return yuv420888ToNv21JNI(
+                    yPlane.getBuffer(),
+                    uPlane.getBuffer(),
+                    vPlane.getBuffer(),
+                    image.getWidth(),
+                    image.getHeight(),
+                    yPlane.getRowStride(),
+                    uPlane.getRowStride(),
+                    vPlane.getRowStride(),
+                    uPlane.getPixelStride(),
+                    vPlane.getPixelStride()
+            );
         });
     }
 }

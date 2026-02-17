@@ -5,8 +5,6 @@ import android.hardware.usb.UsbInterface;
 import android.hardware.usb.UsbManager;
 import android.hardware.usb.UsbDevice;
 
-import androidx.annotation.CallSuper;
-
 import com.serenegiant.usb.IFrameCallback;
 import com.serenegiant.usb.Size;
 import com.serenegiant.usb.USBMonitor;
@@ -69,7 +67,7 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
     }
     private void processFrame(FrameTask task) {
         try {
-            Map<String, Object> imageData = imageAnalysisUtil.usbFrameToFlutterResult(
+            Map<String, Object> imageData = imageAnalysisUtil.usbFrameToNV21Map(
                     task.frame, task.width, task.height, task.rotation);
             onVideoFrameReceived(imageData);
         } catch (Exception e) {

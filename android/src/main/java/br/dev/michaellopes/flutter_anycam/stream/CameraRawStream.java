@@ -1,61 +1,48 @@
 package br.dev.michaellopes.flutter_anycam.stream;
 
-import android.media.MediaCodec;
+import androidx.camera.core.ImageProxy;
 
-import java.nio.ByteBuffer;
-import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import br.dev.michaellopes.flutter_anycam.integration.FlutterEventChannel;
-import br.dev.michaellopes.flutter_anycam.model.ViewCameraSelector;
+
 import br.dev.michaellopes.flutter_anycam.utils.FrameRateLimiterUtil;
+import br.dev.michaellopes.flutter_anycam.utils.ImageAnalysisUtil;
 
 public class CameraRawStream {
   private final String cameraId;
-  private final FrameEncoder frameEncoder;
-  private final FrameRateLimiterUtil<LimiterParams> limiter;
+  private final FrameRateLimiterUtil<Map<String, Object>> limiter;
   private final ExecutorService executor;
+
+    protected final ImageAnalysisUtil imageAnalysisUtil = new ImageAnalysisUtil();
 
     public CameraRawStream(String cameraId, int fps) {
         this.cameraId = cameraId;
-        this.frameEncoder = new FrameEncoder(1500_000, fps);
+
         executor = Executors.newSingleThreadExecutor();
-        this.limiter   =  new FrameRateLimiterUtil<LimiterParams>(fps) {
+        this.limiter   =  new FrameRateLimiterUtil<Map<String, Object>>(fps) {
             @Override
-            protected void onFrameLimited(LimiterParams image) {
+            protected void onFrameLimited(Map<String, Object> data) {
                 executor.execute(() -> {
-                    frameEncoder.sendFrame(image.nv21, image.width, image.height, image.rotation);
+                    FlutterEventChannel.getInstance().send(
+                            -2,
+                            "onCameraRawFrame",
+                            data
+                    );
                 });
             }
         };
-
-        frameEncoder.setOnH264FrameListener(new FrameEncoder.OnH264FrameListener() {
-            @Override
-            public void onSpsPps(byte[] spsPps) {
-            }
-
-            @Override
-            public void onH264Frame(byte[] frame, MediaCodec.BufferInfo info) {
-                FlutterEventChannel.getInstance().send(-1, "onVideoH264Frame" ,new HashMap<String, Object>() {{
-                    put("cameraId", cameraId);
-                    put("h264", frame);
-                }});
-            }
-
-            @Override
-            public void onVideoInfo(ByteBuffer sps, ByteBuffer pps, ByteBuffer vps) {
-            }
-        });
-
     }
 
     public String getCameraId() {
         return cameraId;
     }
 
-    public void sendFrame(byte[] nv21, int width, int height, int rotation) {
-        limiter.onNewFrame(new LimiterParams(nv21, width, height, rotation));
+    public void sendFrame(ImageProxy image, Integer customRotationDegrees) {
+      Map<String, Object> data = imageAnalysisUtil.imageProxyToI420Map(image, customRotationDegrees);
+      limiter.onNewFrame(data);
     }
 
     private static class LimiterParams {

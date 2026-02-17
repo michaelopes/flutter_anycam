@@ -26,19 +26,23 @@ class _MyAppState extends State<MyApp> {
 
   bool show1 = false;
   bool show2 = true;
+  UniqueKey k = UniqueKey();
 
   @override
   void initState() {
     super.initState();
 
-    FlutterAnycamH264Stream.I.register(
+    FlutterAnycamCameraRawStream.I.register(
       cameraId: cameras.first.id,
       fps: 15,
-      listener: (data) {
-        
-      },
+      listener: (data) {},
     );
 
+    Future.delayed(Duration(seconds: 15), () {
+      setState(() {
+        k = UniqueKey();
+      });
+    });
     /* Future.delayed(const Duration(seconds: 20), () {
       setState(() {
         show1 = true;
@@ -71,8 +75,6 @@ class _MyAppState extends State<MyApp> {
       _img = img;
     });
   }
-
-  final k = UniqueKey();
 
   @override
   Widget build(BuildContext _) {
@@ -116,7 +118,7 @@ class _MyAppState extends State<MyApp> {
                       ),
                     if (show2)
                       Expanded(
-                        // key: UniqueKey(),
+                        key: k,
                         child: FlutterAnycamWidget(
                           fps: 3,
                           //preferredSize: const FlutterAnycamSize(1280, 720),

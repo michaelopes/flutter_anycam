@@ -55,19 +55,11 @@ public class CameraStreamManager {
     }
 
     @SuppressLint("UnsafeOptInUsageError")
-    public synchronized byte[] sendFrame( @NonNull String cameraId, @NonNull ImageProxy image) {
+    public synchronized void sendFrame( @NonNull String cameraId, @NonNull ImageProxy image, Integer customRotationDegrees) {
         CameraRawStream item = getCameraStream(cameraId);
         if(item != null) {
-            try {
-                Image img = image.getImage();
-                byte[] nv21 = YuvUtil.yuv420ToNv21(img).get();
-                item.sendFrame(nv21, image.getWidth(), image.getHeight(), image.getImageInfo().getRotationDegrees());
-                return nv21;
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
+            item.sendFrame(image, customRotationDegrees);
         }
-        return  null;
     }
 
 }
