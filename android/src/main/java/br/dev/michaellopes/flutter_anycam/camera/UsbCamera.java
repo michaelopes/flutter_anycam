@@ -4,6 +4,7 @@ import android.content.Context;
 import android.hardware.usb.UsbInterface;
 import android.hardware.usb.UsbManager;
 import android.hardware.usb.UsbDevice;
+import android.util.Log;
 
 import com.serenegiant.usb.IFrameCallback;
 import com.serenegiant.usb.Size;
@@ -191,9 +192,11 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
         String deviceId = String.valueOf(device.getDeviceId());
         if (deviceId.equals(cameraSelector.getId())) {
             try {
+
                 UVCParam param = new UVCParam();
                 mUVCCamera = new UVCCamera(param);
                 mUVCCamera.open(ctrlBlock);
+
                 Size camSize = getClosestSize(mUVCCamera.getSupportedSizeList());
                 if (camSize != null) {
                     mUVCCamera.setPreviewSize(camSize);
@@ -203,9 +206,8 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
                 }
                 mUVCCamera.setFrameCallback(UsbCamera.this, UVCCamera.PIXEL_FORMAT_NV21);
                 mUVCCamera.setPreviewDisplay(getSurface());
-                mUVCCamera.startPreview();
-
                 texture.surfaceTexture().setDefaultBufferSize(size.getWidth(), size.getHeight());
+                mUVCCamera.startPreview();
 
                 final Map<String, Object> result = new HashMap<>();
                 result.put("width", size.getWidth());
@@ -252,6 +254,7 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
 
         for (Size s : sizes) {
             if (s.type == 7) {
+                Log.d("FlutterAnycamFrame", "Suportado: " + s.width + " x " + s.height);
                 int diff = Math.abs(s.width - targetWidth) + Math.abs(s.height - targetHeight);
                 if (diff < minDiff) {
                     closest = s;

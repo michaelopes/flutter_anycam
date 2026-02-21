@@ -38,11 +38,11 @@ class _MyAppState extends State<MyApp> {
       listener: (data) {},
     );
 
-    Future.delayed(Duration(seconds: 15), () {
-      setState(() {
-        k = UniqueKey();
-      });
-    });
+    // Future.delayed(Duration(seconds: 15), () {
+    //   setState(() {
+    //     k = UniqueKey();
+    //   });
+    // });
     /* Future.delayed(const Duration(seconds: 20), () {
       setState(() {
         show1 = true;
@@ -120,9 +120,11 @@ class _MyAppState extends State<MyApp> {
                       Expanded(
                         key: k,
                         child: FlutterAnycamWidget(
-                          fps: 3,
-                          //preferredSize: const FlutterAnycamSize(1280, 720),
-                          camera: cameras.first,
+                          fps: 1,
+                          preferredSize: const FlutterAnycamSize(800, 600),
+                          camera: cameras.lastWhere(
+                            (e) => e.lensFacing == FlutterAnycamLensFacing.usb,
+                          ),
                           onFrame: _onFrame,
                         ),
                       ),
