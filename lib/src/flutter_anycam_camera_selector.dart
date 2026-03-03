@@ -83,15 +83,16 @@ class FlutterAnycamCameraSelector {
   }) {
     if (Platform.isIOS) {
       throw UnsupportedError("Rtsp camera is not only suported on iOS yet");
-    } else {
-      throw UnsupportedError(
-          "RTSP camera support has been discontinued in this package because it does not comply with the new 16 KB paging requirement mandated by the Play Store.");
     }
-    /*return _FlutterAnycamCameraSelectorRtsp(
+    // } else {
+    //   throw UnsupportedError(
+    //       "RTSP camera support has been discontinued in this package because it does not comply with the new 16 KB paging requirement mandated by the Play Store.");
+    // }
+    return _FlutterAnycamCameraSelectorRtsp(
       url: url,
       username: username,
       password: password,
-    );*/
+    );
   }
 
   factory FlutterAnycamCameraSelector.fromJson(String source) =>

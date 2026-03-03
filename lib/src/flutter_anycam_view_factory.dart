@@ -3,15 +3,20 @@ import 'flutter_anycam_platform_interface.dart';
 import 'flutter_anycam_size.dart';
 
 class FlutterAnycamViewFactory {
-  Future<int?> createView(
-      {required int viewId,
-      required FlutterAnycamCameraSelector camera,
-      required FlutterAnycamSize preferredSize,
-      required int fps}) {
+  Future<int?> createView({
+    required int viewId,
+    required FlutterAnycamCameraSelector camera,
+    required FlutterAnycamSize preferredSize,
+    required int fps,
+    required int filter,
+    required FlutterAnycamSize? resizeFrame,
+  }) {
     return FlutterAnycamPlatform.instance.createView({
       "viewId": viewId,
       "cameraSelector": camera.toMap(),
       "preferredSize": preferredSize.toMap(),
+      "resizeFrame": resizeFrame?.toMap(),
+      "filter": filter,
       "fps": fps,
     });
   }

@@ -46,7 +46,7 @@ public class DeviceCamera extends BaseCamera {
 
     private volatile boolean processing = false;
 
-    private final BlockingQueue<ImageProxy> frameQueue = new LinkedBlockingQueue<>(1);
+    private final BlockingQueue<ImageProxy> frameQueue = new LinkedBlockingQueue<>(2);
 
     private final ExecutorService queueExecutor = Executors.newFixedThreadPool(1);
 
@@ -113,7 +113,8 @@ public class DeviceCamera extends BaseCamera {
 
                 imageAnalysis.setAnalyzer(cameraExecutor, (imageProxy) -> {
                     CameraStreamManager.getInstance().sendFrame(getCameraId(), imageProxy, getCustomRotationDegrees());
-                    limiter.onNewFrame(imageProxy);
+                   limiter.onNewFrame(imageProxy);
+                    // analyze(imageProxy);
                 });
 
                 Camera2CameraInfoImpl cameraInfo = DeviceCameraUtils.getInstance().bind(cameraSelector.getId(), preview, imageAnalysis);
@@ -266,7 +267,7 @@ public class DeviceCamera extends BaseCamera {
 
     public void analyze(@NonNull ImageProxy image) {
         try {
-            Map<String, Object> imageData = imageAnalysisUtil.imageProxyToNV21Map(image, getCustomRotationDegrees());
+            Map<String, Object> imageData = imageAnalysisUtil.imageProxyToNV21Map(image, resizeFrame, filter, getCustomRotationDegrees());
             onVideoFrameReceived(imageData);
         } catch (Exception e) {
             throw new RuntimeException(e);

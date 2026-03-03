@@ -22,6 +22,7 @@ class DeviceCamera : BaseCamera {
     private var videoOutput: AVCaptureVideoDataOutput?
     private var videoInput: AVCaptureDeviceInput?
     private var isCapturing = false
+    private var sensorRotation: Int = 0;
     
     
     private lazy var limiter: FrameRateLimiterUtil<CMSampleBuffer> = {
@@ -41,19 +42,31 @@ class DeviceCamera : BaseCamera {
         
         videoInput = input;
         videoOutput = AVCaptureVideoDataOutput()
-        videoOutput?.setSampleBufferDelegate(self, queue: DispatchQueue.main)
+        videoOutput?.setSampleBufferDelegate(self, queue: DispatchQueue(label: "camera.output"))
         videoOutput?.alwaysDiscardsLateVideoFrames = true
         videoOutput?.videoSettings = [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
         ]
         
         
-        captureSession.beginConfiguration()
+     
         
+        captureSession.beginConfiguration()
+       // captureSession.sessionPreset = .inputPriority
+        if !(captureSession is AVCaptureMultiCamSession) {
+            captureSession.sessionPreset = .inputPriority
+        }
         captureSession.addInput(input);
         
+        do {
+            try setClosestFormat();
+        } catch {
+            print("Erro ao configurar formato: \(error)")
+            onFailed(message: "Error: \(error).")
+            return;
+        }
         
-        let sensorRotation = getFinalRotation(for: input.device.position);
+        sensorRotation = getFinalRotation(for: input.device.position);
         
         if let output = videoOutput, captureSession.canAddOutput(output) {
             captureSession.addOutput(output)
@@ -72,15 +85,26 @@ class DeviceCamera : BaseCamera {
         
         captureSession.commitConfiguration()
         
-        captureSession.startRunning()
         
-        isCapturing = true;
+        DispatchQueue.global(qos: .userInitiated).async {
+            self.captureSession.startRunning()
+            self.isCapturing = true
+        }
         
+     
         print("🧩 Starting camera setup")
         print("🧩 Input: \(input.device.localizedName)")
         print("🧩 Can add output: \(captureSession.canAddOutput(videoOutput!))")
         print("🧩 Delegate: \(videoOutput?.sampleBufferDelegate != nil)")
         print("🧩 Before startRunning: \(captureSession.isRunning)")
+        
+        for format in input.device.formats {
+            let desc = format.formatDescription
+            let dims = CMVideoFormatDescriptionGetDimensions(desc)
+            print("Resolução \(dims.width)x\(dims.height)")
+        }
+        
+
         
         let format =  input.device.activeFormat as AVCaptureDevice.Format?
         if(format != nil && correntOrientation != nil) {
@@ -102,6 +126,56 @@ class DeviceCamera : BaseCamera {
         }
     }
     
+    
+    func setClosestFormat() throws {
+
+        let device = videoInput!.device;
+        let preferredWidth = Int32(preferredSize!.width);
+        let preferredHeight = Int32(preferredSize!.height);
+        
+        try device.lockForConfiguration()
+
+        var closestFormat: AVCaptureDevice.Format?
+        var minDiff: Int32 = Int32.max
+
+        for format in device.formats {
+
+            let desc = format.formatDescription
+            let dims = CMVideoFormatDescriptionGetDimensions(desc)
+            
+            if #available(iOS 13.0, *) {
+                if captureSession is AVCaptureMultiCamSession {
+                    guard format.isMultiCamSupported else { continue }
+                }
+            }
+            
+            guard CMFormatDescriptionGetMediaType(desc) == kCMMediaType_Video else { continue }
+            
+            let ranges = format.videoSupportedFrameRateRanges
+            guard let range = ranges.first, range.maxFrameRate >= 30 else { continue }
+
+            let diff = abs(dims.width - preferredWidth) +
+                       abs(dims.height - preferredHeight)
+
+            if diff < minDiff {
+                minDiff = diff
+                closestFormat = format
+            }
+        }
+
+        if let bestFormat = closestFormat {
+            device.activeFormat = bestFormat
+        
+            let desc = bestFormat.formatDescription
+            let dims = CMVideoFormatDescriptionGetDimensions(desc)
+    
+            print("Selected: \(CMVideoFormatDescriptionGetDimensions(bestFormat.formatDescription).width)x\(CMVideoFormatDescriptionGetDimensions(bestFormat.formatDescription).height)")
+            
+        }
+
+
+        device.unlockForConfiguration()
+    }
     
     func getFinalRotation(for position: AVCaptureDevice.Position) -> Int {
         let sensor = getSensorOrientation(for: position)
@@ -188,21 +262,40 @@ extension DeviceCamera: AVCaptureVideoDataOutputSampleBufferDelegate {
             frameAvailable();
         }
         limiter.processFrame(sampleBuffer)
-        
     }
     
     private func processBuffer(sampleBuffer: CMSampleBuffer) {
         
-        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer),
+        guard var pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer),
               CVPixelBufferGetPixelFormatType(pixelBuffer) == kCVPixelFormatType_32BGRA else {
             return
+        }
+        
+        
+        var width = CVPixelBufferGetWidth(pixelBuffer)
+        var height = CVPixelBufferGetHeight(pixelBuffer)
+        
+        if(resizeFrame != nil) {
+            var targetWidth: Int = resizeFrame!.width;
+            var targetHeight: Int = resizeFrame!.height;
+            if(targetWidth == -1 && targetHeight == -1) {
+                let minSize = min(width, height);
+                targetWidth = minSize;
+                targetHeight = minSize;
+            }
+            if(sensorRotation == 90 || sensorRotation == 270) {
+                let temp = targetWidth;
+                targetWidth = targetHeight;
+                targetHeight = temp;
+            }
+            pixelBuffer = ImageConverterUtil.resizeAspectFillAndCrop(pixelBuffer: pixelBuffer, targetWidth: targetWidth, targetHeight: targetHeight,) ?? pixelBuffer;
+            width = targetWidth;
+            height = targetHeight;
         }
         
         CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
         
-        let width = CVPixelBufferGetWidth(pixelBuffer)
-        let height = CVPixelBufferGetHeight(pixelBuffer)
         let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
         guard let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) else {
             return
@@ -210,6 +303,29 @@ extension DeviceCamera: AVCaptureVideoDataOutputSampleBufferDelegate {
         
         let bytesPerPixel = 4
         let requiredBytesPerRow = width * bytesPerPixel
+        
+        
+        if(filter > 0) {
+            var contrast : Float? = nil;
+           
+            switch (filter) {
+              case 2:
+                  contrast = 1.2;
+                  break;
+              case 3:
+                  contrast = 1.35;
+                  break;
+              case 4:
+                contrast = 1.60;
+                break;
+              default:
+                 contrast = nil;
+                 break;
+          }
+            
+            ImageConverterUtil.processGrayscale(baseAddress: baseAddress, width: width, height: height, bytesPerRow: requiredBytesPerRow, applyGrayscale: true, contrast: contrast);
+        }
+        
         
         var imageData: Data
         if bytesPerRow == requiredBytesPerRow {
@@ -246,4 +362,6 @@ extension DeviceCamera: AVCaptureVideoDataOutputSampleBufferDelegate {
         onVideoFrameReceived(imageData: imageBuffer);
         
     }
+    
+    
 }

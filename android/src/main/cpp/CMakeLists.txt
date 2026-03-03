@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.18.1)
-project("yuv_utils")
+project("flutter_anycam_yuv_utils")
 
-add_library(yuv_utils SHARED yuv_utils.cpp)
+add_library(flutter_anycam_yuv_utils SHARED flutter_anycam_yuv_utils.cpp)
 
 find_library(log-lib log)
 
-target_link_libraries(yuv_utils ${log-lib})
+target_link_libraries(flutter_anycam_yuv_utils ${log-lib})

@@ -2,9 +2,9 @@ package br.dev.michaellopes.flutter_anycam.utils;
 
 import android.annotation.SuppressLint;
 import android.media.Image;
+import android.util.Size;
 
 import androidx.camera.core.ImageProxy;
-import androidx.camera.core.internal.utils.ImageUtil;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -12,50 +12,89 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import io.flutter.Log;
+public class ImageMapperUtil {
+    private byte[] bytesResizedBuffer;
+    private byte[] bytesBuffer;
 
-public class ImageAnalysisUtil {
-
-    public Map<String, Object> imageProxyToNV21Map(ImageProxy imageProxy, Integer customRotationDegrees) {
-        return imageProxyToNV21Map(imageProxy, customRotationDegrees, null);
+    public Map<String, Object> imageProxyToNV21Map(ImageProxy imageProxy, Size resizeFrame, int filter, Integer customRotationDegrees) {
+        return imageProxyToNV21Map(imageProxy, resizeFrame, filter, customRotationDegrees, null);
     }
 
     @SuppressLint({"RestrictedApi", "UnsafeOptInUsageError"})
-    public Map<String, Object> imageProxyToNV21Map(ImageProxy imageProxy, Integer customRotationDegrees, byte[] nv21) {
+    public Map<String, Object> imageProxyToNV21Map(ImageProxy imageProxy, Size resizeFrame, int filter, Integer customRotationDegrees, byte[] nv21) {
         try {
 
             Image image = imageProxy.getImage();
             if (image == null) return new HashMap<>();
 
-            long start = System.nanoTime();
-
-            byte[] bytes = nv21 != null ? nv21 : YuvUtil.yuv420ToNv21(image).get();
-
-            long end = System.nanoTime();
-            long durationNs = end - start;
-
-            double durationMs = durationNs / 1_000_000.0;
-
-            Log.d("PERF", "Tempo: " + durationMs + " ms");
-            Map<String, Object> result = new HashMap<>();
 
             int width = image.getWidth();
             int height = image.getHeight();
-            Image.Plane firstPlane = image.getPlanes()[0];
+            int rowStride;
+            int pixelStride;
+
+            if (nv21 == null) {
+                int srcSize = width * height * 3 / 2;
+                if (bytesBuffer == null || srcSize != bytesBuffer.length) {
+                    bytesBuffer = new byte[srcSize];
+                }
+                YuvUtil.yuv420ToNv21(image, bytesBuffer);
+            } else {
+                bytesBuffer = nv21;
+            }
+
+            byte[] finalBytes;
+            if (resizeFrame != null) {
+
+                int targetWidth;
+                int targetHeight;
+                if (resizeFrame.getHeight() == -1 && resizeFrame.getWidth() == -1) {
+                    int minSize = Math.min(width, height);
+                    targetWidth = minSize;
+                    targetHeight = minSize;
+                } else {
+                    targetWidth = resizeFrame.getWidth();
+                    targetHeight = resizeFrame.getHeight();
+                }
+
+                int dstSize = targetWidth * targetHeight * 3 / 2;
+                if (bytesResizedBuffer == null || dstSize != bytesResizedBuffer.length) {
+                    bytesResizedBuffer = new byte[dstSize];
+                }
+                YuvUtil.resizeNv21(bytesBuffer, width, height, bytesResizedBuffer, targetWidth, targetHeight);
+                finalBytes = bytesResizedBuffer;
+                width = targetWidth;
+                height = targetHeight;
+                rowStride = targetWidth;
+                pixelStride = 1;
+            } else {
+                Image.Plane firstPlane = image.getPlanes()[0];
+                rowStride = firstPlane.getRowStride();
+                pixelStride = firstPlane.getPixelStride();
+                finalBytes = bytesBuffer;
+            }
+
+
+            Map<String, Object> result = new HashMap<>();
+
+            int sensorOrientation;
+            if (customRotationDegrees != null) {
+                sensorOrientation = customRotationDegrees;
+            } else {
+                sensorOrientation = imageProxy.getImageInfo().getRotationDegrees();
+            }
 
             result.put("height", height);
             result.put("width", width);
             result.put("format", "NV21");
-            result.put("bytes", bytes);
 
-            if (customRotationDegrees != null) {
-                result.put("rotation", customRotationDegrees);
-            } else {
-                result.put("rotation", imageProxy.getImageInfo().getRotationDegrees());
-            }
+            applyFilter(finalBytes, width, height, filter);
 
-            result.put("rowStride", firstPlane.getRowStride());
-            result.put("pixelStride", firstPlane.getPixelStride());
+            result.put("bytes", finalBytes);
+            result.put("rotation", sensorOrientation);
+            result.put("rowStride", rowStride);
+            result.put("pixelStride", pixelStride);
+
             return result;
 
         } catch (Exception e) {
@@ -117,9 +156,39 @@ public class ImageAnalysisUtil {
         return planeData;
     }
 
-    public Map<String, Object> usbFrameToNV21Map(ByteBuffer buffer, int width, int height, Integer customRotationDegrees) {
-        byte[] nv21Bytes = new byte[buffer.remaining()];
-        buffer.get(nv21Bytes);
+    public Map<String, Object> usbFrameToNV21Map(ByteBuffer buffer, int width, int height, Size resizeFrame, int filter, Integer customRotationDegrees) {
+
+        int srcSize = buffer.remaining();
+        if (bytesBuffer == null || srcSize != bytesBuffer.length) {
+            bytesBuffer = new byte[srcSize];
+        }
+
+        buffer.get(bytesBuffer);
+
+        byte[] finalBytes;
+        if (resizeFrame != null) {
+            int targetWidth;
+            int targetHeight;
+            if (resizeFrame.getHeight() == -1 && resizeFrame.getWidth() == -1) {
+                int minSize = Math.min(width, height);
+                targetWidth = minSize;
+                targetHeight = minSize;
+            } else {
+                targetWidth = resizeFrame.getWidth();
+                targetHeight = resizeFrame.getHeight();
+            }
+            int dstSize = targetWidth * targetHeight * 3 / 2;
+            if (bytesResizedBuffer == null || dstSize != bytesResizedBuffer.length) {
+                bytesResizedBuffer = new byte[dstSize];
+            }
+            YuvUtil.resizeNv21(bytesBuffer, width, height, bytesResizedBuffer, targetWidth, targetHeight);
+            finalBytes = bytesResizedBuffer;
+            width = targetWidth;
+            height = targetHeight;
+        } else {
+            finalBytes = bytesBuffer;
+        }
+
 
         Map<String, Object> image = new HashMap<>();
         image.put("width", width);
@@ -129,7 +198,9 @@ public class ImageAnalysisUtil {
         } else {
             image.put("rotation", 0);
         }
-        image.put("bytes", nv21Bytes);
+
+        applyFilter(finalBytes, width, height, filter);
+        image.put("bytes", finalBytes);
         image.put("format", "NV21");
         image.put("rowStride", width);
         image.put("pixelStride", 1);
@@ -169,10 +240,31 @@ public class ImageAnalysisUtil {
         } else {
             image.put("rotation", 0);
         }
-       // image.put("bytes", nv21Bytes);
+        // image.put("bytes", nv21Bytes);
         image.put("planes", planes);
         image.put("format", "YUV_420_888");
 
+        return image;
+    }
+
+
+    public Map<String, Object> rtspFrameToNV21Map(byte[] nv21Bytes, int width, int height, int filter, Integer customRotationDegrees) {
+        Map<String, Object> image = new HashMap<>();
+        image.put("width", width);
+        image.put("height", height);
+        if (customRotationDegrees != null) {
+            image.put("rotation", customRotationDegrees);
+        } else {
+            image.put("rotation", 0);
+        }
+
+
+        applyFilter(nv21Bytes, width, height, filter);
+
+        image.put("bytes", nv21Bytes);
+        image.put("format", "NV21");
+        image.put("rowStride", width);
+        image.put("pixelStride", 1);
         return image;
     }
 
@@ -210,6 +302,32 @@ public class ImageAnalysisUtil {
         image.put("format", "YUV_420_888");
 
         return image;
+    }
+
+    public void applyFilter(
+            byte[] nv21,
+            int width,
+            int height,
+            int level) {
+
+        if (level >= 2) {
+            float contrast;
+            switch (level) {
+                case 2:
+                    contrast = 1.2f;
+                    break;
+                case 3:
+                    contrast = 1.35f;
+                    break;
+                default:
+                    contrast = 1.60f;
+                    break;
+            }
+            YuvUtil.increaseContrast(nv21, width, height, contrast);
+        }
+        if(level > 0) {
+            YuvUtil.nv21ToGrayscale(nv21, width, height);
+        }
     }
 
 }

@@ -106,6 +106,26 @@ class FlutterAnycamFrame {
   String toString() {
     return 'FlutterAnycamFrame(format: $format, width: $width, height: $height, rotation: $rotation, bytes: [bytes(${bytes.length})])';
   }
+
+  FlutterAnycamFrame copyWith({
+    String? format,
+    int? width,
+    int? height,
+    int? rotation,
+    List<FlutterAnycamPlane>? planes,
+    Map<String, dynamic>? extras,
+    Uint8List? bytes,
+  }) {
+    return FlutterAnycamFrame(
+      format: format ?? this.format,
+      width: width ?? this.width,
+      height: height ?? this.height,
+      rotation: rotation ?? this.rotation,
+      planes: planes ?? this.planes,
+      extras: extras ?? this.extras,
+      bytes: bytes ?? this._bytes,
+    );
+  }
 }
 
 class FlutterAnycamPlane {

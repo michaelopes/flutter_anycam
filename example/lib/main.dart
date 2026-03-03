@@ -31,7 +31,9 @@ class _MyAppState extends State<MyApp> {
   @override
   void initState() {
     super.initState();
-
+    m.startCounting(
+      callback: (counter) {},
+    );
     FlutterAnycamCameraRawStream.I.register(
       cameraId: cameras.first.id,
       fps: 15,
@@ -64,13 +66,15 @@ class _MyAppState extends State<MyApp> {
 
   Uint8List? _img;
 
+  final m = FlutterAnycamMesure(seconds: 1);
+
   Future<void> _onFrame(FlutterAnycamFrame frame) async {
+    m.count();
     //Frame para jpeg
     // ignore: unused_local_variable
     final img = await FlutterAnycam.frameConversor.convertToJpeg(
       frame: frame,
     );
-
     setState(() {
       _img = img;
     });
@@ -121,10 +125,16 @@ class _MyAppState extends State<MyApp> {
                         key: k,
                         child: FlutterAnycamWidget(
                           fps: 1,
-                          preferredSize: const FlutterAnycamSize(800, 600),
-                          camera: cameras.lastWhere(
-                            (e) => e.lensFacing == FlutterAnycamLensFacing.usb,
-                          ),
+                          preferredSize: const FlutterAnycamSize(640, 480),
+                          resizeFrame: FlutterAnycamSize.square(),
+                          filter: FlutterAnycamFilter.grayscale,
+                          camera: cameras.first,
+                          /*FlutterAnycamCameraSelector.rtsp(
+                            url:
+                                "rtsp://192.168.1.16:554/mode=real&idc=1&ids=1",
+                            username: "admin",
+                            password: "1",
+                          ),*/
                           onFrame: _onFrame,
                         ),
                       ),

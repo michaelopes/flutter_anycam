@@ -12,7 +12,7 @@ import java.util.Map;
 
 import br.dev.michaellopes.flutter_anycam.model.ViewCameraSelector;
 import br.dev.michaellopes.flutter_anycam.utils.CameraPermissionsUtil;
-import br.dev.michaellopes.flutter_anycam.utils.ImageAnalysisUtil;
+import br.dev.michaellopes.flutter_anycam.utils.ImageMapperUtil;
 import io.flutter.view.TextureRegistry;
 
 public abstract class BaseCamera {
@@ -23,13 +23,16 @@ public abstract class BaseCamera {
 
     protected Size preferredSize = new Size(640, 480);
 
+    protected Size resizeFrame = null;
+
     protected final Map<String, Object> params;
 
-    protected final ImageAnalysisUtil imageAnalysisUtil = new ImageAnalysisUtil();
+    protected final ImageMapperUtil imageAnalysisUtil = new ImageMapperUtil();
 
     private final List<CameraBridge> bridges = new ArrayList<>();
 
     private ActionCall lastAction = null;
+    protected int filter = 0;
 
     public BaseCamera(TextureRegistry.SurfaceTextureEntry texture, Map<String, Object> params) {
         this.texture = texture;
@@ -41,6 +44,19 @@ public abstract class BaseCamera {
             final Map<String, Object> cs = (Map<String, Object>) params.get("preferredSize");
             preferredSize = new Size((int)cs.get("width"), (int)cs.get("height"));;
         }
+
+        if (params.get("resizeFrame") != null) {
+            final Map<String, Object> cs = (Map<String, Object>) params.get("resizeFrame");
+            resizeFrame = new Size((int)cs.get("width"), (int)cs.get("height"));;
+        }
+
+        if (params.get("filter") != null) {
+            final Integer fltr = (Integer) params.get("filter");
+            if(fltr != null) {
+                filter = fltr;
+            }
+        }
+
         this.params = params;
     }
 

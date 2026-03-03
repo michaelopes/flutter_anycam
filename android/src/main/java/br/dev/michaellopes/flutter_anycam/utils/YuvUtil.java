@@ -6,18 +6,19 @@ import androidx.camera.core.internal.utils.ImageUtil;
 
 import java.nio.ByteBuffer;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 public class YuvUtil {
 
     static {
-        System.loadLibrary("yuv_utils");
+        System.loadLibrary("flutter_anycam_yuv_utils");
     }
 
     public static native byte[] rotateNV21JNI(byte[] input, int width, int height, int rotation);
 
-    // Helper Java
-    public static  byte[] rotateNV21(byte[] nv21, int width, int height, int rotation) {
-      return rotateNV21JNI(nv21, width, height, rotation);
+    public static byte[] rotateNV21(byte[] nv21, int width, int height, int rotation) {
+        return rotateNV21JNI(nv21, width, height, rotation);
     }
 
     public static native void nv21ToNv12JNI(ByteBuffer nv21, ByteBuffer nv12, int width, int height);
@@ -49,6 +50,42 @@ public class YuvUtil {
             int uPixelStride,
             int vPixelStride
     );
+
+    private static native void yuv420888ToNv21IntoJNI(
+            ByteBuffer y,
+            ByteBuffer u,
+            ByteBuffer v,
+            byte[] outNv21,
+            int width,
+            int height,
+            int yRowStride,
+            int uRowStride,
+            int vRowStride,
+            int uPixelStride,
+            int vPixelStride
+    );
+
+    private static native void resizeNv21JNI(
+            byte[] src,
+            int srcW,
+            int srcH,
+            byte[] dst,
+            int dstW,
+            int dstH
+    );
+
+
+    public static void resizeNv21(
+            byte[] src,
+            int srcW,
+            int srcH,
+            byte[] dst,
+            int dstW,
+            int dstH
+    ) {
+        resizeNv21JNI(src, srcW, srcH, dst, dstW, dstH);
+    }
+
     public static CompletableFuture<byte[]> yuv420ToNv21(Image image) {
         return CompletableFuture.supplyAsync(() -> {
             Image.Plane yPlane = image.getPlanes()[0];
@@ -68,5 +105,42 @@ public class YuvUtil {
                     vPlane.getPixelStride()
             );
         });
+    }
+
+    public static void yuv420ToNv21(Image image, byte[] out) {
+        Image.Plane yPlane = image.getPlanes()[0];
+        Image.Plane uPlane = image.getPlanes()[1];
+        Image.Plane vPlane = image.getPlanes()[2];
+        yuv420888ToNv21IntoJNI(
+                yPlane.getBuffer(),
+                uPlane.getBuffer(),
+                vPlane.getBuffer(),
+                out,
+                image.getWidth(),
+                image.getHeight(),
+                yPlane.getRowStride(),
+                uPlane.getRowStride(),
+                vPlane.getRowStride(),
+                uPlane.getPixelStride(),
+                vPlane.getPixelStride()
+        );
+    }
+
+    public static void nv21ToGrayscale(byte[] nv21, int width, int height) {
+        int frameSize = width * height;
+        for (int i = frameSize; i < nv21.length; i++) {
+            nv21[i] = (byte) 128;
+        }
+    }
+
+    public static void increaseContrast(byte[] nv21, int width, int height, float contrast) {
+        int frameSize = width * height;
+        for (int i = 0; i < frameSize; i++) {
+            int y = nv21[i] & 0xFF;
+            int newY = (int)((y - 128) * contrast + 128);
+            if (newY < 0) newY = 0;
+            if (newY > 255) newY = 255;
+            nv21[i] = (byte) newY;
+        }
     }
 }

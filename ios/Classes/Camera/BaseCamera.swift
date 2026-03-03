@@ -7,6 +7,11 @@
 import AVFoundation
 import Flutter
 
+struct FpSize {
+    let width: Int
+    let height: Int
+}
+
 class BaseCamera: NSObject, FlutterTexture {
     
     static var waitPermission = false;
@@ -24,6 +29,10 @@ class BaseCamera: NSObject, FlutterTexture {
     
     private var isInitied = false;
     
+    var preferredSize : FpSize?;
+    var resizeFrame : FpSize?;
+    var filter : Int = 0;
+    
     func copyPixelBuffer() -> Unmanaged<CVPixelBuffer>? {
         guard let buffer = latestPixelBuffer else { return nil }
         return Unmanaged.passRetained(buffer)
@@ -34,6 +43,20 @@ class BaseCamera: NSObject, FlutterTexture {
         self.frameAvailableCallback = frameAvailableCallback;
         let map = params["cameraSelector"] as? [String : Any?];
         cameraSelector = ViewCameraSelector.fromMap(map!);
+        
+        if let preferredSizeMap = params["preferredSize"] as? [String: Any],
+              let width = preferredSizeMap["width"] as? Int,
+              let height = preferredSizeMap["height"] as? Int {
+             preferredSize = FpSize(width: width, height: height)
+        }
+        
+        if let resizeFrameMap = params["resizeFrame"] as? [String: Any],
+              let width = resizeFrameMap["width"] as? Int,
+              let height = resizeFrameMap["height"] as? Int {
+            resizeFrame = FpSize(width: width, height: height)
+        }
+        
+        filter = params["filter"] as? Int ?? 0;
     }
     
     func getCameraId() -> String? {

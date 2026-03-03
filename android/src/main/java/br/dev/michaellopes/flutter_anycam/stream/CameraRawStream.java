@@ -9,14 +9,14 @@ import java.util.concurrent.Executors;
 import br.dev.michaellopes.flutter_anycam.integration.FlutterEventChannel;
 
 import br.dev.michaellopes.flutter_anycam.utils.FrameRateLimiterUtil;
-import br.dev.michaellopes.flutter_anycam.utils.ImageAnalysisUtil;
+import br.dev.michaellopes.flutter_anycam.utils.ImageMapperUtil;
 
 public class CameraRawStream {
   private final String cameraId;
   private final FrameRateLimiterUtil<Map<String, Object>> limiter;
   private final ExecutorService executor;
 
-    protected final ImageAnalysisUtil imageAnalysisUtil = new ImageAnalysisUtil();
+    protected final ImageMapperUtil imageAnalysisUtil = new ImageMapperUtil();
 
     public CameraRawStream(String cameraId, int fps) {
         this.cameraId = cameraId;

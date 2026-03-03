@@ -69,7 +69,12 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
     private void processFrame(FrameTask task) {
         try {
             Map<String, Object> imageData = imageAnalysisUtil.usbFrameToNV21Map(
-                    task.frame, task.width, task.height, task.rotation);
+                    task.frame,
+                    task.width,
+                    task.height,
+                    resizeFrame,
+                    filter,
+                    task.rotation);
             onVideoFrameReceived(imageData);
         } catch (Exception e) {
             e.printStackTrace();

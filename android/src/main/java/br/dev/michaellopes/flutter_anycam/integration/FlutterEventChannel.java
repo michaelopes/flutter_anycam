@@ -50,7 +50,7 @@ public class FlutterEventChannel implements EventChannel.StreamHandler {
             } catch (Throwable t) {
                 Log.e(TAG, "Error delivering event(s) to Flutter", t);
             } finally {
-                result.clear();
+               result.clear();
                 if(data != null) {
                     data.clear();
                 }
