@@ -4,6 +4,7 @@ export './src/flutter_anycam_stream_listener.dart';
 export './src/flutter_anycam_widget.dart';
 export './src/flutter_anycam_frame.dart';
 export './src/flutter_anycam_size.dart';
+export './src/flutter_anycam_crop.dart';
 export './src/flutter_anycam_texts.dart';
 export './src/flutter_anycam_platform_interface.dart';
 export './src/flutter_anycam_method_channel.dart';

@@ -2,7 +2,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_anycam/src/flutter_anycam_camera_selector.dart';
 
+import 'flutter_anycam_crop.dart';
 import 'flutter_anycam_event_stream.dart';
+import 'flutter_anycam_filter.dart';
 import 'flutter_anycam_platform_interface.dart';
 import 'flutter_anycam_stream_listener.dart';
 import 'flutter_anycam_typedefs.dart';
@@ -93,6 +95,8 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
     required int width,
     required int height,
     required int rotation,
+    FlutterAnycamFilter filter = FlutterAnycamFilter.none,
+    FlutterAnycamCrop? crop,
     int quality = 100,
   }) async {
     final result = (await methodChannel.invokeMethod(
@@ -102,7 +106,9 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
         "width": width,
         "height": height,
         "rotation": rotation.toDouble(),
-        "quality": quality
+        "quality": quality,
+        "filter": filter.code,
+        "crop": crop?.toMap()
       },
     ));
     return result;
@@ -114,6 +120,8 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
     required int width,
     required int height,
     required int rotation,
+    FlutterAnycamFilter filter = FlutterAnycamFilter.none,
+    FlutterAnycamCrop? crop,
     int quality = 100,
   }) async {
     final result = (await methodChannel.invokeMethod(
@@ -123,7 +131,9 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
         "width": width,
         "height": height,
         "rotation": rotation.toDouble(),
-        "quality": quality
+        "quality": quality,
+        "filter": filter.code,
+        "crop": crop?.toMap()
       },
     ));
     return result;

@@ -247,7 +247,8 @@ public class RtspDecoderUtil {
                         mc.releaseOutputBuffer(outputBufferId, false);
 
                         if (srcW == targetWidth && srcH == targetHeight) {
-                            callback.onYuvFrame(nv21Buffer, srcW, srcH);
+                            YuvFrame frame = new YuvFrame(nv21Buffer, srcW, srcH);
+                            callback.onYuvFrame(frame, null);
                         } else {
                             int tgWidth;
                             int tgHeight;
@@ -259,8 +260,11 @@ public class RtspDecoderUtil {
                                 tgWidth = targetWidth;
                                 tgHeight = targetHeight;
                             }
+
+                            YuvFrame rawFrame = new YuvFrame(nv21Buffer, srcW, srcH);
                             YuvUtil.resizeNv21(nv21Buffer, srcW, srcH, resizedBuffer, tgWidth, tgHeight);
-                            callback.onYuvFrame(resizedBuffer, targetWidth, targetHeight);
+                            YuvFrame targetFrame = new YuvFrame(resizedBuffer, tgWidth, tgHeight);
+                            callback.onYuvFrame(targetFrame, rawFrame);
                         }
 
                     } catch (Exception e) {
@@ -455,11 +459,23 @@ public class RtspDecoderUtil {
 
     public interface RtspDecoderCallback {
         void onResolutionResult(int width, int height);
-        void onYuvFrame(byte[] nv21, int width, int height);
+        void onYuvFrame(YuvFrame targetFrame, YuvFrame rawFrame);
     }
 
     public interface RtspDecoderFailure {
         void onFailure(Exception e);
+    }
+
+    public static class YuvFrame {
+      public  final byte[] nv21;
+        public  final int width;
+        public  final int height;
+
+        public YuvFrame(byte[] nv21, int width, int height) {
+            this.nv21 = nv21;
+            this.width = width;
+            this.height = height;
+        }
     }
 }
 

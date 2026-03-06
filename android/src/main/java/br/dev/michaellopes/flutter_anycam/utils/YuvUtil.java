@@ -73,7 +73,15 @@ public class YuvUtil {
             int dstW,
             int dstH
     );
-
+    private static native void cropNv21JNI(byte[] src,
+                                   int srcW,
+                                   int srcH,
+                                   byte[] dst,
+                                   int cropX,
+                                   int cropY,
+                                   int cropW,
+                                   int cropH
+    );
 
     public static void resizeNv21(
             byte[] src,
@@ -85,6 +93,20 @@ public class YuvUtil {
     ) {
         resizeNv21JNI(src, srcW, srcH, dst, dstW, dstH);
     }
+
+    public static void cropNv21(
+            byte[] src,
+            int srcW,
+            int srcH,
+            byte[] dst,
+            int cropX,
+            int cropY,
+            int cropW,
+            int cropH
+    ) {
+        cropNv21JNI(src, srcW, srcH, dst, cropX, cropY, cropW, cropH);
+    }
+
 
     public static CompletableFuture<byte[]> yuv420ToNv21(Image image) {
         return CompletableFuture.supplyAsync(() -> {
@@ -141,6 +163,32 @@ public class YuvUtil {
             if (newY < 0) newY = 0;
             if (newY > 255) newY = 255;
             nv21[i] = (byte) newY;
+        }
+    }
+
+    public static void applyFilter(
+            byte[] nv21,
+            int width,
+            int height,
+            int level) {
+
+        if (level >= 2) {
+            float contrast;
+            switch (level) {
+                case 2:
+                    contrast = 1.2f;
+                    break;
+                case 3:
+                    contrast = 1.35f;
+                    break;
+                default:
+                    contrast = 1.60f;
+                    break;
+            }
+            YuvUtil.increaseContrast(nv21, width, height, contrast);
+        }
+        if(level > 0) {
+            YuvUtil.nv21ToGrayscale(nv21, width, height);
         }
     }
 }

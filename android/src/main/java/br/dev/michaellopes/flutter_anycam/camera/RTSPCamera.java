@@ -46,8 +46,14 @@ public class RTSPCamera extends BaseCamera {
         }
 
         @Override
-        public void onYuvFrame(byte[] yuv, int width, int height) {
-            Map<String, Object> imageData = imageAnalysisUtil.rtspFrameToNV21Map(yuv, width, height, filter, getCustomRotationDegrees());
+        public void onYuvFrame(RtspDecoderUtil.YuvFrame frame, RtspDecoderUtil.YuvFrame rawFrame) {
+            Map<String, Object> imageData = imageAnalysisUtil.rtspFrameToNV21Map(frame.nv21, frame.width, frame.height, filter, getCustomRotationDegrees());
+
+            if(rawFrame != null) {
+                Map<String, Object> rawData = imageAnalysisUtil.rtspFrameToNV21Map(rawFrame.nv21, rawFrame.width, rawFrame.height, 0, getCustomRotationDegrees());
+                imageData.put("rawFrame", rawData);
+            }
+
             onVideoFrameReceived(imageData);
         }
     }, e -> onFailed(e.getMessage()));

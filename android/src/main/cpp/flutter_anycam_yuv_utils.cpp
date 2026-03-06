@@ -189,85 +189,6 @@ Java_br_dev_michaellopes_flutter_1anycam_utils_YuvUtil_yuv420888ToNv21IntoJNI(
     env->ReleasePrimitiveArrayCritical(outNv21, out, 0);
 }
 
-//extern "C"
-//JNIEXPORT void JNICALL
-//Java_br_dev_michaellopes_flutter_1anycam_utils_YuvUtil_resizeNv21JNI(
-//        JNIEnv *env,
-//        jclass,
-//        jbyteArray srcArray,
-//        jint srcW,
-//        jint srcH,
-//        jbyteArray dstArray,
-//        jint dstW,
-//        jint dstH) {
-//
-//    dstW &= ~1;
-//    dstH &= ~1;
-//
-//    jbyte* src = env->GetByteArrayElements(srcArray, nullptr);
-//    jbyte* dst = env->GetByteArrayElements(dstArray, nullptr);
-//
-//    int srcFrameSize = srcW * srcH;
-//    int dstFrameSize = dstW * dstH;
-//
-//    // ─────────────────────────────
-//    // Calcular escala preservando proporção
-//    // ─────────────────────────────
-//    float scale = std::max(
-//            (float)dstW / srcW,
-//            (float)dstH / srcH
-//    );
-//
-//    int scaledW = (int)(srcW * scale);
-//    int scaledH = (int)(srcH * scale);
-//
-//    int offsetX = (scaledW - dstW) / 2;
-//    int offsetY = (scaledH - dstH) / 2;
-//
-//    float invScale = 1.0f / scale;
-//
-//    // ───────────────
-//    // Y plane
-//    // ───────────────
-//    for (int j = 0; j < dstH; j++) {
-//
-//        int srcY = (int)((j + offsetY) * invScale);
-//        int dstRow = j * dstW;
-//
-//        for (int i = 0; i < dstW; i++) {
-//
-//            int srcX = (int)((i + offsetX) * invScale);
-//            dst[dstRow + i] = src[srcY * srcW + srcX];
-//        }
-//    }
-//
-//    // ───────────────
-//    // UV plane (NV21)
-//    // ───────────────
-//    int srcUV = srcFrameSize;
-//    int dstUV = dstFrameSize;
-//
-//    for (int j = 0; j < dstH / 2; j++) {
-//
-//        int srcYuv = (int)(((j * 2 + offsetY) * invScale) / 2);
-//        int dstRow = dstUV + j * dstW;
-//
-//        for (int i = 0; i < dstW / 2; i++) {
-//
-//            int srcXuv = (int)(((i * 2 + offsetX) * invScale) / 2);
-//
-//            int srcIndex = srcUV + srcYuv * srcW + srcXuv * 2;
-//            int dstIndex = dstRow + i * 2;
-//
-//            dst[dstIndex]     = src[srcIndex];     // V
-//            dst[dstIndex + 1] = src[srcIndex + 1]; // U
-//        }
-//    }
-//
-//    env->ReleaseByteArrayElements(srcArray, src, JNI_ABORT);
-//    env->ReleaseByteArrayElements(dstArray, dst, 0);
-//}
-
 extern "C"
 JNIEXPORT void JNICALL
 Java_br_dev_michaellopes_flutter_1anycam_utils_YuvUtil_resizeNv21JNI(
@@ -378,6 +299,71 @@ Java_br_dev_michaellopes_flutter_1anycam_utils_YuvUtil_resizeNv21JNI(
             udst[dstRow + i * 2]     = sampleUV(fx, fy, 0); // V
             udst[dstRow + i * 2 + 1] = sampleUV(fx, fy, 1); // U
         }
+    }
+
+    env->ReleaseByteArrayElements(srcArray, src, JNI_ABORT);
+    env->ReleaseByteArrayElements(dstArray, dst, 0);
+}
+
+
+extern "C"
+JNIEXPORT void JNICALL
+Java_br_dev_michaellopes_flutter_1anycam_utils_YuvUtil_cropNv21JNI(
+        JNIEnv *env,
+        jclass,
+        jbyteArray srcArray,
+        jint srcW,
+        jint srcH,
+        jbyteArray dstArray,
+        jint cropX,
+        jint cropY,
+        jint cropW,
+        jint cropH) {
+
+    cropX &= ~1;
+    cropY &= ~1;
+    cropW &= ~1;
+    cropH &= ~1;
+
+    jbyte* src = env->GetByteArrayElements(srcArray, nullptr);
+    jbyte* dst = env->GetByteArrayElements(dstArray, nullptr);
+
+    auto* usrc = reinterpret_cast<uint8_t*>(src);
+    auto* udst = reinterpret_cast<uint8_t*>(dst);
+
+    int srcFrameSize = srcW * srcH;
+    int dstFrameSize = cropW * cropH;
+
+
+    for (int y = 0; y < cropH; y++) {
+
+        int srcOffset = (cropY + y) * srcW + cropX;
+        int dstOffset = y * cropW;
+
+        memcpy(
+                udst + dstOffset,
+                usrc + srcOffset,
+                cropW
+        );
+    }
+
+
+    int uvSrcStart = srcFrameSize;
+    int uvDstStart = dstFrameSize;
+
+    int uvCropY = cropY / 2;
+    int uvCropH = cropH / 2;
+
+    for (int y = 0; y < uvCropH; y++) {
+
+        int srcOffset = uvSrcStart + (uvCropY + y) * srcW + cropX;
+        int dstOffset = uvDstStart + y * cropW;
+
+        memcpy(
+                udst + dstOffset,
+                usrc + srcOffset,
+                cropW
+        );
     }
 
     env->ReleaseByteArrayElements(srcArray, src, JNI_ABORT);

@@ -2,11 +2,14 @@ package br.dev.michaellopes.flutter_anycam;
 
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Size;
 
 import androidx.annotation.NonNull;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import br.dev.michaellopes.flutter_anycam.integration.CameraViewFactory;
 import br.dev.michaellopes.flutter_anycam.integration.FlutterEventChannel;
@@ -17,6 +20,7 @@ import br.dev.michaellopes.flutter_anycam.utils.DeviceCameraUtils;
 import br.dev.michaellopes.flutter_anycam.utils.ImageConverterUtil;
 import br.dev.michaellopes.flutter_anycam.utils.LivecycleUtil;
 import br.dev.michaellopes.flutter_anycam.utils.CameraPermissionsUtil;
+import br.dev.michaellopes.flutter_anycam.utils.YuvUtil;
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.embedding.engine.plugins.activity.ActivityAware;
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding;
@@ -32,6 +36,9 @@ import io.flutter.plugin.common.MethodChannel.Result;
 public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, ActivityAware {
     private MethodChannel channel;
     private EventChannel eventChannel;
+
+
+    final ExecutorService executor = Executors.newFixedThreadPool(2);
 
     @Override
     public void onAttachedToActivity(@NonNull ActivityPluginBinding binding) {
@@ -89,7 +96,7 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
                 break;
             case "requestPermission":
                 CameraPermissionsUtil.getInstance().requestPermissions((String errCode, String errDesc) -> {
-                    if(errCode == null) {
+                    if (errCode == null) {
                         result.success(true);
                     } else {
                         result.success(false);
@@ -132,24 +139,99 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
         final Integer width = arg != null ? (Integer) arg.get("width") : null;
         final Integer height = arg != null ? (Integer) arg.get("height") : null;
         final Integer quality = arg != null && arg.get("quality") != null ? (Integer) arg.get("quality") : 100;
-        final Float rotation = arg != null && arg.get("rotation") != null
+        final Integer filter = arg != null && arg.get("filter") != null ? (Integer) arg.get("filter") : 0;
+        final Float frotation = arg != null && arg.get("rotation") != null
                 ? ((Number) arg.get("rotation")).floatValue()
                 : 0f;
-
         if (bytes == null || width == null || height == null) {
             result.error("Null argument", "bytes, width, height must not be null", null);
             return;
         }
 
-        new Thread(() -> {
+        final int rotation = Math.round(frotation);
+
+        byte[] finalBytes = bytes;
+        int finalWidth = width;
+        int finalHeight = height;
+
+        if (arg.get("crop") != null) {
+            final Map<String, Object> cs = (Map<String, Object>) arg.get("crop");
+
+            Integer cWidth = (Integer) cs.get("width");
+            Integer cHeight = (Integer) cs.get("height");
+            Integer left = (Integer) cs.get("left");
+            Integer top = (Integer) cs.get("top");
+
+            if (cWidth != null && cHeight != null && left != null && top != null) {
+                if (rotation == 90 || rotation == 270) {
+                    Integer sTemp = cWidth;
+                    cWidth = cHeight;
+                    cHeight = sTemp;
+
+                    Integer pTemp = left;
+                    left = top;
+                    top = pTemp;
+                }
+                int srcSize = cWidth * cHeight * 3 / 2;
+                byte[] out = new byte[srcSize];
+                finalWidth = cWidth;
+                finalHeight = cHeight;
+                YuvUtil.cropNv21(bytes, width, height, out, left, top, cWidth, cHeight);
+                finalBytes = out;
+            }
+
+            final Map<String, Object> resize = (Map<String, Object>) cs.get("resize");
+            if (resize != null) {
+                int rWidth = (int) resize.get("width");
+                int rHeight = (int) resize.get("height");
+                if (rotation == 90 || rotation == 270) {
+                    Integer sTemp = rWidth;
+                    rWidth = rHeight;
+                    rHeight = sTemp;
+                }
+
+                if(rWidth == -1 && rHeight == -1) {
+                    int minSize = Math.min(finalWidth, finalHeight);
+                    rWidth = minSize;
+                    rHeight = minSize;
+                }
+
+                int srcSize = rWidth * rHeight * 3 / 2;
+                byte[] out = new byte[srcSize];
+
+                if(rWidth > finalWidth) {
+                    rWidth = finalWidth;
+                }
+
+                if(rHeight > finalHeight) {
+                    rHeight = finalHeight;
+                }
+
+                YuvUtil.resizeNv21(finalBytes, finalWidth, finalHeight, out, rWidth, rHeight);
+                finalWidth = rWidth;
+                finalHeight = rHeight;
+                finalBytes = out;
+
+            }
+        }
+
+        YuvUtil.applyFilter(finalBytes, finalWidth, finalHeight, filter);
+        final byte[] pFinalBytes = finalBytes;
+        final int pFinalWidth = finalWidth;
+        final int pFinalHeight = finalHeight;
+
+        executor.execute(() -> {
             try {
-                byte[] bs = ImageConverterUtil.nv21ToJpeg(bytes, width, height, quality, Math.round(rotation));
+                byte[] bs = ImageConverterUtil.nv21ToJpeg(pFinalBytes, pFinalWidth, pFinalHeight, quality, rotation);
                 result.success(bs);
             } catch (final Exception e) {
-                new Handler(Looper.getMainLooper()).post(() -> result.error("Processing error", e.getMessage(), null)
-                );
+                new Handler(Looper.getMainLooper()).post(() -> result.error("Processing error", e.getMessage(), null));
             }
-        }).start();
+        });
+
+//        new Thread(() -> {
+//
+        //       }).start();
     }
 
     @Override

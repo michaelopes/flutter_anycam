@@ -98,6 +98,8 @@ public class FlutterAnycamPlugin: NSObject, FlutterPlugin {
             let height = data?["height"] as? Int
             let quality = data?["quality"] as? Int
             let rotation = data?["rotation"] as? Int
+            let filter = data?["filter"] as? Int ?? 0
+            let crop = data?["crop"] as? [String: Any]
             
             if(bytes == nil || width == nil || height == nil || quality == nil || rotation == nil) {
                 DispatchQueue.main.async {
@@ -110,7 +112,9 @@ public class FlutterAnycamPlugin: NSObject, FlutterPlugin {
             let res = ImageConverterUtil.convertBGRA8888ToJPEG(bgraData: bgraData,
                                                                width: width!,
                                                                height: height!,
-                                                               quality: quality == 0 ? 0 : CGFloat(quality! / 100)
+                                                               quality: quality == 0 ? 0 : CGFloat(quality! / 100),
+                                                               filter: filter,
+                                                               crop: crop
                                                                
             )
             

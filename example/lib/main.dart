@@ -74,6 +74,13 @@ class _MyAppState extends State<MyApp> {
     // ignore: unused_local_variable
     final img = await FlutterAnycam.frameConversor.convertToJpeg(
       frame: frame,
+      crop: FlutterAnycamCrop(
+        width: 100,
+        height: frame.height,
+        left: 100,
+        top: 0,
+        resize: const FlutterAnycamSize(50, 50),
+      ),
     );
     setState(() {
       _img = img;
@@ -125,9 +132,9 @@ class _MyAppState extends State<MyApp> {
                         key: k,
                         child: FlutterAnycamWidget(
                           fps: 1,
-                          preferredSize: const FlutterAnycamSize(640, 480),
+                          preferredSize: const FlutterAnycamSize(1280, 720),
                           resizeFrame: FlutterAnycamSize.square(),
-                          filter: FlutterAnycamFilter.grayscale,
+                          filter: FlutterAnycamFilter.none,
                           camera: cameras.first,
                           /*FlutterAnycamCameraSelector.rtsp(
                             url:

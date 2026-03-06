@@ -4,10 +4,27 @@ import 'dart:io';
 
 enum FlutterAnycamLensFacing { back, front, usb, rtsp, unknown }
 
+enum FlutterAnycamCameraType {
+  unknown("unknown"),
+  telephoto("telephoto"),
+  ultraWide("ultraWide"),
+  wide("wide");
+
+  final String value;
+  const FlutterAnycamCameraType(this.value);
+
+  static FlutterAnycamCameraType? getByValue(String value) {
+    return FlutterAnycamCameraType.values
+        .where((e) => e.value == value)
+        .firstOrNull;
+  }
+}
+
 class FlutterAnycamCameraSelector {
   final String id;
   final String name;
   final FlutterAnycamLensFacing lensFacing;
+  final FlutterAnycamCameraType cameraType;
   final int sensorOrientation;
   final Map<String, dynamic>? extras;
   bool _forceSensorOrientation = false;
@@ -17,6 +34,7 @@ class FlutterAnycamCameraSelector {
     required this.name,
     required this.lensFacing,
     required this.sensorOrientation,
+    this.cameraType = FlutterAnycamCameraType.unknown,
     this.extras,
   });
 
@@ -35,6 +53,7 @@ class FlutterAnycamCameraSelector {
       'sensorOrientation': sensorOrientation,
       'forceSensorOrientation': _forceSensorOrientation,
       'extras': extras,
+      'cameraType': cameraType.value,
     };
   }
 
@@ -44,6 +63,8 @@ class FlutterAnycamCameraSelector {
       name: map['name'] as String,
       lensFacing: FlutterAnycamLensFacing.values.byName(map['lensFacing']),
       sensorOrientation: map['sensorOrientation'] as int,
+      cameraType: FlutterAnycamCameraType.getByValue(map['cameraType'] ?? "") ??
+          FlutterAnycamCameraType.unknown,
       extras: map['extras'] != null
           ? Map<String, dynamic>.from(map['extras'])
           : null,

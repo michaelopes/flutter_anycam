@@ -304,28 +304,8 @@ extension DeviceCamera: AVCaptureVideoDataOutputSampleBufferDelegate {
         let bytesPerPixel = 4
         let requiredBytesPerRow = width * bytesPerPixel
         
-        
-        if(filter > 0) {
-            var contrast : Float? = nil;
-           
-            switch (filter) {
-              case 2:
-                  contrast = 1.2;
-                  break;
-              case 3:
-                  contrast = 1.35;
-                  break;
-              case 4:
-                contrast = 1.60;
-                break;
-              default:
-                 contrast = nil;
-                 break;
-          }
-            
-            ImageConverterUtil.processGrayscale(baseAddress: baseAddress, width: width, height: height, bytesPerRow: requiredBytesPerRow, applyGrayscale: true, contrast: contrast);
-        }
-        
+                
+        ImageConverterUtil.applyFilter(baseAddress: baseAddress, width: width, height: height, bytesPerRow: requiredBytesPerRow, filter: filter);
         
         var imageData: Data
         if bytesPerRow == requiredBytesPerRow {

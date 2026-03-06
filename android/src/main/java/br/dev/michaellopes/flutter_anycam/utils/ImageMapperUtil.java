@@ -26,7 +26,7 @@ public class ImageMapperUtil {
 
             Image image = imageProxy.getImage();
             if (image == null) return new HashMap<>();
-
+            Map<String, Object> rawFrame = null;
 
             int width = image.getWidth();
             int height = image.getHeight();
@@ -41,6 +41,10 @@ public class ImageMapperUtil {
                 YuvUtil.yuv420ToNv21(image, bytesBuffer);
             } else {
                 bytesBuffer = nv21;
+            }
+
+            if(resizeFrame != null) {
+                rawFrame = imageProxyToNV21Map(imageProxy, null, 0, customRotationDegrees, bytesBuffer);
             }
 
             byte[] finalBytes;
@@ -88,12 +92,15 @@ public class ImageMapperUtil {
             result.put("width", width);
             result.put("format", "NV21");
 
-            applyFilter(finalBytes, width, height, filter);
+            YuvUtil.applyFilter(finalBytes, width, height, filter);
 
             result.put("bytes", finalBytes);
             result.put("rotation", sensorOrientation);
             result.put("rowStride", rowStride);
             result.put("pixelStride", pixelStride);
+            if(rawFrame != null) {
+                result.put("rawFrame", rawFrame);
+            }
 
             return result;
 
@@ -157,13 +164,20 @@ public class ImageMapperUtil {
     }
 
     public Map<String, Object> usbFrameToNV21Map(ByteBuffer buffer, int width, int height, Size resizeFrame, int filter, Integer customRotationDegrees) {
-
         int srcSize = buffer.remaining();
         if (bytesBuffer == null || srcSize != bytesBuffer.length) {
             bytesBuffer = new byte[srcSize];
         }
-
         buffer.get(bytesBuffer);
+        return  usbFrameToNV21Map(bytesBuffer, width, height, resizeFrame, filter, customRotationDegrees);
+    }
+
+    public Map<String, Object> usbFrameToNV21Map(byte[] nv21, int width, int height, Size resizeFrame, int filter, Integer customRotationDegrees) {
+        Map<String, Object> rawFrame = null;
+
+        if(resizeFrame != null) {
+            rawFrame = usbFrameToNV21Map(nv21, width, height, null, 0, customRotationDegrees);
+        }
 
         byte[] finalBytes;
         if (resizeFrame != null) {
@@ -181,12 +195,12 @@ public class ImageMapperUtil {
             if (bytesResizedBuffer == null || dstSize != bytesResizedBuffer.length) {
                 bytesResizedBuffer = new byte[dstSize];
             }
-            YuvUtil.resizeNv21(bytesBuffer, width, height, bytesResizedBuffer, targetWidth, targetHeight);
+            YuvUtil.resizeNv21(nv21, width, height, bytesResizedBuffer, targetWidth, targetHeight);
             finalBytes = bytesResizedBuffer;
             width = targetWidth;
             height = targetHeight;
         } else {
-            finalBytes = bytesBuffer;
+            finalBytes = nv21;
         }
 
 
@@ -199,12 +213,14 @@ public class ImageMapperUtil {
             image.put("rotation", 0);
         }
 
-        applyFilter(finalBytes, width, height, filter);
+        YuvUtil.applyFilter(finalBytes, width, height, filter);
         image.put("bytes", finalBytes);
         image.put("format", "NV21");
         image.put("rowStride", width);
         image.put("pixelStride", 1);
-
+        if(rawFrame != null) {
+            image.put("rawFrame", rawFrame);
+        }
         return image;
     }
 
@@ -259,7 +275,7 @@ public class ImageMapperUtil {
         }
 
 
-        applyFilter(nv21Bytes, width, height, filter);
+        YuvUtil.applyFilter(nv21Bytes, width, height, filter);
 
         image.put("bytes", nv21Bytes);
         image.put("format", "NV21");
@@ -304,30 +320,6 @@ public class ImageMapperUtil {
         return image;
     }
 
-    public void applyFilter(
-            byte[] nv21,
-            int width,
-            int height,
-            int level) {
 
-        if (level >= 2) {
-            float contrast;
-            switch (level) {
-                case 2:
-                    contrast = 1.2f;
-                    break;
-                case 3:
-                    contrast = 1.35f;
-                    break;
-                default:
-                    contrast = 1.60f;
-                    break;
-            }
-            YuvUtil.increaseContrast(nv21, width, height, contrast);
-        }
-        if(level > 0) {
-            YuvUtil.nv21ToGrayscale(nv21, width, height);
-        }
-    }
 
 }

@@ -93,7 +93,11 @@ public class CameraUtil {
                         Integer sensorOrientation = camera2CameraInfo.getSensorRotationDegrees();
 
                         String lensDirection;
+                        String cameraType = "unknown";
+                        float focal = -1f;
+                        float minFocus = -1f;
 
+                        Map<String, Object> cameraMap = new HashMap<>();
                         switch (lensFacing) {
                             case CameraCharacteristics.LENS_FACING_FRONT:
                                 lensDirection = "front";
@@ -106,11 +110,38 @@ public class CameraUtil {
                         }
 
 
-                        Map<String, Object> cameraMap = new HashMap<>();
+                        Object obj =
+                                camera2CameraInfo.getCameraCharacteristics();
+                        if (obj instanceof CameraCharacteristics) {
+                            CameraCharacteristics characteristics = (CameraCharacteristics) obj;
+                            float[] focalLengths = characteristics.get(
+                                    CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS);
+                            Float minFcs = characteristics.get(
+                                    CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE);
+                            if(minFcs != null) {
+                                minFocus = minFcs;
+                            }
+                            if (focalLengths != null) {
+                                 focal = focalLengths[0];
+                                 System.out.println("focalLength: " + focal + " lensDirection:" + lensDirection);
+                                if (focal > 6f) {
+                                    cameraType = "telephoto";
+                                } else if (focal < 2.5f) {
+                                    cameraType = "ultraWide";
+                                } else {
+                                    cameraType = "wide";
+                                }
+
+                            }
+                        }
+
                         cameraMap.put("id", camera2CameraInfo.getCameraId());
                         cameraMap.put("name", lensDirection + " camera");
                         cameraMap.put("lensFacing", lensDirection);
                         cameraMap.put("sensorOrientation", sensorOrientation);
+                        cameraMap.put("cameraType", cameraType);
+                        cameraMap.put("focalLength", focal);
+                        cameraMap.put("minFocusDistance", minFocus);
 
                         cameras.add(new CameraItem(camera2CameraInfo, cameraMap));
                     }

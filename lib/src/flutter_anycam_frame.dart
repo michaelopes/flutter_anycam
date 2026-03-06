@@ -14,6 +14,8 @@ class FlutterAnycamFrame {
   int? _rowStride;
   Uint8List? _bytes;
 
+  FlutterAnycamFrame? rawFrame;
+
   FlutterAnycamFrame({
     required this.format,
     required this.width,
@@ -21,6 +23,7 @@ class FlutterAnycamFrame {
     required this.planes,
     required Uint8List? bytes,
     required this.rotation,
+    required this.rawFrame,
     this.extras,
   }) : _bytes = bytes;
 
@@ -65,6 +68,11 @@ class FlutterAnycamFrame {
       height: map['height'] as int,
       rotation: map['rotation'] as int,
       bytes: bytes,
+      rawFrame: map['rawFrame'] != null
+          ? FlutterAnycamFrame.fromMap(
+              Map<String, dynamic>.from(map['rawFrame']),
+            )
+          : null,
       extras: map['extras'] != null
           ? Map<String, dynamic>.from(map['extras'])
           : null,
@@ -123,7 +131,8 @@ class FlutterAnycamFrame {
       rotation: rotation ?? this.rotation,
       planes: planes ?? this.planes,
       extras: extras ?? this.extras,
-      bytes: bytes ?? this._bytes,
+      bytes: bytes ?? _bytes,
+      rawFrame: rawFrame,
     );
   }
 }
