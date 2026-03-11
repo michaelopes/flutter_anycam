@@ -180,6 +180,9 @@ public abstract class BaseCamera {
 
     protected abstract void init();
 
+
+    public void setZoom(float zoom) {}
+
     @CallSuper
     public void dispose() {
         bridges.clear();

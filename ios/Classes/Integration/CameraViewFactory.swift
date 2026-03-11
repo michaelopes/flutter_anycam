@@ -28,6 +28,14 @@ class CameraViewFactory {
         }
     }
     
+    func getCameraById(id: String) -> BaseCamera? {
+        let filter = cameras.filter { $0.getCameraId() == cameraSelector?.id }
+        if let existingCamera = filter.first {
+            return existingCamera;
+        }
+        return nil;
+    }
+    
     func createView(args: [String: Any?]) -> Int64? {
         
         guard let cameraSelectorMap = args["cameraSelector"] as? [String: Any],

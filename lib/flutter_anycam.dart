@@ -30,4 +30,18 @@ class FlutterAnycam {
   static Future<void> disableFlash() async {
     FlutterAnycamPlatform.instance.setFlash(false);
   }
+
+  static Future<void> setZoom({
+    required FlutterAnycamCameraSelector camera,
+    double zoom = 1.0,
+  }) async {
+    if (camera.lensFacing == FlutterAnycamLensFacing.usb ||
+        camera.lensFacing == FlutterAnycamLensFacing.back ||
+        camera.lensFacing == FlutterAnycamLensFacing.front) {
+      if (zoom < 1) {
+        zoom = 1;
+      }
+      FlutterAnycamPlatform.instance.setZoom(zoom, camera.id);
+    }
+  }
 }

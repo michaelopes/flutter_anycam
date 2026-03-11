@@ -157,6 +157,8 @@ class BaseCamera: NSObject, FlutterTexture {
         }
     }
     
+    func setZoom(zoom: Float) -> Void { }
+    
     func addBridge(_ bridge: CameraBridge) {
         let runCall = !bridges.isEmpty;
         let filter = bridges.filter { $0.viewId == bridge.viewId }

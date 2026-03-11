@@ -15,8 +15,6 @@ import io.flutter.view.TextureRegistry;
 
 public class CameraViewFactory {
 
-
-
     private TextureRegistry textureRegistry;
 
     private ViewCameraSelector cameraSelector;
@@ -26,7 +24,6 @@ public class CameraViewFactory {
     private static final CameraViewFactory instance = new CameraViewFactory();
 
     public static CameraViewFactory getInstance() {
-
         return instance;
     }
 
@@ -35,7 +32,7 @@ public class CameraViewFactory {
     }
 
     public void broadcastPermissionGranted() {
-        for (BaseCamera camera: cameras) {
+        for (BaseCamera camera : cameras) {
             if (!camera.isRtsp()) {
                 camera.run();
             }
@@ -43,13 +40,21 @@ public class CameraViewFactory {
     }
 
 
-    public  void  disposeAll() {
-        for (BaseCamera camera: cameras) {
+    public void disposeAll() {
+        for (BaseCamera camera : cameras) {
             camera.dispose();
             cameras.remove(camera);
         }
     }
 
+
+    public BaseCamera getCameraById(String id) {
+        Object[] filter = cameras.stream().filter(item -> item.getCameraId().equals(cameraSelector.getId())).toArray();
+        if (filter.length >= 1) {
+            return (BaseCamera) filter[0];
+        }
+        return null;
+    }
 
     public synchronized Long createView(HashMap<String, Object> args) {
         if (args.get("cameraSelector") != null && args.get("viewId") != null) {

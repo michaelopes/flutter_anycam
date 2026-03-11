@@ -50,7 +50,6 @@ class DeviceCamera : BaseCamera {
         
         
      
-        
         captureSession.beginConfiguration()
        // captureSession.sessionPreset = .inputPriority
         if !(captureSession is AVCaptureMultiCamSession) {
@@ -225,6 +224,18 @@ class DeviceCamera : BaseCamera {
         }
     }
     
+    override func setZoom(zoom: Float) -> Void {
+        let value = CGFloat(zoom);
+        if(videoInput!.device.activeFormat.videoMaxZoomFactor >= value) {
+            let device = videoInput!.device;
+            if (try? device.lockForConfiguration()) != nil {
+                device.ramp(toVideoZoomFactor: value, withRate: 4.0)
+                device.unlockForConfiguration()
+            }
+           
+        }
+    }
+
     override func dispose() -> Void {
         if(cameraSelector != nil && videoInput != nil) {
             AVCaptureUtil.shared.resetCameraInput(cameraSelector: cameraSelector!);
@@ -265,6 +276,144 @@ extension DeviceCamera: AVCaptureVideoDataOutputSampleBufferDelegate {
     }
     
     private func processBuffer(sampleBuffer: CMSampleBuffer) {
+        
+        guard var pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer),
+              CVPixelBufferGetPixelFormatType(pixelBuffer) == kCVPixelFormatType_32BGRA else {
+            return
+        }
+        
+        var width = CVPixelBufferGetWidth(pixelBuffer)
+        var height = CVPixelBufferGetHeight(pixelBuffer)
+        
+        // Captura raw ANTES de qualquer processamento, só se necessário
+        var rawImageBuffer: [String: Any]? = nil
+        
+        if resizeFrame != nil {
+            // Lock original para capturar raw
+            CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
+            
+            let rawWidth = width
+            let rawHeight = height
+            let rawBytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
+            let bytesPerPixel = 4
+            let rawRequiredBytesPerRow = rawWidth * bytesPerPixel
+            
+            if let rawBaseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) {
+                let rawImageData: Data
+                if rawBytesPerRow == rawRequiredBytesPerRow {
+                    rawImageData = Data(bytes: rawBaseAddress, count: rawHeight * rawBytesPerRow)
+                } else {
+                    var data = Data(count: rawHeight * rawRequiredBytesPerRow)
+                    data.withUnsafeMutableBytes { destPtr in
+                        let src = rawBaseAddress.assumingMemoryBound(to: UInt8.self)
+                        let dest = destPtr.baseAddress!.assumingMemoryBound(to: UInt8.self)
+                        for row in 0..<rawHeight {
+                            memcpy(dest + row * rawRequiredBytesPerRow,
+                                   src + row * rawBytesPerRow,
+                                   rawRequiredBytesPerRow)
+                        }
+                    }
+                    rawImageData = data
+                }
+                
+                rawImageBuffer = [
+                    "width": rawWidth,
+                    "height": rawHeight,
+                    "rotation": 0,
+                    "format": "BGRA8888",
+                    "planes": [[
+                        "rowStride": rawRequiredBytesPerRow,
+                        "pixelStride": bytesPerPixel,
+                        "width": rawWidth,
+                        "height": rawHeight,
+                        "bytes": FlutterStandardTypedData(bytes: rawImageData)
+                    ]],
+                    "bytes": FlutterStandardTypedData(bytes: rawImageData)
+                ]
+            }
+            
+            CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly)
+            
+            // Agora aplica resize
+            var targetWidth: Int = resizeFrame!.width
+            var targetHeight: Int = resizeFrame!.height
+            if targetWidth == -1 && targetHeight == -1 {
+                let minSize = min(width, height)
+                targetWidth = minSize
+                targetHeight = minSize
+            }
+            if sensorRotation == 90 || sensorRotation == 270 {
+                let temp = targetWidth
+                targetWidth = targetHeight
+                targetHeight = temp
+            }
+            pixelBuffer = ImageConverterUtil.resizeAspectFillAndCrop(
+                pixelBuffer: pixelBuffer,
+                targetWidth: targetWidth,
+                targetHeight: targetHeight
+            ) ?? pixelBuffer
+            width = targetWidth
+            height = targetHeight
+        }
+        
+        CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
+        
+        guard let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) else { return }
+        
+        let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
+        let bytesPerPixel = 4
+        let requiredBytesPerRow = width * bytesPerPixel
+        
+        ImageConverterUtil.applyFilter(
+            baseAddress: baseAddress,
+            width: width,
+            height: height,
+            bytesPerRow: requiredBytesPerRow,
+            filter: filter
+        )
+        
+        let imageData: Data
+        if bytesPerRow == requiredBytesPerRow {
+            imageData = Data(bytes: baseAddress, count: height * bytesPerRow)
+        } else {
+            var data = Data(count: height * requiredBytesPerRow)
+            data.withUnsafeMutableBytes { destPtr in
+                let src = baseAddress.assumingMemoryBound(to: UInt8.self)
+                let dest = destPtr.baseAddress!.assumingMemoryBound(to: UInt8.self)
+                for row in 0..<height {
+                    memcpy(dest + row * requiredBytesPerRow,
+                           src + row * bytesPerRow,
+                           requiredBytesPerRow)
+                }
+            }
+            imageData = data
+        }
+        
+        var imageBuffer: [String: Any] = [
+            "width": width,
+            "height": height,
+            "rotation": 0,
+            "format": "BGRA8888",
+            "planes": [[
+                "rowStride": requiredBytesPerRow,
+                "pixelStride": bytesPerPixel,
+                "width": width,
+                "height": height,
+                "bytes": FlutterStandardTypedData(bytes: imageData)
+            ]],
+            "bytes": FlutterStandardTypedData(bytes: imageData)
+        ]
+        
+        // Injeta rawFrame apenas quando resizeFrame está ativo
+        if let raw = rawImageBuffer {
+            imageBuffer["rawFrame"] = raw
+        }
+        
+        onVideoFrameReceived(imageData: imageBuffer)
+    }
+    
+   /* private func processBuffer(sampleBuffer: CMSampleBuffer) {
         
         guard var pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer),
               CVPixelBufferGetPixelFormatType(pixelBuffer) == kCVPixelFormatType_32BGRA else {
@@ -341,7 +490,7 @@ extension DeviceCamera: AVCaptureVideoDataOutputSampleBufferDelegate {
         
         onVideoFrameReceived(imageData: imageBuffer);
         
-    }
+    }*/
     
     
 }

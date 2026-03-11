@@ -62,6 +62,10 @@ abstract class FlutterAnycamPlatform extends PlatformInterface {
         'convertBGRA8888ToJpeg() has not been implemented.');
   }
 
+  Future<void> setZoom(double value, String cameraId) {
+    throw UnimplementedError('setZoom() has not been implemented.');
+  }
+
   Future<void> setFlash(bool value) {
     throw UnimplementedError('setFlash() has not been implemented.');
   }

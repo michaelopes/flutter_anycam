@@ -27,6 +27,7 @@ class _MyAppState extends State<MyApp> {
   bool show1 = false;
   bool show2 = true;
   UniqueKey k = UniqueKey();
+  late final FlutterAnycamCameraSelector selectedCamera;
 
   @override
   void initState() {
@@ -34,11 +35,26 @@ class _MyAppState extends State<MyApp> {
     m.startCounting(
       callback: (counter) {},
     );
-    FlutterAnycamCameraRawStream.I.register(
+    /*FlutterAnycamCameraRawStream.I.register(
       cameraId: cameras.first.id,
       fps: 15,
       listener: (data) {},
-    );
+    );*/
+
+    selectedCamera =
+        cameras.firstWhere((e) => e.lensFacing == FlutterAnycamLensFacing.back);
+    /*FlutterAnycamCameraSelector.rtsp(
+                            url:
+                                "rtsp://192.168.1.16:554/mode=real&idc=1&ids=1",
+                            username: "admin",
+                            password: "1",
+                          ),*/
+
+    /*Future.delayed(const Duration(seconds: 15), () {
+      setState(() {
+        FlutterAnycam.setZoom(camera: selectedCamera, zoom: 1.2);
+      });
+    });*/
 
     // Future.delayed(Duration(seconds: 15), () {
     //   setState(() {
@@ -72,15 +88,24 @@ class _MyAppState extends State<MyApp> {
     m.count();
     //Frame para jpeg
     // ignore: unused_local_variable
+//cropX=52cropY=0cropW=1196cropH=720
+
     final img = await FlutterAnycam.frameConversor.convertToJpeg(
-      frame: frame,
+      frame: frame.rawFrame!,
       crop: FlutterAnycamCrop(
+        width: 720, //bbox.width.floor(),
+        height: 1196, //bbox.height.floor(),
+        left: 0, //bbox.left.floor(),
+        top: 52, //bbox.top.floor(),
+        // resize: FlutterAnycamSize.square(),
+      ),
+      /*  crop: FlutterAnycamCrop(
         width: 100,
         height: frame.height,
         left: 100,
         top: 0,
         resize: const FlutterAnycamSize(50, 50),
-      ),
+      ),*/
     );
     setState(() {
       _img = img;
@@ -131,11 +156,11 @@ class _MyAppState extends State<MyApp> {
                       Expanded(
                         key: k,
                         child: FlutterAnycamWidget(
-                          fps: 1,
+                          fps: 2,
                           preferredSize: const FlutterAnycamSize(1280, 720),
-                          resizeFrame: FlutterAnycamSize.square(),
+                          resizeFrame: const FlutterAnycamSize(320, 320),
                           filter: FlutterAnycamFilter.none,
-                          camera: cameras.first,
+                          camera: selectedCamera,
                           /*FlutterAnycamCameraSelector.rtsp(
                             url:
                                 "rtsp://192.168.1.16:554/mode=real&idc=1&ids=1",

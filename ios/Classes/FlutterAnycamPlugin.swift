@@ -83,6 +83,17 @@ public class FlutterAnycamPlugin: NSObject, FlutterPlugin {
             AVCaptureUtil.shared.setFlash(value!)
             result(true)
             break;
+            
+        case "setZoom":
+            let data =  call.arguments as? [String: Any?];
+            let value = data?["zoom"] as? Double
+            let cameraId = data?["cameraId"] as? String
+            let camera =  CameraViewFactory.shared.getCameraById(id: cameraId!);
+            if(camera != nil) {
+                camera?.setZoom(zoom: Float(value ?? 1.0));
+            }
+            result(true)
+            break;
         case "convertBGRA8888ToJpeg":
             
             let data =  call.arguments as? [String: Any?];

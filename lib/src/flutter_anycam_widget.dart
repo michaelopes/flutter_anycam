@@ -423,7 +423,7 @@ class FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
                         width: x.maxWidth,
                         height: constraints.maxHeight,
                         child: ClipRect(
-                          clipBehavior: Clip.none,
+                          clipBehavior: Clip.hardEdge,
                           child: FittedBox(
                             fit: BoxFit.cover,
                             child: SizedBox(

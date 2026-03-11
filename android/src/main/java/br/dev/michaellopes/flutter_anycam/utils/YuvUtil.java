@@ -1,13 +1,14 @@
 package br.dev.michaellopes.flutter_anycam.utils;
 
+import android.graphics.Rect;
 import android.media.Image;
 
-import androidx.camera.core.internal.utils.ImageUtil;
+import androidx.annotation.NonNull;
 
 import java.nio.ByteBuffer;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
+
+import io.flutter.Log;
 
 public class YuvUtil {
 
@@ -15,10 +16,10 @@ public class YuvUtil {
         System.loadLibrary("flutter_anycam_yuv_utils");
     }
 
-    public static native byte[] rotateNV21JNI(byte[] input, int width, int height, int rotation);
+    public static native void rotateNV21JNI(byte[] input, byte[] output, int width, int height, int rotation);
 
-    public static byte[] rotateNV21(byte[] nv21, int width, int height, int rotation) {
-        return rotateNV21JNI(nv21, width, height, rotation);
+    public static void rotateNV21(byte[] nv21, byte[] output, int width, int height, int rotation) {
+        rotateNV21JNI(nv21, output, width, height, rotation);
     }
 
     public static native void nv21ToNv12JNI(ByteBuffer nv21, ByteBuffer nv12, int width, int height);
@@ -104,7 +105,55 @@ public class YuvUtil {
             int cropW,
             int cropH
     ) {
+
+        cropX &= ~1;
+        cropY &= ~1;
+        cropW &= ~1;
+        cropH &= ~1;
+
+        if (cropX + cropW > srcW) cropW = srcW - cropX;
+        if (cropY + cropH > srcH) cropH = srcH - cropY;
+
+        cropW &= ~1;
+        cropH &= ~1;
+
+        cropW = Math.max(2, cropW);
+        cropH = Math.max(2, cropH);
+
+        Log.i("cropNv21", "srcW=" + srcW +"srcH=" + srcH);
+        Log.i("cropNv21", "cropX="  +cropX+"cropY=" +cropY+ "cropW=" +cropW+"cropH=" + cropH);
+
         cropNv21JNI(src, srcW, srcH, dst, cropX, cropY, cropW, cropH);
+    }
+
+
+
+    public static byte[] cropNV21(byte[] img, int imgWidth, @NonNull Rect cropRect) {
+        // 1.5 mean 1.0 for Y and 0.25 each for U and V
+        int croppedImgSize = (int)Math.floor(cropRect.width() * cropRect.height() * 1.5);
+        byte[] croppedImg = new byte[croppedImgSize];
+
+        // Start points of UV plane
+        int imgYPlaneSize = (int)Math.ceil(img.length / 1.5);
+        int croppedImgYPlaneSize = cropRect.width() * cropRect.height();
+
+        // Y plane copy
+        for (int w = 0; w < cropRect.height(); w++) {
+            int imgPos = (cropRect.top + w) * imgWidth + cropRect.left;
+            int croppedImgPos = w * cropRect.width();
+            System.arraycopy(img, imgPos, croppedImg, croppedImgPos, cropRect.width());
+        }
+
+        // UV plane copy
+        // U and V are reduced by 2 * 2, so each row is the same size as Y
+        // and is half U and half V data, and there are Y_rows/2 of UV_rows
+        for (int w = 0; w < (int)Math.floor(cropRect.height() / 2.0); w++) {
+            int imgPos = imgYPlaneSize + (cropRect.top / 2 + w) * imgWidth + cropRect.left;
+            int croppedImgPos = croppedImgYPlaneSize + (w * cropRect.width());
+            System.arraycopy(img, imgPos, croppedImg, croppedImgPos, cropRect.width());
+        }
+
+        return croppedImg;
     }
 
 

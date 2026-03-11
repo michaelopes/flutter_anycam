@@ -305,6 +305,70 @@ Java_br_dev_michaellopes_flutter_1anycam_utils_YuvUtil_resizeNv21JNI(
     env->ReleaseByteArrayElements(dstArray, dst, 0);
 }
 
+//
+//extern "C"
+//JNIEXPORT void JNICALL
+//Java_br_dev_michaellopes_flutter_1anycam_utils_YuvUtil_cropNv21JNI(
+//        JNIEnv *env,
+//        jclass,
+//        jbyteArray srcArray,
+//        jint srcW,
+//        jint srcH,
+//        jbyteArray dstArray,
+//        jint cropX,
+//        jint cropY,
+//        jint cropW,
+//        jint cropH) {
+//
+//    cropX &= ~1;
+//    cropY &= ~1;
+//    cropW &= ~1;
+//    cropH &= ~1;
+//
+//    jbyte* src = env->GetByteArrayElements(srcArray, nullptr);
+//    jbyte* dst = env->GetByteArrayElements(dstArray, nullptr);
+//
+//    auto* usrc = reinterpret_cast<uint8_t*>(src);
+//    auto* udst = reinterpret_cast<uint8_t*>(dst);
+//
+//    int srcFrameSize = srcW * srcH;
+//    int dstFrameSize = cropW * cropH;
+//
+//
+//    for (int y = 0; y < cropH; y++) {
+//
+//        int srcOffset = (cropY + y) * srcW + cropX;
+//        int dstOffset = y * cropW;
+//
+//        memcpy(
+//                udst + dstOffset,
+//                usrc + srcOffset,
+//                cropW
+//        );
+//    }
+//
+//
+//    int uvSrcStart = srcFrameSize;
+//    int uvDstStart = dstFrameSize;
+//
+//    int uvCropY = cropY / 2;
+//    int uvCropH = cropH / 2;
+//
+//    for (int y = 0; y < uvCropH; y++) {
+//
+//        int srcOffset = uvSrcStart + (uvCropY + y) * srcW + cropX;
+//        int dstOffset = uvDstStart + y * cropW;
+//
+//        memcpy(
+//                udst + dstOffset,
+//                usrc + srcOffset,
+//                cropW
+//        );
+//    }
+//
+//    env->ReleaseByteArrayElements(srcArray, src, JNI_ABORT);
+//    env->ReleaseByteArrayElements(dstArray, dst, 0);
+//}
 
 extern "C"
 JNIEXPORT void JNICALL
@@ -328,47 +392,42 @@ Java_br_dev_michaellopes_flutter_1anycam_utils_YuvUtil_cropNv21JNI(
     jbyte* src = env->GetByteArrayElements(srcArray, nullptr);
     jbyte* dst = env->GetByteArrayElements(dstArray, nullptr);
 
-    auto* usrc = reinterpret_cast<uint8_t*>(src);
-    auto* udst = reinterpret_cast<uint8_t*>(dst);
+    uint8_t* usrc = reinterpret_cast<uint8_t*>(src);
+    uint8_t* udst = reinterpret_cast<uint8_t*>(dst);
 
     int srcFrameSize = srcW * srcH;
     int dstFrameSize = cropW * cropH;
 
+    // Y PLANE
+    uint8_t* srcY = usrc + cropY * srcW + cropX;
+    uint8_t* dstY = udst;
 
     for (int y = 0; y < cropH; y++) {
-
-        int srcOffset = (cropY + y) * srcW + cropX;
-        int dstOffset = y * cropW;
-
-        memcpy(
-                udst + dstOffset,
-                usrc + srcOffset,
-                cropW
-        );
+        memcpy(dstY, srcY, cropW);
+        srcY += srcW;
+        dstY += cropW;
     }
 
-
+    // UV PLANE
     int uvSrcStart = srcFrameSize;
     int uvDstStart = dstFrameSize;
 
     int uvCropY = cropY / 2;
     int uvCropH = cropH / 2;
 
+    uint8_t* srcUV = usrc + uvSrcStart + uvCropY * srcW + cropX;
+    uint8_t* dstUV = udst + uvDstStart;
+
     for (int y = 0; y < uvCropH; y++) {
-
-        int srcOffset = uvSrcStart + (uvCropY + y) * srcW + cropX;
-        int dstOffset = uvDstStart + y * cropW;
-
-        memcpy(
-                udst + dstOffset,
-                usrc + srcOffset,
-                cropW
-        );
+        memcpy(dstUV, srcUV, cropW);
+        srcUV += srcW;
+        dstUV += cropW;
     }
 
     env->ReleaseByteArrayElements(srcArray, src, JNI_ABORT);
     env->ReleaseByteArrayElements(dstArray, dst, 0);
 }
+
 
 extern "C"
 JNIEXPORT void JNICALL
@@ -397,105 +456,210 @@ Java_br_dev_michaellopes_flutter_1anycam_utils_YuvUtil_nv21ToNv12JNI(
 }
 
 extern "C"
-JNIEXPORT jbyteArray JNICALL
+JNIEXPORT void JNICALL
 Java_br_dev_michaellopes_flutter_1anycam_utils_YuvUtil_rotateNV21JNI(
-    JNIEnv *env, 
-    jobject thiz,
-    jbyteArray input, 
-    jint width,
-    jint height, 
-    jint rotation) {
-    
+        JNIEnv *env,
+        jobject thiz,
+        jbyteArray input,
+        jbyteArray output,
+        jint width,
+        jint height,
+        jint rotation) {
+
     jbyte* inputBytes = env->GetByteArrayElements(input, nullptr);
-    jsize inputLength = env->GetArrayLength(input);
-    
-    auto* output = (uint8_t*)malloc(inputLength);
-    if (output == nullptr) {
-        env->ReleaseByteArrayElements(input, inputBytes, JNI_ABORT);
-        return nullptr;
-    }
-    
-    // Sem rotação - apenas copia
+    jbyte* outputBytes = env->GetByteArrayElements(output, nullptr);
+
+    int inputLength = env->GetArrayLength(input);
+
+    uint8_t* in = (uint8_t*)inputBytes;
+    uint8_t* out = (uint8_t*)outputBytes;
+
     if (rotation == 0) {
-        memcpy(output, inputBytes, inputLength);
+        memcpy(out, in, inputLength);
     } else {
-        // Dimensões de saída (trocam se rotação for 90 ou 270)
+
         int outWidth = (rotation == 90 || rotation == 270) ? height : width;
         int outHeight = (rotation == 90 || rotation == 270) ? width : height;
-        
-        // Rotaciona o plano Y
+
+        // ----- Y plane -----
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
+
                 int outX, outY;
-                
+
                 switch (rotation) {
                     case 90:
                         outX = height - 1 - y;
                         outY = x;
                         break;
+
                     case 180:
                         outX = width - 1 - x;
                         outY = height - 1 - y;
                         break;
+
                     case 270:
                         outX = y;
                         outY = width - 1 - x;
                         break;
+
                     default:
                         outX = x;
                         outY = y;
-                        break;
                 }
-                
-                output[outY * outWidth + outX] = inputBytes[y * width + x];
+
+                out[outY * outWidth + outX] = in[y * width + x];
             }
         }
-        
-        // Rotaciona o plano UV (NV21 = VU interleaved)
+
+        // ----- UV plane -----
         int uvHeight = height / 2;
         int uvWidth = width / 2;
+
         int outUvWidth = outWidth / 2;
+
         int ySize = width * height;
         int outYSize = outWidth * outHeight;
-        
+
         for (int y = 0; y < uvHeight; y++) {
             for (int x = 0; x < uvWidth; x++) {
+
                 int outX, outY;
-                
+
                 switch (rotation) {
                     case 90:
                         outX = uvHeight - 1 - y;
                         outY = x;
                         break;
+
                     case 180:
                         outX = uvWidth - 1 - x;
                         outY = uvHeight - 1 - y;
                         break;
+
                     case 270:
                         outX = y;
                         outY = uvWidth - 1 - x;
                         break;
+
                     default:
                         outX = x;
                         outY = y;
-                        break;
                 }
-                
+
                 int inIndex = ySize + (y * uvWidth + x) * 2;
                 int outIndex = outYSize + (outY * outUvWidth + outX) * 2;
-                
-                // Copia V e U (NV21 format)
-                output[outIndex] = inputBytes[inIndex];         // V
-                output[outIndex + 1] = inputBytes[inIndex + 1]; // U
+
+                out[outIndex] = in[inIndex];         // V
+                out[outIndex + 1] = in[inIndex + 1]; // U
             }
         }
     }
-    
-    jbyteArray result = env->NewByteArray(inputLength);
-    env->SetByteArrayRegion(result, 0, inputLength, (jbyte*)output);
-    
+
     env->ReleaseByteArrayElements(input, inputBytes, JNI_ABORT);
-    free(output);
-    
-    return result;
+    env->ReleaseByteArrayElements(output, outputBytes, 0);
 }
+
+//extern "C"
+//JNIEXPORT jbyteArray JNICALL
+//Java_br_dev_michaellopes_flutter_1anycam_utils_YuvUtil_rotateNV21JNI(
+//    JNIEnv *env,
+//    jobject thiz,
+//    jbyteArray input,
+//    jint width,
+//    jint height,
+//    jint rotation) {
+//
+//    jbyte* inputBytes = env->GetByteArrayElements(input, nullptr);
+//    jsize inputLength = env->GetArrayLength(input);
+//
+//    auto* output = (uint8_t*)malloc(inputLength);
+//    if (output == nullptr) {
+//        env->ReleaseByteArrayElements(input, inputBytes, JNI_ABORT);
+//        return nullptr;
+//    }
+//
+//    // Sem rotação - apenas copia
+//    if (rotation == 0) {
+//        memcpy(output, inputBytes, inputLength);
+//    } else {
+//        // Dimensões de saída (trocam se rotação for 90 ou 270)
+//        int outWidth = (rotation == 90 || rotation == 270) ? height : width;
+//        int outHeight = (rotation == 90 || rotation == 270) ? width : height;
+//
+//        // Rotaciona o plano Y
+//        for (int y = 0; y < height; y++) {
+//            for (int x = 0; x < width; x++) {
+//                int outX, outY;
+//
+//                switch (rotation) {
+//                    case 90:
+//                        outX = height - 1 - y;
+//                        outY = x;
+//                        break;
+//                    case 180:
+//                        outX = width - 1 - x;
+//                        outY = height - 1 - y;
+//                        break;
+//                    case 270:
+//                        outX = y;
+//                        outY = width - 1 - x;
+//                        break;
+//                    default:
+//                        outX = x;
+//                        outY = y;
+//                        break;
+//                }
+//
+//                output[outY * outWidth + outX] = inputBytes[y * width + x];
+//            }
+//        }
+//
+//        // Rotaciona o plano UV (NV21 = VU interleaved)
+//        int uvHeight = height / 2;
+//        int uvWidth = width / 2;
+//        int outUvWidth = outWidth / 2;
+//        int ySize = width * height;
+//        int outYSize = outWidth * outHeight;
+//
+//        for (int y = 0; y < uvHeight; y++) {
+//            for (int x = 0; x < uvWidth; x++) {
+//                int outX, outY;
+//
+//                switch (rotation) {
+//                    case 90:
+//                        outX = uvHeight - 1 - y;
+//                        outY = x;
+//                        break;
+//                    case 180:
+//                        outX = uvWidth - 1 - x;
+//                        outY = uvHeight - 1 - y;
+//                        break;
+//                    case 270:
+//                        outX = y;
+//                        outY = uvWidth - 1 - x;
+//                        break;
+//                    default:
+//                        outX = x;
+//                        outY = y;
+//                        break;
+//                }
+//
+//                int inIndex = ySize + (y * uvWidth + x) * 2;
+//                int outIndex = outYSize + (outY * outUvWidth + outX) * 2;
+//
+//                // Copia V e U (NV21 format)
+//                output[outIndex] = inputBytes[inIndex];         // V
+//                output[outIndex + 1] = inputBytes[inIndex + 1]; // U
+//            }
+//        }
+//    }
+//
+//    jbyteArray result = env->NewByteArray(inputLength);
+//    env->SetByteArrayRegion(result, 0, inputLength, (jbyte*)output);
+//
+//    env->ReleaseByteArrayElements(input, inputBytes, JNI_ABORT);
+//    free(output);
+//
+//    return result;
+//}

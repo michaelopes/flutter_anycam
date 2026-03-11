@@ -170,4 +170,15 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
       },
     );
   }
+
+  @override
+  Future<void> setZoom(double value, String cameraId) async {
+    return await methodChannel.invokeMethod(
+      'setZoom',
+      {
+        "cameraId": cameraId,
+        "zoom": value,
+      },
+    );
+  }
 }

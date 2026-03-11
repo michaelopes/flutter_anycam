@@ -276,6 +276,12 @@ public class DeviceCamera extends BaseCamera {
         }
     }
 
+
+    @Override
+    public void setZoom(float zoom) {
+        DeviceCameraUtils.getInstance().setZoom(zoom, getCameraId());
+    }
+
     private static  class LimiterFrame {
         public final ImageProxy imageProxy;
         public final byte[] nv21;

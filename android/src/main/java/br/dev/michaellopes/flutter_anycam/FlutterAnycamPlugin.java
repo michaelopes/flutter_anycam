@@ -1,5 +1,6 @@
 package br.dev.michaellopes.flutter_anycam;
 
+import android.graphics.Rect;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Size;
@@ -10,10 +11,14 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
+import br.dev.michaellopes.flutter_anycam.camera.BaseCamera;
 import br.dev.michaellopes.flutter_anycam.integration.CameraViewFactory;
 import br.dev.michaellopes.flutter_anycam.integration.FlutterEventChannel;
 import br.dev.michaellopes.flutter_anycam.stream.CameraStreamManager;
+import br.dev.michaellopes.flutter_anycam.utils.ByteArrayPoolUtil;
 import br.dev.michaellopes.flutter_anycam.utils.CameraUtil;
 import br.dev.michaellopes.flutter_anycam.utils.ContextUtil;
 import br.dev.michaellopes.flutter_anycam.utils.DeviceCameraUtils;
@@ -21,6 +26,7 @@ import br.dev.michaellopes.flutter_anycam.utils.ImageConverterUtil;
 import br.dev.michaellopes.flutter_anycam.utils.LivecycleUtil;
 import br.dev.michaellopes.flutter_anycam.utils.CameraPermissionsUtil;
 import br.dev.michaellopes.flutter_anycam.utils.YuvUtil;
+import io.flutter.Log;
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.embedding.engine.plugins.activity.ActivityAware;
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding;
@@ -36,9 +42,15 @@ import io.flutter.plugin.common.MethodChannel.Result;
 public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, ActivityAware {
     private MethodChannel channel;
     private EventChannel eventChannel;
-
-
     final ExecutorService executor = Executors.newFixedThreadPool(2);
+
+    ByteArrayPoolUtil byteArrayPool = new ByteArrayPoolUtil(
+            new ByteArrayPoolUtil.Config()
+                    .maxIdle(6)
+                    .idleTimeout(2, TimeUnit.MINUTES)    // expira idle após 2 min
+                    .evictionInterval(30, TimeUnit.SECONDS) // varre a cada 30 s
+                    .onEviction(entry -> Log.d("Pool", "Evictado: " + entry))
+    );
 
     @Override
     public void onAttachedToActivity(@NonNull ActivityPluginBinding binding) {
@@ -125,6 +137,19 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
                 DeviceCameraUtils.getInstance().setFlash(value);
                 result.success(true);
                 break;
+            case "setZoom":
+                HashMap<?, ?> args4 = (HashMap<?, ?>) call.arguments;
+                Number zoomNumber = (Number) args4.get("zoom");
+                float zoom = zoomNumber.floatValue();
+                String caId = (String) args4.get("cameraId");
+
+                BaseCamera camera = CameraViewFactory.getInstance().getCameraById(caId);
+                if (camera != null) {
+                    camera.setZoom(zoom);
+                }
+                //  DeviceCameraUtils.getInstance().setZoom(zoom, caId);
+                result.success(true);
+                break;
             default:
                 result.notImplemented();
                 break;
@@ -154,6 +179,10 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
         int finalWidth = width;
         int finalHeight = height;
 
+        final AtomicReference<ByteArrayPoolUtil.Entry> resizeEntry = new AtomicReference<>(null);
+        final AtomicReference<ByteArrayPoolUtil.Entry> cropEntry = new AtomicReference<>(null);
+
+
         if (arg.get("crop") != null) {
             final Map<String, Object> cs = (Map<String, Object>) arg.get("crop");
 
@@ -163,21 +192,53 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
             Integer top = (Integer) cs.get("top");
 
             if (cWidth != null && cHeight != null && left != null && top != null) {
-                if (rotation == 90 || rotation == 270) {
-                    Integer sTemp = cWidth;
-                    cWidth = cHeight;
-                    cHeight = sTemp;
 
-                    Integer pTemp = left;
-                    left = top;
-                    top = pTemp;
+                if (rotation == 90) {
+                    int rawLeft = top;
+                    int rawTop = height - (left + cWidth);
+
+                    int rawWidth = cHeight;
+                    int rawHeight = cWidth;
+
+                    left = rawLeft;
+                    top = rawTop;
+                    cWidth = rawWidth;
+                    cHeight = rawHeight;
+                } else if (rotation == 180) {
+                    int rawLeft = width - (left + cWidth);
+                    int rawTop = height - (top + cHeight);
+
+                    left = rawLeft;
+                    top = rawTop;
+                } else if (rotation == 270) {
+                    int rawLeft = width - (top + cHeight);
+                    int rawTop = left;
+
+                    int rawWidth = cHeight;
+                    int rawHeight = cWidth;
+
+                    left = rawLeft;
+                    top = rawTop;
+                    cWidth = rawWidth;
+                    cHeight = rawHeight;
                 }
+
+                cWidth = Math.min(cWidth, width - left);
+                cHeight = Math.min(cHeight, height - top);
+
                 int srcSize = cWidth * cHeight * 3 / 2;
-                byte[] out = new byte[srcSize];
+                cropEntry.set(byteArrayPool.acquire(srcSize));
+                // YuvUtil.cropNv21(bytes, width, height, out, left, top, cWidth, cHeight);
+
+
+                // YuvUtil.cropNV21(bytes, width, height, outEntry.data, new Rect(left, top, left + cWidth, top + cHeight));
+
+
+                YuvUtil.cropNv21(bytes, width, height, cropEntry.get().data, left, top, cWidth, cHeight);
+
                 finalWidth = cWidth;
                 finalHeight = cHeight;
-                YuvUtil.cropNv21(bytes, width, height, out, left, top, cWidth, cHeight);
-                finalBytes = out;
+                finalBytes = cropEntry.get().data;
             }
 
             final Map<String, Object> resize = (Map<String, Object>) cs.get("resize");
@@ -190,27 +251,27 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
                     rHeight = sTemp;
                 }
 
-                if(rWidth == -1 && rHeight == -1) {
+                if (rWidth == -1 && rHeight == -1) {
                     int minSize = Math.min(finalWidth, finalHeight);
                     rWidth = minSize;
                     rHeight = minSize;
                 }
 
                 int srcSize = rWidth * rHeight * 3 / 2;
-                byte[] out = new byte[srcSize];
+                resizeEntry.set(byteArrayPool.acquire(srcSize));
 
-                if(rWidth > finalWidth) {
+                if (rWidth > finalWidth) {
                     rWidth = finalWidth;
                 }
 
-                if(rHeight > finalHeight) {
+                if (rHeight > finalHeight) {
                     rHeight = finalHeight;
                 }
 
-                YuvUtil.resizeNv21(finalBytes, finalWidth, finalHeight, out, rWidth, rHeight);
+                YuvUtil.resizeNv21(finalBytes, finalWidth, finalHeight, resizeEntry.get().data, rWidth, rHeight);
                 finalWidth = rWidth;
                 finalHeight = rHeight;
-                finalBytes = out;
+                finalBytes = resizeEntry.get().data;
 
             }
         }
@@ -226,6 +287,11 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
                 result.success(bs);
             } catch (final Exception e) {
                 new Handler(Looper.getMainLooper()).post(() -> result.error("Processing error", e.getMessage(), null));
+            } finally {
+                byteArrayPool.release(cropEntry.get());
+                byteArrayPool.release(resizeEntry.get());
+                cropEntry.set(null);
+                resizeEntry.set(null);
             }
         });
 
@@ -238,6 +304,9 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
     public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
         CameraViewFactory.getInstance().disposeAll();
         FlutterEventChannel.getInstance().release();
+        ImageConverterUtil.shutdown();
+        byteArrayPool.shutdown();
+        byteArrayPool.clear();
         channel.setMethodCallHandler(null);
     }
 }

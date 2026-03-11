@@ -41,4 +41,9 @@ final class FlutterAnycamCrop {
   }) {
     _resize = FlutterAnycamSize(width, height);
   }
+
+  @override
+  String toString() {
+    return 'LprBoundingBox(left: $_left, topy: $_top, width: $_width, height: $_height)';
+  }
 }
