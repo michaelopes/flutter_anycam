@@ -41,7 +41,7 @@ class FlutterAnycam {
       if (zoom < 1) {
         zoom = 1;
       }
-      FlutterAnycamPlatform.instance.setZoom(zoom, camera.id);
+      await FlutterAnycamPlatform.instance.setZoom(zoom, camera.id);
     }
   }
 }

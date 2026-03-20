@@ -90,9 +90,11 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
     public void onMethodCall(@NonNull MethodCall call, @NonNull Result result) {
         switch (call.method) {
             case "createView":
+
                 HashMap<String, Object> args1 = (HashMap<String, Object>) call.arguments;
                 Long id = CameraViewFactory.getInstance().createView(args1);
                 result.success(id);
+
                 break;
             case "disposeView":
                 HashMap<String, Object> args2 = (HashMap<String, Object>) call.arguments;
@@ -138,6 +140,7 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
                 result.success(true);
                 break;
             case "setZoom":
+                long start = System.currentTimeMillis();
                 HashMap<?, ?> args4 = (HashMap<?, ?>) call.arguments;
                 Number zoomNumber = (Number) args4.get("zoom");
                 float zoom = zoomNumber.floatValue();
@@ -149,6 +152,8 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
                 }
                 //  DeviceCameraUtils.getInstance().setZoom(zoom, caId);
                 result.success(true);
+                long timeMs = System.currentTimeMillis() - start;
+                Log.d("setZoom_PERF", "time=" + timeMs + "ms");
                 break;
             default:
                 result.notImplemented();
@@ -159,7 +164,7 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
 
     private void convertNv21ToJpeg(final MethodCall call, final MethodChannel.Result result) {
         @SuppressWarnings("unchecked") final Map<String, Object> arg = (Map<String, Object>) call.arguments;
-
+        long start = System.currentTimeMillis();
         final byte[] bytes = arg != null ? (byte[]) arg.get("bytes") : null;
         final Integer width = arg != null ? (Integer) arg.get("width") : null;
         final Integer height = arg != null ? (Integer) arg.get("height") : null;
@@ -228,11 +233,6 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
 
                 int srcSize = cWidth * cHeight * 3 / 2;
                 cropEntry.set(byteArrayPool.acquire(srcSize));
-                // YuvUtil.cropNv21(bytes, width, height, out, left, top, cWidth, cHeight);
-
-
-                // YuvUtil.cropNV21(bytes, width, height, outEntry.data, new Rect(left, top, left + cWidth, top + cHeight));
-
 
                 YuvUtil.cropNv21(bytes, width, height, cropEntry.get().data, left, top, cWidth, cHeight);
 
@@ -283,6 +283,8 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
 
         executor.execute(() -> {
             try {
+                long timeMs = System.currentTimeMillis() - start;
+                Log.d("JpegConversion_PERF", "time=" + timeMs + "ms");
                 byte[] bs = ImageConverterUtil.nv21ToJpeg(pFinalBytes, pFinalWidth, pFinalHeight, quality, rotation);
                 result.success(bs);
             } catch (final Exception e) {

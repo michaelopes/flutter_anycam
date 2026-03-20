@@ -80,7 +80,8 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
 
   @override
   Future<int?> createView(Map<String, dynamic> args) async {
-    return await methodChannel.invokeMethod('createView', args);
+    final result = await methodChannel.invokeMethod('createView', args);
+    return result;
   }
 
   @override
@@ -173,12 +174,15 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
 
   @override
   Future<void> setZoom(double value, String cameraId) async {
-    return await methodChannel.invokeMethod(
+    final stopwatch = Stopwatch()..start();
+    await methodChannel.invokeMethod(
       'setZoom',
       {
         "cameraId": cameraId,
         "zoom": value,
       },
     );
+    stopwatch.stop();
+    debugPrint('setZoom_flutter: ${stopwatch.elapsedMilliseconds}ms');
   }
 }
