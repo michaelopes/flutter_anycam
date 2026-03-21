@@ -1,7 +1,7 @@
 import 'dart:io';
 
+import '../channel/flutter_anycam_platform_interface.dart';
 import 'flutter_anycam_frame.dart';
-import 'flutter_anycam_platform_interface.dart';
 import 'flutter_anycam_stream_listener.dart';
 
 typedef FlutterAnycamCameraRawStreamListener = void Function(

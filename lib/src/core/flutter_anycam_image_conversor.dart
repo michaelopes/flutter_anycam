@@ -1,8 +1,9 @@
 import 'dart:io';
 import 'dart:typed_data';
-import 'package:flutter_anycam/src/flutter_anycam_filter.dart';
-import 'package:flutter_anycam/src/flutter_anycam_platform_interface.dart';
+
+import '../channel/flutter_anycam_platform_interface.dart';
 import 'flutter_anycam_crop.dart';
+import 'flutter_anycam_filter.dart';
 import 'flutter_anycam_frame.dart';
 
 class FlutterAnycamFrameConversor {

@@ -1,13 +1,12 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_anycam/src/flutter_anycam_camera_selector.dart';
-
-import 'flutter_anycam_crop.dart';
-import 'flutter_anycam_event_stream.dart';
-import 'flutter_anycam_filter.dart';
+import '../core/flutter_anycam_event_stream.dart';
 import 'flutter_anycam_platform_interface.dart';
-import 'flutter_anycam_stream_listener.dart';
-import 'flutter_anycam_typedefs.dart';
+import '../core/flutter_anycam_camera_selector.dart';
+import '../core/flutter_anycam_crop.dart';
+import '../core/flutter_anycam_filter.dart';
+import '../core/flutter_anycam_stream_listener.dart';
+import '../core/flutter_anycam_typedefs.dart';
 
 class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
   MethodChannelFlutterAnycam() {

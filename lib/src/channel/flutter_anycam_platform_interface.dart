@@ -2,12 +2,12 @@ import 'dart:typed_data';
 
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
-import 'flutter_anycam_camera_selector.dart';
-import 'flutter_anycam_crop.dart';
-import 'flutter_anycam_filter.dart';
+import '../core/flutter_anycam_camera_selector.dart';
+import '../core/flutter_anycam_crop.dart';
+import '../core/flutter_anycam_filter.dart';
+import '../core/flutter_anycam_stream_listener.dart';
+import '../core/flutter_anycam_typedefs.dart';
 import 'flutter_anycam_method_channel.dart';
-import 'flutter_anycam_typedefs.dart';
-import 'flutter_anycam_stream_listener.dart';
 
 abstract class FlutterAnycamPlatform extends PlatformInterface {
   /// Constructs a FlutterAnycamPlatform.

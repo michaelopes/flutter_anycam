@@ -1,4 +1,4 @@
-import 'flutter_anycam_platform_interface.dart';
+import '../channel/flutter_anycam_platform_interface.dart';
 
 typedef PermissionCallback = void Function(bool result);
 

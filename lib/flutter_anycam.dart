@@ -1,21 +1,21 @@
-export './src/flutter_anycam_camera_selector.dart';
-export './src/flutter_anycam_typedefs.dart';
-export './src/flutter_anycam_stream_listener.dart';
-export './src/flutter_anycam_widget.dart';
-export './src/flutter_anycam_frame.dart';
-export './src/flutter_anycam_size.dart';
-export './src/flutter_anycam_crop.dart';
-export './src/flutter_anycam_texts.dart';
-export './src/flutter_anycam_platform_interface.dart';
-export './src/flutter_anycam_method_channel.dart';
-export 'src/flutter_anycam_camera_raw_stream.dart';
-export 'src/flutter_anycam_mesure.dart';
-export 'src/flutter_anycam_filter.dart';
+export './src/core/flutter_anycam_camera_selector.dart';
+export './src/core/flutter_anycam_typedefs.dart';
+export './src/core/flutter_anycam_stream_listener.dart';
+export './src/core/flutter_anycam_widget.dart';
+export './src/core/flutter_anycam_frame.dart';
+export './src/core/flutter_anycam_size.dart';
+export './src/core/flutter_anycam_crop.dart';
+export './src/core/flutter_anycam_texts.dart';
+export './src/channel/flutter_anycam_platform_interface.dart';
+export './src/channel/flutter_anycam_method_channel.dart';
+export 'src/core/flutter_anycam_camera_raw_stream.dart';
+export 'src/core/flutter_anycam_mesure.dart';
+export 'src/core/flutter_anycam_filter.dart';
 
-import 'src/flutter_anycam_camera_selector.dart';
+import 'src/core/flutter_anycam_camera_selector.dart';
 
-import 'src/flutter_anycam_image_conversor.dart';
-import 'src/flutter_anycam_platform_interface.dart';
+import 'src/core/flutter_anycam_image_conversor.dart';
+import 'src/channel/flutter_anycam_platform_interface.dart';
 
 class FlutterAnycam {
   static final frameConversor = FlutterAnycamFrameConversor();

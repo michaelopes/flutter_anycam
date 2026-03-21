@@ -2,14 +2,15 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_anycam/src/flutter_anycam_frame.dart';
-import 'package:flutter_anycam/src/flutter_anycam_view_factory.dart';
+import 'package:flutter_anycam/src/core/flutter_anycam_frame.dart';
+import 'package:flutter_anycam/src/core/flutter_anycam_view_factory.dart';
 
+import '../channel/flutter_anycam_platform_interface.dart';
 import 'flutter_anycam_camera_selector.dart';
 import 'flutter_anycam_lifecycle.dart';
 import 'flutter_anycam_mesure.dart';
 import 'flutter_anycam_permission_handler.dart';
-import 'flutter_anycam_platform_interface.dart';
+
 import 'flutter_anycam_preview_info.dart';
 import 'flutter_anycam_rotation.dart';
 import 'flutter_anycam_size.dart';

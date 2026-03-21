@@ -1,5 +1,5 @@
+import '../channel/flutter_anycam_platform_interface.dart';
 import 'flutter_anycam_camera_selector.dart';
-import 'flutter_anycam_platform_interface.dart';
 import 'flutter_anycam_size.dart';
 
 class FlutterAnycamViewFactory {
