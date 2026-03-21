@@ -1,6 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import '../core/flutter_anycam_event_stream.dart';
+import '../core/flutter_anycam_size.dart';
+import '../tensorflow/flutter_anycam_tf_delegate.dart';
+import '../tensorflow/flutter_anycam_tf_frame.dart';
 import 'flutter_anycam_platform_interface.dart';
 import '../core/flutter_anycam_camera_selector.dart';
 import '../core/flutter_anycam_crop.dart';
@@ -183,5 +186,50 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
     );
     stopwatch.stop();
     debugPrint('setZoom_flutter: ${stopwatch.elapsedMilliseconds}ms');
+  }
+
+  @override
+  Future<bool> loadTfModel({
+    required String assetPath,
+    required String key,
+    FlutterAnycamTfDelegate delegate = FlutterAnycamTfDelegate.nnapi,
+    int threads = 1,
+  }) async {
+    return await methodChannel.invokeMethod(
+      'loadTfModel',
+      {
+        "assetPath": assetPath,
+        "key": key,
+        "delegate": delegate.value,
+        "threads": threads,
+      },
+    );
+  }
+
+  @override
+  Future<dynamic> runTfInference({
+    required FlutterAnycamTfFrame inputFrame,
+    required FlutterAnycamSize inputSize,
+    required String modelKey,
+    FlutterAnycamFilter filter = FlutterAnycamFilter.none,
+    FlutterAnycamCrop? crop,
+  }) {
+    return methodChannel.invokeMethod(
+      'loadTfModel',
+      {
+        "inputFrame": inputFrame.toMap(),
+        "modelKey": modelKey,
+        "inputSize": inputSize.toMap(),
+        "filter": filter.code,
+        "crop": crop?.toMap(),
+      },
+    );
+  }
+
+  @override
+  Future<bool> disposeTfModel({
+    required String key,
+  }) {
+    throw UnimplementedError('disposeTFModel() has not been implemented.');
   }
 }

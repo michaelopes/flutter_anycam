@@ -5,8 +5,11 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import '../core/flutter_anycam_camera_selector.dart';
 import '../core/flutter_anycam_crop.dart';
 import '../core/flutter_anycam_filter.dart';
+import '../core/flutter_anycam_size.dart';
 import '../core/flutter_anycam_stream_listener.dart';
 import '../core/flutter_anycam_typedefs.dart';
+import '../tensorflow/flutter_anycam_tf_delegate.dart';
+import '../tensorflow/flutter_anycam_tf_frame.dart';
 import 'flutter_anycam_method_channel.dart';
 
 abstract class FlutterAnycamPlatform extends PlatformInterface {
@@ -99,5 +102,30 @@ abstract class FlutterAnycamPlatform extends PlatformInterface {
 
   Future<bool> disposeRawStream(String cameraId) {
     throw UnimplementedError('disposeRawStream() has not been implemented.');
+  }
+
+  Future<bool> loadTfModel({
+    required String assetPath,
+    required String key,
+    FlutterAnycamTfDelegate delegate = FlutterAnycamTfDelegate.nnapi,
+    int threads = 1,
+  }) {
+    throw UnimplementedError('loadTFModel() has not been implemented.');
+  }
+
+  Future<dynamic> runTfInference({
+    required FlutterAnycamTfFrame inputFrame,
+    required FlutterAnycamSize inputSize,
+    required String modelKey,
+    FlutterAnycamFilter filter = FlutterAnycamFilter.none,
+    FlutterAnycamCrop? crop,
+  }) {
+    throw UnimplementedError('runTFInference() has not been implemented.');
+  }
+
+  Future<bool> disposeTfModel({
+    required String key,
+  }) {
+    throw UnimplementedError('disposeTFModel() has not been implemented.');
   }
 }
