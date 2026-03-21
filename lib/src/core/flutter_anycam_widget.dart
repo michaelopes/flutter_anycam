@@ -23,6 +23,14 @@ const kDefaultFrameChangePercent = 6.0;
 
 typedef ConnectResult = ({int textureId, double width, double height});
 
+enum FlutterAnycamType {
+  standard("standard"),
+  tf("tf");
+
+  final String value;
+  const FlutterAnycamType(this.value);
+}
+
 class FlutterAnycamWidget extends StatefulWidget {
   const FlutterAnycamWidget({
     super.key,
@@ -38,11 +46,10 @@ class FlutterAnycamWidget extends StatefulWidget {
     this.preferredSize = const FlutterAnycamSize(640, 480),
     this.resizeFrame,
     this.filter = FlutterAnycamFilter.none,
+    this.type = FlutterAnycamType.standard,
+    this.onRawVideoFrameReceived,
   });
 
-  /// An Android-only parameter.
-  ///
-  /// This parameter has no effect on iOS platform.
   final FlutterAnycamSize preferredSize;
   final FlutterAnycamSize? resizeFrame;
   final FlutterAnycamFilter filter;
@@ -51,10 +58,12 @@ class FlutterAnycamWidget extends StatefulWidget {
   final FlutterAnycamTexts texts;
   final bool autoRetry;
   final FlutterAnycamCameraSelector camera;
-  final FlutterAnycamStreamFrameCallback? onFrame;
   final int fps;
   final double? aspectRatio;
   final double previewScale;
+  final FlutterAnycamType type;
+  final FlutterAnycamStreamFrameCallback? onFrame;
+  final FlutterAnycamStreamMethod? onRawVideoFrameReceived;
 
   @override
   State<FlutterAnycamWidget> createState() => FlutterAnycamWidgetState();
@@ -230,8 +239,12 @@ class FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
         onVideoFrameReceived: (data) {
           _mesureFrames?.count();
           if (widget.onFrame != null) {
-            final frame = FlutterAnycamFrame.fromMap(data);
-            widget.onFrame?.call(frame);
+            if (widget.onRawVideoFrameReceived != null) {
+              widget.onRawVideoFrameReceived!(data);
+            } else {
+              final frame = FlutterAnycamFrame.fromMap(data);
+              widget.onFrame?.call(frame);
+            }
           }
         },
       ),

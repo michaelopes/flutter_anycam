@@ -36,6 +36,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 import br.dev.michaellopes.flutter_anycam.stream.CameraStreamManager;
+import br.dev.michaellopes.flutter_anycam.tensorflow.TfFrameHandler;
 import br.dev.michaellopes.flutter_anycam.utils.ContextUtil;
 import br.dev.michaellopes.flutter_anycam.utils.DeviceCameraUtils;
 import br.dev.michaellopes.flutter_anycam.utils.FrameRateLimiterUtil;
@@ -267,6 +268,9 @@ public class DeviceCamera extends BaseCamera {
 
     public void analyze(@NonNull ImageProxy image) {
         try {
+
+            TfFrameHandler.getInstance().addFrame(image, resizeFrame, filter, getCustomRotationDegrees());
+
             Map<String, Object> imageData = imageAnalysisUtil.imageProxyToNV21Map(image, resizeFrame, filter, getCustomRotationDegrees());
             onVideoFrameReceived(imageData);
         } catch (Exception e) {

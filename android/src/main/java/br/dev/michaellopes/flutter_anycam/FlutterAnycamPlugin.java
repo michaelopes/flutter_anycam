@@ -1,9 +1,7 @@
 package br.dev.michaellopes.flutter_anycam;
 
-import android.graphics.Rect;
 import android.os.Handler;
 import android.os.Looper;
-import android.util.Size;
 
 import androidx.annotation.NonNull;
 
@@ -11,13 +9,13 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import br.dev.michaellopes.flutter_anycam.camera.BaseCamera;
 import br.dev.michaellopes.flutter_anycam.integration.CameraViewFactory;
 import br.dev.michaellopes.flutter_anycam.integration.FlutterEventChannel;
 import br.dev.michaellopes.flutter_anycam.stream.CameraStreamManager;
+import br.dev.michaellopes.flutter_anycam.tensorflow.TfModelHandler;
 import br.dev.michaellopes.flutter_anycam.utils.ByteArrayPoolUtil;
 import br.dev.michaellopes.flutter_anycam.utils.CameraUtil;
 import br.dev.michaellopes.flutter_anycam.utils.ContextUtil;
@@ -25,7 +23,7 @@ import br.dev.michaellopes.flutter_anycam.utils.DeviceCameraUtils;
 import br.dev.michaellopes.flutter_anycam.utils.ImageConverterUtil;
 import br.dev.michaellopes.flutter_anycam.utils.LivecycleUtil;
 import br.dev.michaellopes.flutter_anycam.utils.CameraPermissionsUtil;
-import br.dev.michaellopes.flutter_anycam.utils.YuvUtil;
+import br.dev.michaellopes.flutter_anycam.utils.NativeUtil;
 import io.flutter.Log;
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.embedding.engine.plugins.activity.ActivityAware;
@@ -44,13 +42,7 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
     private EventChannel eventChannel;
     final ExecutorService executor = Executors.newFixedThreadPool(2);
 
-    ByteArrayPoolUtil byteArrayPool = new ByteArrayPoolUtil(
-            new ByteArrayPoolUtil.Config()
-                    .maxIdle(6)
-                    .idleTimeout(2, TimeUnit.MINUTES)    // expira idle após 2 min
-                    .evictionInterval(30, TimeUnit.SECONDS) // varre a cada 30 s
-                    .onEviction(entry -> Log.d("Pool", "Evictado: " + entry))
-    );
+    ByteArrayPoolUtil byteArrayPool = new ByteArrayPoolUtil(6, 30);
 
     @Override
     public void onAttachedToActivity(@NonNull ActivityPluginBinding binding) {
@@ -155,6 +147,23 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
                 long timeMs = System.currentTimeMillis() - start;
                 Log.d("setZoom_PERF", "time=" + timeMs + "ms");
                 break;
+            case "loadTfModel":
+                Map<String, Object> ldata = (Map<String, Object>) call.arguments;
+                String assetPath = (String) ldata.get("assetPath");
+                String key = (String) ldata.get("key");
+                String type = (String) ldata.get("type");
+                Integer threads = (Integer) ldata.get("threads");
+                TfModelHandler.getInstance().loadModel(assetPath, key, type, threads);
+                result.success(true);
+                break;
+            case "runTfInference":
+                break;
+            case "disposeTfModel":
+                Map<String, Object> ddata = (Map<String, Object>) call.arguments;
+                String dkey = (String) ddata.get("key");
+                TfModelHandler.getInstance().disposeModelByKey(dkey);
+                result.success(true);
+                break;
             default:
                 result.notImplemented();
                 break;
@@ -184,8 +193,8 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
         int finalWidth = width;
         int finalHeight = height;
 
-        final AtomicReference<ByteArrayPoolUtil.Entry> resizeEntry = new AtomicReference<>(null);
-        final AtomicReference<ByteArrayPoolUtil.Entry> cropEntry = new AtomicReference<>(null);
+        final AtomicReference<ByteArrayPoolUtil.PoolItem> resizeEntry = new AtomicReference<>(null);
+        final AtomicReference<ByteArrayPoolUtil.PoolItem> cropEntry = new AtomicReference<>(null);
 
 
         if (arg.get("crop") != null) {
@@ -234,7 +243,7 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
                 int srcSize = cWidth * cHeight * 3 / 2;
                 cropEntry.set(byteArrayPool.acquire(srcSize));
 
-                YuvUtil.cropNv21(bytes, width, height, cropEntry.get().data, left, top, cWidth, cHeight);
+                NativeUtil.cropNv21(bytes, width, height, cropEntry.get().data, left, top, cWidth, cHeight);
 
                 finalWidth = cWidth;
                 finalHeight = cHeight;
@@ -268,7 +277,7 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
                     rHeight = finalHeight;
                 }
 
-                YuvUtil.resizeNv21(finalBytes, finalWidth, finalHeight, resizeEntry.get().data, rWidth, rHeight);
+                NativeUtil.resizeNv21(finalBytes, finalWidth, finalHeight, resizeEntry.get().data, rWidth, rHeight);
                 finalWidth = rWidth;
                 finalHeight = rHeight;
                 finalBytes = resizeEntry.get().data;
@@ -276,7 +285,7 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
             }
         }
 
-        YuvUtil.applyFilter(finalBytes, finalWidth, finalHeight, filter);
+        NativeUtil.applyFilter(finalBytes, finalWidth, finalHeight, filter);
         final byte[] pFinalBytes = finalBytes;
         final int pFinalWidth = finalWidth;
         final int pFinalHeight = finalHeight;
@@ -308,7 +317,6 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
         FlutterEventChannel.getInstance().release();
         ImageConverterUtil.shutdown();
         byteArrayPool.shutdown();
-        byteArrayPool.clear();
         channel.setMethodCallHandler(null);
     }
 }

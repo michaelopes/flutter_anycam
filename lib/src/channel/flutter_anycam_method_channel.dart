@@ -229,7 +229,10 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
   @override
   Future<bool> disposeTfModel({
     required String key,
-  }) {
-    throw UnimplementedError('disposeTFModel() has not been implemented.');
+  }) async {
+    return await methodChannel.invokeMethod(
+      'disposeTfModel',
+      {"key": key},
+    );
   }
 }

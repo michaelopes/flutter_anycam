@@ -12,6 +12,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import io.flutter.Log;
+
 public class ImageMapperUtil {
     private byte[] bytesResizedBuffer;
     private byte[] bytesBuffer;
@@ -38,13 +40,16 @@ public class ImageMapperUtil {
                 if (bytesBuffer == null || srcSize != bytesBuffer.length) {
                     bytesBuffer = new byte[srcSize];
                 }
-                YuvUtil.yuv420ToNv21(image, bytesBuffer);
+                NativeUtil.yuv420ToNv21(image, bytesBuffer);
             } else {
                 bytesBuffer = nv21;
             }
 
             if(resizeFrame != null) {
+                long start = System.currentTimeMillis();
                 rawFrame = imageProxyToNV21Map(imageProxy, null, 0, customRotationDegrees, bytesBuffer);
+                long inferenceMs = System.currentTimeMillis() - start;
+                Log.d("imageProxyToNV21Map_PERF", "inference=" + inferenceMs + "ms");
             }
 
             byte[] finalBytes;
@@ -65,7 +70,7 @@ public class ImageMapperUtil {
                 if (bytesResizedBuffer == null || dstSize != bytesResizedBuffer.length) {
                     bytesResizedBuffer = new byte[dstSize];
                 }
-                YuvUtil.resizeNv21(bytesBuffer, width, height, bytesResizedBuffer, targetWidth, targetHeight);
+                NativeUtil.resizeNv21(bytesBuffer, width, height, bytesResizedBuffer, targetWidth, targetHeight);
                 finalBytes = bytesResizedBuffer;
                 width = targetWidth;
                 height = targetHeight;
@@ -92,7 +97,7 @@ public class ImageMapperUtil {
             result.put("width", width);
             result.put("format", "NV21");
 
-            YuvUtil.applyFilter(finalBytes, width, height, filter);
+            NativeUtil.applyFilter(finalBytes, width, height, filter);
 
             result.put("bytes", finalBytes);
             result.put("rotation", sensorOrientation);
@@ -195,7 +200,7 @@ public class ImageMapperUtil {
             if (bytesResizedBuffer == null || dstSize != bytesResizedBuffer.length) {
                 bytesResizedBuffer = new byte[dstSize];
             }
-            YuvUtil.resizeNv21(nv21, width, height, bytesResizedBuffer, targetWidth, targetHeight);
+            NativeUtil.resizeNv21(nv21, width, height, bytesResizedBuffer, targetWidth, targetHeight);
             finalBytes = bytesResizedBuffer;
             width = targetWidth;
             height = targetHeight;
@@ -213,7 +218,7 @@ public class ImageMapperUtil {
             image.put("rotation", 0);
         }
 
-        YuvUtil.applyFilter(finalBytes, width, height, filter);
+        NativeUtil.applyFilter(finalBytes, width, height, filter);
         image.put("bytes", finalBytes);
         image.put("format", "NV21");
         image.put("rowStride", width);
@@ -275,7 +280,7 @@ public class ImageMapperUtil {
         }
 
 
-        YuvUtil.applyFilter(nv21Bytes, width, height, filter);
+        NativeUtil.applyFilter(nv21Bytes, width, height, filter);
 
         image.put("bytes", nv21Bytes);
         image.put("format", "NV21");

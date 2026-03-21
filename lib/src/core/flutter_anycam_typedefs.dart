@@ -1,3 +1,4 @@
+import '../tensorflow/flutter_anycam_tf_frame.dart';
 import 'flutter_anycam_frame.dart';
 
 typedef FlutterAnycamStreamMethod = void Function(
@@ -6,6 +7,10 @@ typedef FlutterAnycamStreamMethod = void Function(
 
 typedef FlutterAnycamStreamFrameCallback = void Function(
   FlutterAnycamFrame frame,
+);
+
+typedef FlutterAnycamStreamTfFrameCallback = void Function(
+  FlutterAnycamTfFrame frame,
 );
 
 typedef FlutterAnycamStreamListenerDisposer = void Function();

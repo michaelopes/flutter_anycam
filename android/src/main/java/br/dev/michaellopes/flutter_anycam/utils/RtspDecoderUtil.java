@@ -4,7 +4,6 @@ import android.media.Image;
 import android.media.MediaCodec;
 import android.media.MediaFormat;
 import android.util.Log;
-import android.util.Size;
 import android.view.Surface;
 
 import java.nio.ByteBuffer;
@@ -239,7 +238,7 @@ public class RtspDecoderUtil {
                         int srcH = image.getHeight();
 
                         ensureYuvBuffers(srcW, srcH);
-                        YuvUtil.yuv420ToNv21(image, nv21Buffer);
+                        NativeUtil.yuv420ToNv21(image, nv21Buffer);
 
                         image.close();
                         image = null;
@@ -262,7 +261,7 @@ public class RtspDecoderUtil {
                             }
 
                             YuvFrame rawFrame = new YuvFrame(nv21Buffer, srcW, srcH);
-                            YuvUtil.resizeNv21(nv21Buffer, srcW, srcH, resizedBuffer, tgWidth, tgHeight);
+                            NativeUtil.resizeNv21(nv21Buffer, srcW, srcH, resizedBuffer, tgWidth, tgHeight);
                             YuvFrame targetFrame = new YuvFrame(resizedBuffer, tgWidth, tgHeight);
                             callback.onYuvFrame(targetFrame, rawFrame);
                         }

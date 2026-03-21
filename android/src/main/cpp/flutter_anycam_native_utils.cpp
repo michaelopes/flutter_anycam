@@ -5,6 +5,7 @@
 #include <android/log.h>
 #include <__algorithm/max.h>
 #include <__algorithm/min.h>
+#include <cmath>
 
 #define LOG_TAG "YuvUtils"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
@@ -12,7 +13,7 @@
 
 extern "C"
 JNIEXPORT jbyteArray JNICALL
-Java_br_dev_michaellopes_flutter_1anycam_utils_YuvUtil_yuv420888ToNv21JNI(
+Java_br_dev_michaellopes_flutter_1anycam_utils_NativeUtil_yuv420888ToNv21JNI(
         JNIEnv* env,
         jclass clazz,
         jobject yBuffer,
@@ -97,7 +98,7 @@ Java_br_dev_michaellopes_flutter_1anycam_utils_YuvUtil_yuv420888ToNv21JNI(
 
 extern "C"
 JNIEXPORT void JNICALL
-Java_br_dev_michaellopes_flutter_1anycam_utils_YuvUtil_yuv420888ToNv21IntoJNI(
+Java_br_dev_michaellopes_flutter_1anycam_utils_NativeUtil_yuv420888ToNv21IntoJNI(
         JNIEnv* env,
         jclass,
         jobject yBuffer,
@@ -191,7 +192,7 @@ Java_br_dev_michaellopes_flutter_1anycam_utils_YuvUtil_yuv420888ToNv21IntoJNI(
 
 extern "C"
 JNIEXPORT void JNICALL
-Java_br_dev_michaellopes_flutter_1anycam_utils_YuvUtil_resizeNv21JNI(
+Java_br_dev_michaellopes_flutter_1anycam_utils_NativeUtil_resizeNv21JNI(
         JNIEnv *env,
         jclass,
         jbyteArray srcArray,
@@ -372,7 +373,7 @@ Java_br_dev_michaellopes_flutter_1anycam_utils_YuvUtil_resizeNv21JNI(
 
 extern "C"
 JNIEXPORT void JNICALL
-Java_br_dev_michaellopes_flutter_1anycam_utils_YuvUtil_cropNv21JNI(
+Java_br_dev_michaellopes_flutter_1anycam_utils_NativeUtil_cropNv21JNI(
         JNIEnv *env,
         jclass,
         jbyteArray srcArray,
@@ -431,7 +432,7 @@ Java_br_dev_michaellopes_flutter_1anycam_utils_YuvUtil_cropNv21JNI(
 
 extern "C"
 JNIEXPORT void JNICALL
-Java_br_dev_michaellopes_flutter_1anycam_utils_YuvUtil_nv21ToNv12JNI(
+Java_br_dev_michaellopes_flutter_1anycam_utils_NativeUtil_nv21ToNv12JNI(
         JNIEnv* env,
         jclass clazz,
         jobject nv21Buffer,
@@ -457,7 +458,7 @@ Java_br_dev_michaellopes_flutter_1anycam_utils_YuvUtil_nv21ToNv12JNI(
 
 extern "C"
 JNIEXPORT void JNICALL
-Java_br_dev_michaellopes_flutter_1anycam_utils_YuvUtil_rotateNV21JNI(
+Java_br_dev_michaellopes_flutter_1anycam_utils_NativeUtil_rotateNV21JNI(
         JNIEnv *env,
         jobject thiz,
         jbyteArray input,
@@ -558,6 +559,125 @@ Java_br_dev_michaellopes_flutter_1anycam_utils_YuvUtil_rotateNV21JNI(
 
     env->ReleaseByteArrayElements(input, inputBytes, JNI_ABORT);
     env->ReleaseByteArrayElements(output, outputBytes, 0);
+}
+
+
+extern "C"
+JNIEXPORT void JNICALL
+Java_br_dev_michaellopes_flutter_1anycam_utils_NativeUtil_normalizeNative(
+        JNIEnv *env,
+        jclass clazz,
+        jobject srcBuffer,
+        jobject outBuffer,
+        jint pixelCount,
+        jint dataType,
+        jint normalization,
+        jfloat invScale,
+        jint zeroPoint,
+        jfloat meanR, jfloat meanG, jfloat meanB,
+        jfloat stdR, jfloat stdG, jfloat stdB
+) {
+    uint32_t *src = (uint32_t *)env->GetDirectBufferAddress(srcBuffer);
+    uint8_t *outBytes = (uint8_t *)env->GetDirectBufferAddress(outBuffer);
+
+    if (!src || !outBytes) return;
+
+    float scaleR, scaleG, scaleB;
+    float offsetR, offsetG, offsetB;
+
+    switch (normalization) {
+        case 0: // simple
+            scaleR = scaleG = scaleB = 1.0f / 255.0f;
+            offsetR = offsetG = offsetB = 0.0f;
+            break;
+        case 1: // centered
+            scaleR = scaleG = scaleB = 1.0f / 127.5f;
+            offsetR = offsetG = offsetB = -1.0f;
+            break;
+        case 2: // imagenet
+            scaleR = 1.0f / (255.0f * 0.229f);
+            scaleG = 1.0f / (255.0f * 0.224f);
+            scaleB = 1.0f / (255.0f * 0.225f);
+            offsetR = -0.485f / 0.229f;
+            offsetG = -0.456f / 0.224f;
+            offsetB = -0.406f / 0.225f;
+            break;
+        case 3: // custom
+            scaleR = 1.0f / (255.0f * stdR);
+            scaleG = 1.0f / (255.0f * stdG);
+            scaleB = 1.0f / (255.0f * stdB);
+            offsetR = -meanR / stdR;
+            offsetG = -meanG / stdG;
+            offsetB = -meanB / stdB;
+            break;
+        default:
+            scaleR = scaleG = scaleB = 1.0f;
+            offsetR = offsetG = offsetB = 0.0f;
+            break;
+    }
+
+    float lutR[256], lutG[256], lutB[256];
+
+    for (int i = 0; i < 256; i++) {
+        lutR[i] = i * scaleR + offsetR;
+        lutG[i] = i * scaleG + offsetG;
+        lutB[i] = i * scaleB + offsetB;
+    }
+
+    if (dataType == 0) {
+        float *out = (float *) outBytes;
+
+        for (int i = 0; i < pixelCount; i++) {
+            uint32_t p = src[i];
+
+            out[i * 3 + 0] = lutR[(p >> 16) & 0xFF];
+            out[i * 3 + 1] = lutG[(p >> 8) & 0xFF];
+            out[i * 3 + 2] = lutB[p & 0xFF];
+        }
+    }
+    else if (dataType == 1) {
+        uint8_t lutRb[256], lutGb[256], lutBb[256];
+
+        for (int i = 0; i < 256; i++) {
+            int r = roundf(lutR[i]);
+            int g = roundf(lutG[i]);
+            int b = roundf(lutB[i]);
+
+            lutRb[i] = (uint8_t)(r < 0 ? 0 : (r > 255 ? 255 : r));
+            lutGb[i] = (uint8_t)(g < 0 ? 0 : (g > 255 ? 255 : g));
+            lutBb[i] = (uint8_t)(b < 0 ? 0 : (b > 255 ? 255 : b));
+        }
+
+        for (int i = 0; i < pixelCount; i++) {
+            uint32_t p = src[i];
+
+            outBytes[i * 3 + 0] = lutRb[(p >> 16) & 0xFF];
+            outBytes[i * 3 + 1] = lutGb[(p >> 8) & 0xFF];
+            outBytes[i * 3 + 2] = lutBb[p & 0xFF];
+        }
+    }
+    else if (dataType == 2) {
+        int8_t *out = (int8_t *) outBytes;
+        int8_t lutRb[256], lutGb[256], lutBb[256];
+
+        for (int i = 0; i < 256; i++) {
+            int r = roundf(lutR[i] * invScale) + zeroPoint;
+            int g = roundf(lutG[i] * invScale) + zeroPoint;
+            int b = roundf(lutB[i] * invScale) + zeroPoint;
+
+            lutRb[i] = (int8_t)(r < -128 ? -128 : (r > 127 ? 127 : r));
+            lutGb[i] = (int8_t)(g < -128 ? -128 : (g > 127 ? 127 : g));
+            lutBb[i] = (int8_t)(b < -128 ? -128 : (b > 127 ? 127 : b));
+        }
+
+        for (int i = 0; i < pixelCount; i++) {
+            uint32_t p = src[i];
+
+            out[i * 3 + 0] = lutRb[(p >> 16) & 0xFF];
+            out[i * 3 + 1] = lutGb[(p >> 8) & 0xFF];
+            out[i * 3 + 2] = lutBb[p & 0xFF];
+        }
+    }
 }
 
 //extern "C"

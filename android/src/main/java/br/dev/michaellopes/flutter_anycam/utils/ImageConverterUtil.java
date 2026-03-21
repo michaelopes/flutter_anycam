@@ -1,39 +1,16 @@
 package br.dev.michaellopes.flutter_anycam.utils;
 
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
-import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.ImageFormat;
-import android.graphics.Matrix;
 import android.graphics.Rect;
-import android.graphics.RectF;
 import android.graphics.YuvImage;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
-import java.util.concurrent.TimeUnit;
-
-import io.flutter.Log;
 
 public class ImageConverterUtil {
     private static final String TAG = "CameraFrameProcessor";
 
-    static final ByteArrayPoolUtil byteArrayPool = new ByteArrayPoolUtil(
-            new ByteArrayPoolUtil.Config()
-                    .maxIdle(4)
-                    .idleTimeout(30, TimeUnit.SECONDS)
-    );
-
-    private static final class PooledOutputStream extends ByteArrayOutputStream {
-        PooledOutputStream(byte[] buffer) {
-            this.buf   = buffer;
-            this.count = 0;
-        }
-
-        /** Acesso direto ao backing array (sem cópia). */
-        byte[] buf() { return buf; }
-    }
+    static final ByteArrayPoolUtil byteArrayPool = new ByteArrayPoolUtil(4, 30);
 
     public static byte[] yv12ToNv21(byte[] yv12Bytes, int width, int height) {
         int frameSize = width * height;
@@ -194,10 +171,10 @@ public class ImageConverterUtil {
             rotatedWidth  = swap ? height : width;
             rotatedHeight = swap ? width  : height;
 
-            ByteArrayPoolUtil.Entry rotatedEntry = byteArrayPool.acquire(nv21Bytes.length);
+            ByteArrayPoolUtil.PoolItem rotatedEntry = byteArrayPool.acquire(nv21Bytes.length);
             rotated = rotatedEntry.data;
 
-            YuvUtil.rotateNV21(nv21Bytes, rotated, width, height, rotation);
+            NativeUtil.rotateNV21(nv21Bytes, rotated, width, height, rotation);
 
             byte[] result = compressToJpeg(rotated, rotatedWidth, rotatedHeight, quality);
             byteArrayPool.release(rotatedEntry);
@@ -218,7 +195,6 @@ public class ImageConverterUtil {
 
     public static void shutdown() {
         byteArrayPool.shutdown();
-        byteArrayPool.clear();
     }
 
    /* public static byte[] nv21ToJpeg(byte[] bytes, int width, int height, int quality, int rotation) {

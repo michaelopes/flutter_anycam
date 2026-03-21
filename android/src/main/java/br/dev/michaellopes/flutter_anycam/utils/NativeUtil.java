@@ -10,10 +10,10 @@ import java.util.concurrent.CompletableFuture;
 
 import io.flutter.Log;
 
-public class YuvUtil {
+public class NativeUtil {
 
     static {
-        System.loadLibrary("flutter_anycam_yuv_utils");
+        System.loadLibrary("flutter_anycam_native_utils");
     }
 
     public static native void rotateNV21JNI(byte[] input, byte[] output, int width, int height, int rotation);
@@ -126,7 +126,17 @@ public class YuvUtil {
         cropNv21JNI(src, srcW, srcH, dst, cropX, cropY, cropW, cropH);
     }
 
-
+    public static native void normalizeNative(
+            ByteBuffer src,
+            ByteBuffer output,
+            int pixelCount,
+            int dataType,
+            int normalization,
+            float invScale,
+            int zeroPoint,
+            float meanR, float meanG, float meanB,
+            float stdR, float stdG, float stdB
+    );
 
     public static byte[] cropNV21(byte[] img, int imgWidth, @NonNull Rect cropRect) {
         // 1.5 mean 1.0 for Y and 0.25 each for U and V
@@ -234,10 +244,15 @@ public class YuvUtil {
                     contrast = 1.60f;
                     break;
             }
-            YuvUtil.increaseContrast(nv21, width, height, contrast);
+            NativeUtil.increaseContrast(nv21, width, height, contrast);
         }
         if(level > 0) {
-            YuvUtil.nv21ToGrayscale(nv21, width, height);
+            NativeUtil.nv21ToGrayscale(nv21, width, height);
         }
     }
+
+
+
+
+
 }

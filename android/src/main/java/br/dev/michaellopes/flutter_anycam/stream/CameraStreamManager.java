@@ -1,16 +1,12 @@
 package br.dev.michaellopes.flutter_anycam.stream;
 
 import android.annotation.SuppressLint;
-import android.media.Image;
 
 import androidx.annotation.NonNull;
 import androidx.camera.core.ImageProxy;
 
 import java.util.ArrayList;
 import java.util.List;
-
-import br.dev.michaellopes.flutter_anycam.integration.FlutterEventChannel;
-import br.dev.michaellopes.flutter_anycam.utils.YuvUtil;
 
 public class CameraStreamManager {
     private static CameraStreamManager instance;
