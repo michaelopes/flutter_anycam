@@ -2,10 +2,14 @@ package br.dev.michaellopes.flutter_anycam.utils;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.hardware.camera2.CameraDevice;
 import android.hardware.camera2.CameraManager;
 
 
+import androidx.annotation.OptIn;
 import androidx.camera.camera2.internal.Camera2CameraInfoImpl;
+import androidx.camera.camera2.interop.Camera2CameraInfo;
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop;
 import androidx.camera.core.Camera;
 
 import androidx.camera.core.CameraSelector;
@@ -13,6 +17,7 @@ import androidx.camera.core.ConcurrentCamera;
 import androidx.camera.core.ImageAnalysis;
 import androidx.camera.core.Preview;
 import androidx.camera.core.UseCaseGroup;
+import androidx.camera.core.ZoomState;
 import androidx.camera.lifecycle.ProcessCameraProvider;
 
 import androidx.lifecycle.LifecycleOwner;
@@ -31,7 +36,7 @@ public class DeviceCameraUtils {
 
     private static DeviceCameraUtils instance;
     private final List<CameraRef> binds = new ArrayList<>();
-    private  Camera currentCamera;
+    private  List<Camera> cameras = new ArrayList<>();
 
     public static synchronized DeviceCameraUtils getInstance() {
         if (instance == null) instance = new DeviceCameraUtils();
@@ -53,11 +58,45 @@ public class DeviceCameraUtils {
     }
 
 
-    public void setFlash(boolean value) {
-        if(currentCamera != null) {
-            if (currentCamera.getCameraInfo().hasFlashUnit()) {
-                currentCamera.getCameraControl().enableTorch(value);
+    private Camera getBackCamera() {
+        for (Camera camera: cameras) {
+            if(camera.getCameraInfo().getCameraSelector().getLensFacing() ==
+                    CameraSelector.LENS_FACING_BACK ) {
+             return  camera;
             }
+        }
+        return  null;
+    }
+
+
+    @OptIn(markerClass = ExperimentalCamera2Interop.class)
+    private Camera getCameraById(String id) {
+        for (Camera camera: cameras) {
+            String cameraId = Camera2CameraInfo.from(camera.getCameraInfo()).getCameraId();
+            if(cameraId.equals(id)) {
+                return camera;
+            }
+        }
+        return  null;
+    }
+    public void setFlash(boolean value) {
+        if(getBackCamera() != null) {
+            if (getBackCamera().getCameraInfo().hasFlashUnit()) {
+                getBackCamera().getCameraControl().enableTorch(value);
+            }
+        }
+    }
+
+    public void setZoom(float value, String cameraId) {
+        Camera camera = getCameraById(cameraId);
+        if(camera != null) {
+            try {
+                ZoomState zoomState = camera.getCameraInfo().getZoomState().getValue();
+                float maxZoom = zoomState.getMaxZoomRatio();
+                if (maxZoom >= value) {
+                    camera.getCameraControl().setZoomRatio(value);
+                }
+            } catch (Exception ignored) {}
         }
     }
 
@@ -82,7 +121,7 @@ public class DeviceCameraUtils {
     private void updateLifecycle() {
         ProcessCameraProvider cameraProvider = CameraUtil.getInstance().getProvider();
         if (cameraProvider != null) {
-            currentCamera = null;
+            cameras.clear();
             cameraProvider.unbindAll();
             if(!binds.isEmpty()) {
                 LifecycleOwner lifecycleOwner = (LifecycleOwner) ContextUtil.get();
@@ -92,7 +131,8 @@ public class DeviceCameraUtils {
                     usecase.addUseCase(bind.preview);
                     usecase.addUseCase(bind.imageAnalysis);
                     CameraSelector cameraSelector = bind.cameraSelector;
-                    currentCamera =  cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, usecase.build());
+                    Camera currentCamera = cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, usecase.build());
+                    cameras.add(currentCamera);
                 } else {
                     List<ConcurrentCamera.SingleCameraConfig> configs = new ArrayList<>();
                     for (CameraRef bind : binds) {
@@ -110,13 +150,17 @@ public class DeviceCameraUtils {
                     ConcurrentCamera cCamera = cameraProvider.bindToLifecycle(configs);
                     for (Camera item:
                     cCamera.getCameras()) {
-                        if(item.getCameraInfo().getCameraSelector().getLensFacing() ==
+
+                        cameras.add(item);
+                       /* if(item.getCameraInfo().getCameraSelector().getLensFacing() ==
                         CameraSelector.LENS_FACING_BACK ) {
                             currentCamera = item;
-                        }
+                        }*/
                     }
 
                 }
+
+              //  getCameraById("0");
             }
         }
     }

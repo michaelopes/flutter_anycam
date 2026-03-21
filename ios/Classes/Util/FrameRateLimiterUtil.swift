@@ -5,8 +5,46 @@
 //  Created by Michael Lopes on 08/08/25.
 //
 import Foundation
+import QuartzCore
 
-
+class FrameRateLimiterUtil<T> {
+    
+    private let frameInterval: TimeInterval
+    private var lastAnalyzedTime: TimeInterval = 0
+    
+    private let onFrameLimited: (T) -> Void
+    private let onFrameSkipped: (T) -> Void
+    
+    init(
+        targetFps: Int,
+        onFrameLimited: @escaping (T) -> Void,
+        onFrameSkipped: @escaping (T) -> Void = { _ in }
+    ) {
+        precondition(targetFps > 0, "FPS precisa ser > 0")
+        self.frameInterval = 1.0 / Double(targetFps)
+        self.onFrameLimited = onFrameLimited
+        self.onFrameSkipped = onFrameSkipped
+    }
+    
+    func processFrame(_ data: T) {
+        let currentTime = CACurrentMediaTime()
+        
+        // Primeiro frame passa direto
+        if lastAnalyzedTime == 0 {
+            lastAnalyzedTime = currentTime
+            onFrameLimited(data)
+            return
+        }
+        
+        if currentTime >= lastAnalyzedTime + frameInterval {
+            lastAnalyzedTime += frameInterval
+            onFrameLimited(data)
+        } else {
+            onFrameSkipped(data)
+        }
+    }
+}
+/*
 class FrameRateLimiterUtil<T> {
     private let frameInterval: TimeInterval
     private var lastAnalyzedTime: TimeInterval = 0
@@ -33,4 +71,4 @@ class FrameRateLimiterUtil<T> {
             onFrameSkipped(data)
         }
     }
-}
+}*/

@@ -2,7 +2,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_anycam/src/flutter_anycam_camera_selector.dart';
 
+import 'flutter_anycam_crop.dart';
 import 'flutter_anycam_event_stream.dart';
+import 'flutter_anycam_filter.dart';
 import 'flutter_anycam_platform_interface.dart';
 import 'flutter_anycam_stream_listener.dart';
 import 'flutter_anycam_typedefs.dart';
@@ -33,6 +35,7 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
           "onUnauthorized": listener.onUnauthorized,
           "onFailed": listener.onFailed,
           "onVideoFrameReceived": listener.onVideoFrameReceived,
+          "onCameraRawFrame": listener.onCameraRawFrame,
         };
         if (methods[method] != null) {
           methods[method]!(data);
@@ -77,7 +80,8 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
 
   @override
   Future<int?> createView(Map<String, dynamic> args) async {
-    return await methodChannel.invokeMethod('createView', args);
+    final result = await methodChannel.invokeMethod('createView', args);
+    return result;
   }
 
   @override
@@ -92,6 +96,8 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
     required int width,
     required int height,
     required int rotation,
+    FlutterAnycamFilter filter = FlutterAnycamFilter.none,
+    FlutterAnycamCrop? crop,
     int quality = 100,
   }) async {
     final result = (await methodChannel.invokeMethod(
@@ -101,7 +107,9 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
         "width": width,
         "height": height,
         "rotation": rotation.toDouble(),
-        "quality": quality
+        "quality": quality,
+        "filter": filter.code,
+        "crop": crop?.toMap()
       },
     ));
     return result;
@@ -113,6 +121,8 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
     required int width,
     required int height,
     required int rotation,
+    FlutterAnycamFilter filter = FlutterAnycamFilter.none,
+    FlutterAnycamCrop? crop,
     int quality = 100,
   }) async {
     final result = (await methodChannel.invokeMethod(
@@ -122,7 +132,9 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
         "width": width,
         "height": height,
         "rotation": rotation.toDouble(),
-        "quality": quality
+        "quality": quality,
+        "filter": filter.code,
+        "crop": crop?.toMap()
       },
     ));
     return result;
@@ -137,5 +149,40 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
   @override
   Future<void> broadcastPermissionGranted() async {
     await methodChannel.invokeMethod('broadcastPermissionGranted');
+  }
+
+  @override
+  Future<bool> registerRawStream(String cameraId, int fps) async {
+    return await methodChannel.invokeMethod(
+      'registerRawStream',
+      {
+        "cameraId": cameraId,
+        "fps": fps,
+      },
+    );
+  }
+
+  @override
+  Future<bool> disposeRawStream(String cameraId) async {
+    return await methodChannel.invokeMethod(
+      'disposeRawStream',
+      {
+        "cameraId": cameraId,
+      },
+    );
+  }
+
+  @override
+  Future<void> setZoom(double value, String cameraId) async {
+    final stopwatch = Stopwatch()..start();
+    await methodChannel.invokeMethod(
+      'setZoom',
+      {
+        "cameraId": cameraId,
+        "zoom": value,
+      },
+    );
+    stopwatch.stop();
+    debugPrint('setZoom_flutter: ${stopwatch.elapsedMilliseconds}ms');
   }
 }

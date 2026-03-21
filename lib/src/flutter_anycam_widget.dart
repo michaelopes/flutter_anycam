@@ -16,6 +16,7 @@ import 'flutter_anycam_size.dart';
 import 'flutter_anycam_stream_listener.dart';
 import 'flutter_anycam_texts.dart';
 import 'flutter_anycam_typedefs.dart';
+import 'flutter_anycam_filter.dart';
 
 const kDefaultFrameChangePercent = 6.0;
 
@@ -33,17 +34,17 @@ class FlutterAnycamWidget extends StatefulWidget {
     this.fps = 5,
     this.aspectRatio,
     this.previewScale = 1,
-
-    /// An Android-only parameter.
-    ///
-    /// This parameter has no effect on iOS platform.
     this.preferredSize = const FlutterAnycamSize(640, 480),
+    this.resizeFrame,
+    this.filter = FlutterAnycamFilter.none,
   });
 
   /// An Android-only parameter.
   ///
   /// This parameter has no effect on iOS platform.
   final FlutterAnycamSize preferredSize;
+  final FlutterAnycamSize? resizeFrame;
+  final FlutterAnycamFilter filter;
   final int? viewId;
   final bool enableDebug;
   final FlutterAnycamTexts texts;
@@ -96,12 +97,16 @@ class FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
   }
 
   Future<void> _createView() async {
-    _factory.createView(
-      viewId: viewId,
-      camera: widget.camera,
-      preferredSize: widget.preferredSize,
-      fps: widget.fps,
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _factory.createView(
+        viewId: viewId,
+        camera: widget.camera,
+        preferredSize: widget.preferredSize,
+        resizeFrame: widget.resizeFrame,
+        filter: widget.filter.code,
+        fps: widget.fps,
+      );
+    });
   }
 
   ({
@@ -418,7 +423,7 @@ class FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
                         width: x.maxWidth,
                         height: constraints.maxHeight,
                         child: ClipRect(
-                          clipBehavior: Clip.none,
+                          clipBehavior: Clip.hardEdge,
                           child: FittedBox(
                             fit: BoxFit.cover,
                             child: SizedBox(

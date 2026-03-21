@@ -3,16 +3,37 @@ package br.dev.michaellopes.flutter_anycam.utils;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.ImageFormat;
 import android.graphics.Matrix;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.graphics.YuvImage;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
+import java.util.concurrent.TimeUnit;
+
+import io.flutter.Log;
 
 public class ImageConverterUtil {
+    private static final String TAG = "CameraFrameProcessor";
 
+    static final ByteArrayPoolUtil byteArrayPool = new ByteArrayPoolUtil(
+            new ByteArrayPoolUtil.Config()
+                    .maxIdle(4)
+                    .idleTimeout(30, TimeUnit.SECONDS)
+    );
+
+    private static final class PooledOutputStream extends ByteArrayOutputStream {
+        PooledOutputStream(byte[] buffer) {
+            this.buf   = buffer;
+            this.count = 0;
+        }
+
+        /** Acesso direto ao backing array (sem cópia). */
+        byte[] buf() { return buf; }
+    }
 
     public static byte[] yv12ToNv21(byte[] yv12Bytes, int width, int height) {
         int frameSize = width * height;
@@ -141,33 +162,96 @@ public class ImageConverterUtil {
         }
     }
 
-    public static byte[] nv21ToJpeg(byte[] bytes, Integer width, Integer height, Integer quality, Float rotation) {
+
+    /**
+     * Converte NV21 → JPEG aplicando rotação (e espelhamento para 270°).
+     *
+     * @param nv21Bytes  raw NV21 da câmera
+     * @param width      largura do frame
+     * @param height     altura do frame
+     * @param quality    qualidade JPEG 0–100
+     * @param rotation   graus de rotação (0, 90, 180, 270)
+     * @return           JPEG final como byte[]
+     */
+    /**
+     * Converte NV21 → JPEG aplicando rotação.
+     * Rotação suportada: 0, 90, 180, 270 graus.
+     * Para 270° aplica espelhamento horizontal (comportamento da câmera frontal).
+     */
+    public static byte[] nv21ToJpeg(byte[] nv21Bytes, int width, int height,
+                                    int quality, int rotation) {
+
+        byte[] rotated;
+        int    rotatedWidth;
+        int    rotatedHeight;
+
+        if (rotation == 0) {
+            rotated        = nv21Bytes;
+            rotatedWidth   = width;
+            rotatedHeight  = height;
+        } else {
+            boolean swap  = (rotation == 90 || rotation == 270);
+            rotatedWidth  = swap ? height : width;
+            rotatedHeight = swap ? width  : height;
+
+            ByteArrayPoolUtil.Entry rotatedEntry = byteArrayPool.acquire(nv21Bytes.length);
+            rotated = rotatedEntry.data;
+
+            YuvUtil.rotateNV21(nv21Bytes, rotated, width, height, rotation);
+
+            byte[] result = compressToJpeg(rotated, rotatedWidth, rotatedHeight, quality);
+            byteArrayPool.release(rotatedEntry);
+            return result;
+        }
+
+        return compressToJpeg(rotated, rotatedWidth, rotatedHeight, quality);
+    }
+
+
+    private static byte[] compressToJpeg(byte[] nv21, int width, int height, int quality) {
+        YuvImage yuv = new YuvImage(nv21, ImageFormat.NV21, width, height, null);
+        ByteArrayOutputStream out = new ByteArrayOutputStream(width * height / 4);
+        yuv.compressToJpeg(new Rect(0, 0, width, height), quality, out);
+        return out.toByteArray();
+    }
+
+
+    public static void shutdown() {
+        byteArrayPool.shutdown();
+        byteArrayPool.clear();
+    }
+
+   /* public static byte[] nv21ToJpeg(byte[] bytes, int width, int height, int quality, int rotation) {
         YuvImage yuv = new YuvImage(bytes, ImageFormat.NV21, width, height, null);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         yuv.compressToJpeg(new Rect(0, 0, width, height), quality, out);
-        byte[] jpegBytes = out.toByteArray();
 
+        byte[] jpegBytes = out.toByteArray();
         Bitmap bitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.length);
 
         Matrix matrix = new Matrix();
-        int centerX = width / 2;
-        int centerY = height / 2;
+        matrix.postRotate(rotation);
 
-        matrix.postRotate(rotation, centerX, centerY);
-
-        if(rotation == 270) {
-            matrix.postScale(-1, 1, centerX, centerY);
+        if (rotation == 270) {
+            matrix.postScale(-1f, 1f);
         }
 
-        Bitmap rotatedBitmap = Bitmap.createBitmap(bitmap, 0, 0, width, height, matrix, true);
+        Bitmap rotatedBitmap = Bitmap.createBitmap(
+                bitmap,
+                0,
+                0,
+                bitmap.getWidth(),
+                bitmap.getHeight(),
+                matrix,
+                true
+        );
 
         ByteArrayOutputStream finalOut = new ByteArrayOutputStream();
         rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, quality, finalOut);
-        byte[] rotatedBytes = finalOut.toByteArray();
 
         bitmap.recycle();
         rotatedBitmap.recycle();
 
-        return rotatedBytes;
-    }
+        return finalOut.toByteArray();
+    }*/
 }

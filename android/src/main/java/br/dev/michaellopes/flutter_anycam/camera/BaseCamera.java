@@ -6,30 +6,33 @@ import android.view.Surface;
 import androidx.annotation.CallSuper;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import br.dev.michaellopes.flutter_anycam.model.ViewCameraSelector;
 import br.dev.michaellopes.flutter_anycam.utils.CameraPermissionsUtil;
-import br.dev.michaellopes.flutter_anycam.utils.ImageAnalysisUtil;
+import br.dev.michaellopes.flutter_anycam.utils.ImageMapperUtil;
 import io.flutter.view.TextureRegistry;
 
 public abstract class BaseCamera {
-
-    private boolean isInitied = false;
+    private boolean isInitialed = false;
     protected final TextureRegistry.SurfaceTextureEntry texture;
 
     protected ViewCameraSelector cameraSelector;
 
     protected Size preferredSize = new Size(640, 480);
 
+    protected Size resizeFrame = null;
+
     protected final Map<String, Object> params;
 
-    protected final ImageAnalysisUtil imageAnalysisUtil = new ImageAnalysisUtil();
+    protected final ImageMapperUtil imageAnalysisUtil = new ImageMapperUtil();
 
     private final List<CameraBridge> bridges = new ArrayList<>();
 
     private ActionCall lastAction = null;
+    protected int filter = 0;
 
     public BaseCamera(TextureRegistry.SurfaceTextureEntry texture, Map<String, Object> params) {
         this.texture = texture;
@@ -41,6 +44,19 @@ public abstract class BaseCamera {
             final Map<String, Object> cs = (Map<String, Object>) params.get("preferredSize");
             preferredSize = new Size((int)cs.get("width"), (int)cs.get("height"));;
         }
+
+        if (params.get("resizeFrame") != null) {
+            final Map<String, Object> cs = (Map<String, Object>) params.get("resizeFrame");
+            resizeFrame = new Size((int)cs.get("width"), (int)cs.get("height"));;
+        }
+
+        if (params.get("filter") != null) {
+            final Integer fltr = (Integer) params.get("filter");
+            if(fltr != null) {
+                filter = fltr;
+            }
+        }
+
         this.params = params;
     }
 
@@ -134,7 +150,9 @@ public abstract class BaseCamera {
                     bridge.onFailed((String)lastAction.data);
                     break;
                 default:
-                    bridge.onConnected((Map<String, Object>)lastAction.data);
+                    bridge.onConnected(new HashMap<String, Object>() {{
+                        putAll((Map<String, Object>)lastAction.data);
+                    }});
                     break;
             }
         }
@@ -150,17 +168,20 @@ public abstract class BaseCamera {
     public synchronized void run() {
         if (cameraSelector.getCameraSelectorRTSP() != null) {
             init();
-            isInitied = true;
-        } else if (CameraPermissionsUtil.getInstance().hasCameraPermission() && !isInitied) {
+            isInitialed = true;
+        } else if (CameraPermissionsUtil.getInstance().hasCameraPermission() && !isInitialed) {
             init();
-            isInitied = true;
+            isInitialed = true;
         } else {
            onUnauthorized();
-            isInitied = false;
+            isInitialed = false;
         }
     }
 
     protected abstract void init();
+
+
+    public void setZoom(float zoom) {}
 
     @CallSuper
     public void dispose() {

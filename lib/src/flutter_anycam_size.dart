@@ -14,6 +14,10 @@ final class FlutterAnycamSize {
     };
   }
 
+  factory FlutterAnycamSize.square() {
+    return const FlutterAnycamSize(-1, -1);
+  }
+
   factory FlutterAnycamSize.fromMap(Map<String, dynamic> map) {
     return FlutterAnycamSize(
       map['width'] as int,

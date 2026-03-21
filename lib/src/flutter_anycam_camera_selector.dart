@@ -4,10 +4,27 @@ import 'dart:io';
 
 enum FlutterAnycamLensFacing { back, front, usb, rtsp, unknown }
 
+enum FlutterAnycamCameraType {
+  unknown("unknown"),
+  telephoto("telephoto"),
+  ultraWide("ultraWide"),
+  wide("wide");
+
+  final String value;
+  const FlutterAnycamCameraType(this.value);
+
+  static FlutterAnycamCameraType? getByValue(String value) {
+    return FlutterAnycamCameraType.values
+        .where((e) => e.value == value)
+        .firstOrNull;
+  }
+}
+
 class FlutterAnycamCameraSelector {
   final String id;
   final String name;
   final FlutterAnycamLensFacing lensFacing;
+  final FlutterAnycamCameraType cameraType;
   final int sensorOrientation;
   final Map<String, dynamic>? extras;
   bool _forceSensorOrientation = false;
@@ -17,6 +34,7 @@ class FlutterAnycamCameraSelector {
     required this.name,
     required this.lensFacing,
     required this.sensorOrientation,
+    this.cameraType = FlutterAnycamCameraType.unknown,
     this.extras,
   });
 
@@ -35,6 +53,7 @@ class FlutterAnycamCameraSelector {
       'sensorOrientation': sensorOrientation,
       'forceSensorOrientation': _forceSensorOrientation,
       'extras': extras,
+      'cameraType': cameraType.value,
     };
   }
 
@@ -44,6 +63,8 @@ class FlutterAnycamCameraSelector {
       name: map['name'] as String,
       lensFacing: FlutterAnycamLensFacing.values.byName(map['lensFacing']),
       sensorOrientation: map['sensorOrientation'] as int,
+      cameraType: FlutterAnycamCameraType.getByValue(map['cameraType'] ?? "") ??
+          FlutterAnycamCameraType.unknown,
       extras: map['extras'] != null
           ? Map<String, dynamic>.from(map['extras'])
           : null,
@@ -83,15 +104,16 @@ class FlutterAnycamCameraSelector {
   }) {
     if (Platform.isIOS) {
       throw UnsupportedError("Rtsp camera is not only suported on iOS yet");
-    } else {
-      throw UnsupportedError(
-          "RTSP camera support has been discontinued in this package because it does not comply with the new 16 KB paging requirement mandated by the Play Store.");
     }
-    /*return _FlutterAnycamCameraSelectorRtsp(
+    // } else {
+    //   throw UnsupportedError(
+    //       "RTSP camera support has been discontinued in this package because it does not comply with the new 16 KB paging requirement mandated by the Play Store.");
+    // }
+    return _FlutterAnycamCameraSelectorRtsp(
       url: url,
       username: username,
       password: password,
-    );*/
+    );
   }
 
   factory FlutterAnycamCameraSelector.fromJson(String source) =>

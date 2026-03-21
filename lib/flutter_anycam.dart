@@ -4,11 +4,16 @@ export './src/flutter_anycam_stream_listener.dart';
 export './src/flutter_anycam_widget.dart';
 export './src/flutter_anycam_frame.dart';
 export './src/flutter_anycam_size.dart';
+export './src/flutter_anycam_crop.dart';
 export './src/flutter_anycam_texts.dart';
 export './src/flutter_anycam_platform_interface.dart';
 export './src/flutter_anycam_method_channel.dart';
+export 'src/flutter_anycam_camera_raw_stream.dart';
+export 'src/flutter_anycam_mesure.dart';
+export 'src/flutter_anycam_filter.dart';
 
 import 'src/flutter_anycam_camera_selector.dart';
+
 import 'src/flutter_anycam_image_conversor.dart';
 import 'src/flutter_anycam_platform_interface.dart';
 
@@ -24,5 +29,19 @@ class FlutterAnycam {
 
   static Future<void> disableFlash() async {
     FlutterAnycamPlatform.instance.setFlash(false);
+  }
+
+  static Future<void> setZoom({
+    required FlutterAnycamCameraSelector camera,
+    double zoom = 1.0,
+  }) async {
+    if (camera.lensFacing == FlutterAnycamLensFacing.usb ||
+        camera.lensFacing == FlutterAnycamLensFacing.back ||
+        camera.lensFacing == FlutterAnycamLensFacing.front) {
+      if (zoom < 1) {
+        zoom = 1;
+      }
+      await FlutterAnycamPlatform.instance.setZoom(zoom, camera.id);
+    }
   }
 }

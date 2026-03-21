@@ -83,6 +83,17 @@ public class FlutterAnycamPlugin: NSObject, FlutterPlugin {
             AVCaptureUtil.shared.setFlash(value!)
             result(true)
             break;
+            
+        case "setZoom":
+            let data =  call.arguments as? [String: Any?];
+            let value = data?["zoom"] as? Double
+            let cameraId = data?["cameraId"] as? String
+            let camera =  CameraViewFactory.shared.getCameraById(id: cameraId!);
+            if(camera != nil) {
+                camera?.setZoom(zoom: Float(value ?? 1.0));
+            }
+            result(true)
+            break;
         case "convertBGRA8888ToJpeg":
             
             let data =  call.arguments as? [String: Any?];
@@ -98,6 +109,8 @@ public class FlutterAnycamPlugin: NSObject, FlutterPlugin {
             let height = data?["height"] as? Int
             let quality = data?["quality"] as? Int
             let rotation = data?["rotation"] as? Int
+            let filter = data?["filter"] as? Int ?? 0
+            let crop = data?["crop"] as? [String: Any]
             
             if(bytes == nil || width == nil || height == nil || quality == nil || rotation == nil) {
                 DispatchQueue.main.async {
@@ -110,7 +123,9 @@ public class FlutterAnycamPlugin: NSObject, FlutterPlugin {
             let res = ImageConverterUtil.convertBGRA8888ToJPEG(bgraData: bgraData,
                                                                width: width!,
                                                                height: height!,
-                                                               quality: quality == 0 ? 0 : CGFloat(quality! / 100)
+                                                               quality: quality == 0 ? 0 : CGFloat(quality! / 100),
+                                                               filter: filter,
+                                                               crop: crop
                                                                
             )
             

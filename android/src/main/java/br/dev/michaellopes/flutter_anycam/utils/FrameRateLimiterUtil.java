@@ -8,14 +8,22 @@ public abstract class FrameRateLimiterUtil<T> {
     private long lastAnalyzedTime = 0;
 
     public FrameRateLimiterUtil(int targetFps) {
-        if (targetFps <= 0) throw new IllegalArgumentException("FPS precisa ser > 0");
+        if (targetFps <= 0)
+            throw new IllegalArgumentException("FPS precisa ser > 0");
+
         this.frameIntervalMillis = 1000L / targetFps;
     }
 
     public final void onNewFrame(T data) {
         long currentTime = SystemClock.elapsedRealtime();
-        if (currentTime - lastAnalyzedTime >= frameIntervalMillis) {
+        if (lastAnalyzedTime == 0) {
             lastAnalyzedTime = currentTime;
+            onFrameLimited(data);
+            return;
+        }
+
+        if (currentTime >= lastAnalyzedTime + frameIntervalMillis) {
+            lastAnalyzedTime += frameIntervalMillis;
             onFrameLimited(data);
         } else {
             onFrameSkipped(data);

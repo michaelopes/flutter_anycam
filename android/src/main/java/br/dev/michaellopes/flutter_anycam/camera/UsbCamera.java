@@ -4,8 +4,7 @@ import android.content.Context;
 import android.hardware.usb.UsbInterface;
 import android.hardware.usb.UsbManager;
 import android.hardware.usb.UsbDevice;
-
-import androidx.annotation.CallSuper;
+import android.util.Log;
 
 import com.serenegiant.usb.IFrameCallback;
 import com.serenegiant.usb.Size;
@@ -25,6 +24,7 @@ import java.util.concurrent.TimeUnit;
 
 
 import br.dev.michaellopes.flutter_anycam.utils.ContextUtil;
+import br.dev.michaellopes.flutter_anycam.utils.DeviceCameraUtils;
 import br.dev.michaellopes.flutter_anycam.utils.FrameRateLimiterUtil;
 import io.flutter.view.TextureRegistry;
 
@@ -63,14 +63,21 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
             }
         }
     };
+
     public UsbCamera(TextureRegistry.SurfaceTextureEntry texture, Map<String, Object> params) {
         super(texture, params);
 
     }
+
     private void processFrame(FrameTask task) {
         try {
-            Map<String, Object> imageData = imageAnalysisUtil.usbFrameToFlutterResult(
-                    task.frame, task.width, task.height, task.rotation);
+            Map<String, Object> imageData = imageAnalysisUtil.usbFrameToNV21Map(
+                    task.frame,
+                    task.width,
+                    task.height,
+                    resizeFrame,
+                    filter,
+                    task.rotation);
             onVideoFrameReceived(imageData);
         } catch (Exception e) {
             e.printStackTrace();
@@ -81,7 +88,7 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
 
     private void startProcessingWorker() {
         processing = true;
-        if(mainExecutor == null) {
+        if (mainExecutor == null) {
             mainExecutor = Executors.newSingleThreadExecutor();
         }
         mainExecutor.execute(() -> {
@@ -123,6 +130,18 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
         }
     }
 
+    @Override
+    public void setZoom(float zoom) {
+        if (mUVCCamera != null) {
+            int value = Math.round(zoom * 10);
+            if (mUVCCamera.getControl().isZoomAbsoluteEnable()) {
+                mUVCCamera.getControl().setZoomAbsolute(value);
+            } else {
+                mUVCCamera.getControl().setZoomRelative(value);
+            }
+        }
+
+    }
 
     private Integer getCustomRotationDegrees() {
         if (cameraSelector.isForceSensorOrientation()) {
@@ -205,9 +224,8 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
                 }
                 mUVCCamera.setFrameCallback(UsbCamera.this, UVCCamera.PIXEL_FORMAT_NV21);
                 mUVCCamera.setPreviewDisplay(getSurface());
-                mUVCCamera.startPreview();
-
                 texture.surfaceTexture().setDefaultBufferSize(size.getWidth(), size.getHeight());
+                mUVCCamera.startPreview();
 
                 final Map<String, Object> result = new HashMap<>();
                 result.put("width", size.getWidth());
@@ -254,6 +272,7 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
 
         for (Size s : sizes) {
             if (s.type == 7) {
+                Log.d("FlutterAnycamFrame", "Suportado: " + s.width + " x " + s.height);
                 int diff = Math.abs(s.width - targetWidth) + Math.abs(s.height - targetHeight);
                 if (diff < minDiff) {
                     closest = s;
@@ -283,7 +302,7 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
             mUVCCamera.destroy();
         }
 
-        if(mainExecutor != null) {
+        if (mainExecutor != null) {
             mainExecutor.shutdown();
             processing = false;
             mainExecutor = null;

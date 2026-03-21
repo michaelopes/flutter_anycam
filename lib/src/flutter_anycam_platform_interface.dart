@@ -3,6 +3,8 @@ import 'dart:typed_data';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'flutter_anycam_camera_selector.dart';
+import 'flutter_anycam_crop.dart';
+import 'flutter_anycam_filter.dart';
 import 'flutter_anycam_method_channel.dart';
 import 'flutter_anycam_typedefs.dart';
 import 'flutter_anycam_stream_listener.dart';
@@ -40,6 +42,8 @@ abstract class FlutterAnycamPlatform extends PlatformInterface {
     required int width,
     required int height,
     required int rotation,
+    FlutterAnycamFilter filter = FlutterAnycamFilter.none,
+    FlutterAnycamCrop? crop,
     int quality = 100,
   }) {
     throw UnimplementedError('convertNv21ToJpeg() has not been implemented.');
@@ -50,10 +54,16 @@ abstract class FlutterAnycamPlatform extends PlatformInterface {
     required int width,
     required int height,
     required int rotation,
+    FlutterAnycamFilter filter = FlutterAnycamFilter.none,
+    FlutterAnycamCrop? crop,
     int quality = 100,
   }) {
     throw UnimplementedError(
         'convertBGRA8888ToJpeg() has not been implemented.');
+  }
+
+  Future<void> setZoom(double value, String cameraId) {
+    throw UnimplementedError('setZoom() has not been implemented.');
   }
 
   Future<void> setFlash(bool value) {
@@ -81,5 +91,13 @@ abstract class FlutterAnycamPlatform extends PlatformInterface {
 
   Future<bool> disposeView(Map<String, dynamic> args) {
     throw UnimplementedError('disposeView() has not been implemented.');
+  }
+
+  Future<bool> registerRawStream(String cameraId, int fps) {
+    throw UnimplementedError('registerRawStream() has not been implemented.');
+  }
+
+  Future<bool> disposeRawStream(String cameraId) {
+    throw UnimplementedError('disposeRawStream() has not been implemented.');
   }
 }
