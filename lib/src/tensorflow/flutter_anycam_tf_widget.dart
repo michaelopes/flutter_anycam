@@ -6,15 +6,15 @@ import 'package:flutter_anycam/flutter_anycam.dart';
 class FlutterAnycamTfWidget extends StatefulWidget {
   const FlutterAnycamTfWidget({
     super.key,
-    required this.preferredSize,
-    required this.enableDebug,
-    required this.texts,
-    required this.previewScale,
-    required this.autoRetry,
     required this.camera,
-    required this.fps,
+    this.preferredSize = const FlutterAnycamSize(640, 480),
+    this.enableDebug = false,
+    this.texts = const FlutterAnycamTexts(),
+    this.previewScale = 0,
+    this.autoRetry = false,
+    this.fps = 5,
     this.resizeFrame,
-    required this.filter,
+    this.filter = FlutterAnycamFilter.none,
     this.viewId,
     this.aspectRatio,
     this.onFrame,
@@ -53,7 +53,12 @@ class _FlutterAnycamTfWidgetState extends State<FlutterAnycamTfWidget> {
       fps: widget.fps,
       aspectRatio: widget.aspectRatio,
       previewScale: widget.previewScale,
-      onRawVideoFrameReceived: (data) {},
+      type: FlutterAnycamType.tf,
+      onRawVideoFrameReceived: (data) {
+        if (data.entries.isNotEmpty) {
+          widget.onFrame?.call(FlutterAnycamTfFrame.fromMap(data));
+        }
+      },
     );
   }
 }

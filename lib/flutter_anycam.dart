@@ -11,6 +11,18 @@ export './src/channel/flutter_anycam_method_channel.dart';
 export 'src/core/flutter_anycam_camera_raw_stream.dart';
 export 'src/core/flutter_anycam_mesure.dart';
 export 'src/core/flutter_anycam_filter.dart';
+export 'src/core/flutter_anycam_type.dart';
+export 'src/core/flutter_anycam_extensions.dart';
+
+//TENSORFLOW
+export 'src/tensorflow/flutter_anycam_tf_delegate.dart';
+export 'src/tensorflow/flutter_anycam_tf_frame.dart';
+export 'src/tensorflow/flutter_anycam_tf_model.dart';
+export 'src/tensorflow/flutter_anycam_tf_session.dart';
+export 'src/tensorflow/flutter_anycam_tf_widget.dart';
+export 'src/tensorflow/flutter_anycam_tf_normalize.dart';
+export 'src/tensorflow/flutter_anycam_tf_inference_output.dart';
+export 'src/tensorflow/flutter_anycam_tf_inference_result.dart';
 
 import 'src/core/flutter_anycam_camera_selector.dart';
 

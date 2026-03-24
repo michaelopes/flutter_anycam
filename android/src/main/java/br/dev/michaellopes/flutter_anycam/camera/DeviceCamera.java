@@ -111,10 +111,9 @@ public class DeviceCamera extends BaseCamera {
                         .build();
 
 
-
                 imageAnalysis.setAnalyzer(cameraExecutor, (imageProxy) -> {
                     CameraStreamManager.getInstance().sendFrame(getCameraId(), imageProxy, getCustomRotationDegrees());
-                   limiter.onNewFrame(imageProxy);
+                    limiter.onNewFrame(imageProxy);
                     // analyze(imageProxy);
                 });
 
@@ -268,11 +267,14 @@ public class DeviceCamera extends BaseCamera {
 
     public void analyze(@NonNull ImageProxy image) {
         try {
+            Map<String, Object> frameMap;
+            if (isStandard()) {
+                frameMap = imageAnalysisUtil.imageProxyToNV21Map(image, resizeFrame, filter, getCustomRotationDegrees());
+            } else {
+                frameMap = TfFrameHandler.getInstance().addFrame(image, resizeFrame, filter, getCustomRotationDegrees());
+            }
 
-            TfFrameHandler.getInstance().addFrame(image, resizeFrame, filter, getCustomRotationDegrees());
-
-            Map<String, Object> imageData = imageAnalysisUtil.imageProxyToNV21Map(image, resizeFrame, filter, getCustomRotationDegrees());
-            onVideoFrameReceived(imageData);
+            onVideoFrameReceived(frameMap);
         } catch (Exception e) {
             throw new RuntimeException(e);
         } finally {
@@ -286,7 +288,7 @@ public class DeviceCamera extends BaseCamera {
         DeviceCameraUtils.getInstance().setZoom(zoom, getCameraId());
     }
 
-    private static  class LimiterFrame {
+    private static class LimiterFrame {
         public final ImageProxy imageProxy;
         public final byte[] nv21;
 

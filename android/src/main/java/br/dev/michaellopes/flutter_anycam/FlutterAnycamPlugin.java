@@ -4,9 +4,14 @@ import android.os.Handler;
 import android.os.Looper;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
@@ -14,7 +19,9 @@ import java.util.concurrent.atomic.AtomicReference;
 import br.dev.michaellopes.flutter_anycam.camera.BaseCamera;
 import br.dev.michaellopes.flutter_anycam.integration.CameraViewFactory;
 import br.dev.michaellopes.flutter_anycam.integration.FlutterEventChannel;
+import br.dev.michaellopes.flutter_anycam.model.TfInferenceInput;
 import br.dev.michaellopes.flutter_anycam.stream.CameraStreamManager;
+import br.dev.michaellopes.flutter_anycam.tensorflow.TfFrameHandler;
 import br.dev.michaellopes.flutter_anycam.tensorflow.TfModelHandler;
 import br.dev.michaellopes.flutter_anycam.utils.ByteArrayPoolUtil;
 import br.dev.michaellopes.flutter_anycam.utils.CameraUtil;
@@ -41,7 +48,7 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
     private MethodChannel channel;
     private EventChannel eventChannel;
     final ExecutorService executor = Executors.newFixedThreadPool(2);
-
+    private final Handler uiHandler = new Handler(Looper.getMainLooper());
     ByteArrayPoolUtil byteArrayPool = new ByteArrayPoolUtil(6, 30);
 
     @Override
@@ -81,26 +88,34 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
     @Override
     public void onMethodCall(@NonNull MethodCall call, @NonNull Result result) {
         switch (call.method) {
-            case "createView":
-
+            case "createView": {
                 HashMap<String, Object> args1 = (HashMap<String, Object>) call.arguments;
                 Long id = CameraViewFactory.getInstance().createView(args1);
-                result.success(id);
-
+                uiHandler.post(() -> {
+                    result.success(id);
+                });
                 break;
-            case "disposeView":
+            }
+            case "disposeView": {
                 HashMap<String, Object> args2 = (HashMap<String, Object>) call.arguments;
                 CameraViewFactory.getInstance().disposeView(args2);
-                result.success(true);
+                uiHandler.post(() -> {
+                    result.success(true);
+                });
                 break;
-            case "availableCameras":
+            }
+            case "availableCameras": {
                 CameraUtil.getInstance().availableCameras(result::success);
                 break;
-            case "broadcastPermissionGranted":
+            }
+            case "broadcastPermissionGranted": {
                 CameraViewFactory.getInstance().broadcastPermissionGranted();
-                result.success(true);
+                uiHandler.post(() -> {
+                    result.success(true);
+                });
                 break;
-            case "requestPermission":
+            }
+            case "requestPermission": {
                 CameraPermissionsUtil.getInstance().requestPermissions((String errCode, String errDesc) -> {
                     if (errCode == null) {
                         result.success(true);
@@ -109,29 +124,40 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
                     }
                 });
                 break;
-            case "convertNv21ToJpeg":
+            }
+            case "convertNv21ToJpeg": {
                 convertNv21ToJpeg(call, result);
                 break;
-            case "registerRawStream":
+            }
+            case "registerRawStream": {
                 HashMap<?, ?> p1 = (HashMap<?, ?>) call.arguments;
                 String cameraId = (String) p1.get("cameraId");
                 int fps = (int) p1.get("fps");
                 boolean res = CameraStreamManager.getInstance().add(cameraId, fps);
-                result.success(res);
+                uiHandler.post(() -> {
+                    result.success(res);
+                });
                 break;
-            case "disposeRawStream":
+            }
+            case "disposeRawStream": {
                 HashMap<?, ?> p2 = (HashMap<?, ?>) call.arguments;
                 String cId = (String) p2.get("cameraId");
                 CameraStreamManager.getInstance().dispose(cId);
-                result.success(true);
+                uiHandler.post(() -> {
+                    result.success(true);
+                });
                 break;
-            case "setFlash":
+            }
+            case "setFlash": {
                 HashMap<?, ?> args3 = (HashMap<?, ?>) call.arguments;
                 boolean value = (boolean) args3.get("value");
                 DeviceCameraUtils.getInstance().setFlash(value);
-                result.success(true);
+                uiHandler.post(() -> {
+                    result.success(true);
+                });
                 break;
-            case "setZoom":
+            }
+            case "setZoom": {
                 long start = System.currentTimeMillis();
                 HashMap<?, ?> args4 = (HashMap<?, ?>) call.arguments;
                 Number zoomNumber = (Number) args4.get("zoom");
@@ -143,27 +169,160 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
                     camera.setZoom(zoom);
                 }
                 //  DeviceCameraUtils.getInstance().setZoom(zoom, caId);
-                result.success(true);
+                uiHandler.post(() -> {
+                    result.success(true);
+                });
                 long timeMs = System.currentTimeMillis() - start;
                 Log.d("setZoom_PERF", "time=" + timeMs + "ms");
                 break;
-            case "loadTfModel":
+            }
+            case "loadTfModel": {
                 Map<String, Object> ldata = (Map<String, Object>) call.arguments;
                 String assetPath = (String) ldata.get("assetPath");
                 String key = (String) ldata.get("key");
-                String type = (String) ldata.get("type");
+                String delegate = (String) ldata.get("delegate");
                 Integer threads = (Integer) ldata.get("threads");
-                TfModelHandler.getInstance().loadModel(assetPath, key, type, threads);
-                result.success(true);
+                TfModelHandler.getInstance().loadModel(assetPath, key, delegate, threads);
+                uiHandler.post(() -> {
+                    result.success(true);
+                });
                 break;
-            case "runTfInference":
+            }
+            case "runTfInference": {
+                Map<String, Object> idata = (Map<String, Object>) call.arguments;
+                TfInferenceInput input = new TfInferenceInput(idata, (data, modelKey) -> {
+                    CompletableFuture<List<Map<String, Object>>> future = new CompletableFuture<>();
+                    uiHandler.post(() -> {
+                        channel.invokeMethod("processTfOutput", new HashMap<String, Object>() {{
+                            put("modelKey", modelKey);
+                            put("output", data);
+                        }}, new Result() {
+                            @Override
+                            public void success(@Nullable Object result1) {
+                                List<Map<String, Object>> res1 = (List<Map<String, Object>>) result1;
+                                future.complete(res1);
+                            }
+
+                            @Override
+                            public void error(@NonNull String errorCode, @Nullable String errorMessage, @Nullable Object errorDetails) {
+                                future.completeExceptionally(new Throwable(errorMessage));
+                            }
+
+                            @Override
+                            public void notImplemented() {
+                                future.completeExceptionally(new Throwable("notImplemented"));
+                            }
+                        });
+                    });
+                    return future.get();
+                });
+                TfModelHandler.getInstance().runInference(input, new TfModelHandler.InferenceCallback() {
+                    @Override
+                    public void success(List<Map<String, Object>> data) {
+                        uiHandler.post(() -> {
+                            result.success(data);
+                        });
+                    }
+
+                    @Override
+                    public void error(String e) {
+                        uiHandler.post(() -> {
+                            result.error("TfModelHandlerError", e, null);
+                        });
+                    }
+                });
                 break;
-            case "disposeTfModel":
+            }
+            case "disposeTfModel": {
                 Map<String, Object> ddata = (Map<String, Object>) call.arguments;
                 String dkey = (String) ddata.get("key");
                 TfModelHandler.getInstance().disposeModelByKey(dkey);
-                result.success(true);
+                uiHandler.post(() -> {
+                    result.success(true);
+                });
                 break;
+            }
+            case "getInferenceResultScaledCroppedFrame": {
+                Map<String, Object> ifdata = (Map<String, Object>) call.arguments;
+                String rid = (String) ifdata.get("id");
+               TfFrameHandler.TfFrame frame = TfModelHandler.getInstance().getScaledCroppedFrame(rid);
+                uiHandler.post(() -> {
+                    if(frame != null) {
+                        result.success(frame.toMap());
+                    } else {
+                        result.success(null);
+                    }
+                });
+                break;
+            }
+            case "getInferenceResultCroppedFrame": {
+                Map<String, Object> ifdata = (Map<String, Object>) call.arguments;
+                String rid = (String) ifdata.get("id");
+                TfFrameHandler.TfFrame frame = TfModelHandler.getInstance().getCroppedFrame(rid);
+                uiHandler.post(() -> {
+                    if(frame != null) {
+                        result.success(frame.toMap());
+                    } else {
+                        result.success(null);
+                    }
+                });
+                break;
+            }
+            case "getInferenceResultInferenceFrame": {
+                Map<String, Object> ifdata = (Map<String, Object>) call.arguments;
+                String rid = (String) ifdata.get("id");
+                TfFrameHandler.TfFrame frame = TfModelHandler.getInstance().getInferenceFrame(rid);
+                uiHandler.post(() -> {
+                    if(frame != null) {
+                        result.success(frame.toMap());
+                    } else {
+                        result.success(null);
+                    }
+                });
+                break;
+            }
+            case "getInferenceResultRawFrame": {
+                Map<String, Object> ifdata = (Map<String, Object>) call.arguments;
+                String rid = (String) ifdata.get("id");
+                TfFrameHandler.TfFrame frame = TfModelHandler.getInstance().getRawFrame(rid);
+                uiHandler.post(() -> {
+                    if(frame != null) {
+                        result.success(frame.toMap());
+                    } else {
+                        result.success(null);
+                    }
+                });
+                break;
+            }
+            case "closeTfFrame": {
+                Map<String, Object> fdata = (Map<String, Object>) call.arguments;
+                String fid = (String) fdata.get("id");
+                TfFrameHandler.getInstance().closeFrame(fid);
+                uiHandler.post(() -> {
+                    result.success(true);
+                });
+                break;
+            }
+            case "getTfFrameJpeg": {
+                Map<String, Object> fdata = (Map<String, Object>) call.arguments;
+                String fid = (String) fdata.get("id");
+                byte[] bytes = TfFrameHandler.getInstance().getFrameJpeg(fid);
+                uiHandler.post(() -> {
+                    result.success(new HashMap<String, Object>() {{
+                        put("bytes", bytes);
+                    }});
+                });
+                break;
+            }
+            case "closeTfInferenceResult": {
+                Map<String, Object> data = (Map<String, Object>) call.arguments;
+                String id = (String) data.get("id");
+                TfModelHandler.getInstance().closeTfInferenceResult(id);
+                uiHandler.post(() -> {
+                    result.success(true);
+                });
+                break;
+            }
             default:
                 result.notImplemented();
                 break;

@@ -16,20 +16,13 @@ import 'flutter_anycam_rotation.dart';
 import 'flutter_anycam_size.dart';
 import 'flutter_anycam_stream_listener.dart';
 import 'flutter_anycam_texts.dart';
+import 'flutter_anycam_type.dart';
 import 'flutter_anycam_typedefs.dart';
 import 'flutter_anycam_filter.dart';
 
 const kDefaultFrameChangePercent = 6.0;
 
 typedef ConnectResult = ({int textureId, double width, double height});
-
-enum FlutterAnycamType {
-  standard("standard"),
-  tf("tf");
-
-  final String value;
-  const FlutterAnycamType(this.value);
-}
 
 class FlutterAnycamWidget extends StatefulWidget {
   const FlutterAnycamWidget({
@@ -115,6 +108,7 @@ class FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
         resizeFrame: widget.resizeFrame,
         filter: widget.filter.code,
         fps: widget.fps,
+        type: widget.type,
       );
     });
   }
@@ -238,13 +232,11 @@ class FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
         },
         onVideoFrameReceived: (data) {
           _mesureFrames?.count();
-          if (widget.onFrame != null) {
-            if (widget.onRawVideoFrameReceived != null) {
-              widget.onRawVideoFrameReceived!(data);
-            } else {
-              final frame = FlutterAnycamFrame.fromMap(data);
-              widget.onFrame?.call(frame);
-            }
+          if (widget.onRawVideoFrameReceived != null) {
+            widget.onRawVideoFrameReceived!(data);
+          } else if (widget.onFrame != null) {
+            final frame = FlutterAnycamFrame.fromMap(data);
+            widget.onFrame?.call(frame);
           }
         },
       ),

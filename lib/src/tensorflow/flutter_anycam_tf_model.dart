@@ -1,12 +1,16 @@
 import 'dart:math';
 
 import '../channel/flutter_anycam_platform_interface.dart';
+import '../core/flutter_anycam_size.dart';
+import '../core/flutter_anycam_typedefs.dart';
 import 'flutter_anycam_tf_delegate.dart';
 import 'flutter_anycam_tf_session.dart';
 
 class FlutterAnycamTfModel {
   static Future<FlutterAnycamTfSession> loadModel({
     required String assetPath,
+    required FlutterAnycamSize inputSize,
+    required TfOutputProcessor outputProcessor,
     FlutterAnycamTfDelegate delegate = FlutterAnycamTfDelegate.nnapi,
     int threads = 1,
   }) async {
@@ -17,7 +21,7 @@ class FlutterAnycamTfModel {
       delegate: delegate,
       threads: threads,
     );
-    return FlutterAnycamTfSession(key);
+    return FlutterAnycamTfSession(key, inputSize, outputProcessor);
   }
 
   static String generateRandomHash({int length = 32}) {

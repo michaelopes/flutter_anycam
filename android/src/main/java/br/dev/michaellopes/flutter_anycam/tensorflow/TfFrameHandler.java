@@ -1,5 +1,7 @@
 package br.dev.michaellopes.flutter_anycam.tensorflow;
 
+import android.graphics.Bitmap;
+import android.graphics.Rect;
 import android.media.Image;
 import android.util.Size;
 
@@ -7,30 +9,41 @@ import androidx.annotation.OptIn;
 import androidx.camera.core.ExperimentalGetImage;
 import androidx.camera.core.ImageProxy;
 
+import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
+import br.dev.michaellopes.flutter_anycam.model.TfInferenceInput;
+import br.dev.michaellopes.flutter_anycam.model.TfInferenceOutputBox;
 import br.dev.michaellopes.flutter_anycam.utils.ByteArrayPoolUtil;
 import br.dev.michaellopes.flutter_anycam.utils.NativeUtil;
 import io.flutter.Log;
 import io.github.crow_misia.libyuv.ArgbBuffer;
 import io.github.crow_misia.libyuv.FilterMode;
 import io.github.crow_misia.libyuv.Nv21Buffer;
+import io.github.crow_misia.libyuv.Rgb565Buffer;
 import io.github.crow_misia.libyuv.RotateMode;
 
 public class TfFrameHandler {
-    private TfFrameHandler() {}
+    private TfFrameHandler() {
+    }
 
+    private ExecutorService executor = Executors.newSingleThreadExecutor();
     private final ByteArrayPoolUtil bytePool = new ByteArrayPoolUtil(6, 10);
     private static TfFrameHandler instance;
 
+    private final Object lock = new Object();
+
     final private List<TfFrame> frames = new ArrayList<>();
-    final private List<TfFrame> rawFrames = new ArrayList<>();
 
     public static synchronized TfFrameHandler getInstance() {
         if (instance == null) instance = new TfFrameHandler();
@@ -78,7 +91,7 @@ public class TfFrameHandler {
         bytePool.release(poolItem);
 
         Nv21Buffer srcNv21Buffer = Nv21Buffer.Factory.wrap(srcNv21ByteBuffer, srcWidth, srcHeight);
-        if(rotation > 0) {
+        if (rotation > 0) {
             Nv21Buffer nv21RotateBuffer = Nv21Buffer.Factory.allocate(srcHeight, srcWidth);
             srcNv21Buffer.rotate(nv21RotateBuffer, rotateMode);
             srcNv21Buffer.close();
@@ -88,117 +101,212 @@ public class TfFrameHandler {
             }
         }
 
+        try {
+            final Map<String, Object> result = addFrame(srcNv21Buffer, filter);
+            long time = System.currentTimeMillis() - start;
+            Log.d("addFrame_PERF", "time=" + time + "ms");
+            return result;
+        } catch (Exception e) {
+            return null;
+        }
 
-
-        final Map<String, Object> result = addFrame(srcNv21Buffer, resizeFrame, filter, rotation);
-        long time = System.currentTimeMillis() - start;
-        Log.d("addFrame_PERF", "time=" + time + "ms");
-        return result;
     }
 
-    private Map<String, Object> addFrame(Nv21Buffer nv21Buffer, Size resizeFrame, int filter, Integer rotation) {
+    public int getFramesSize() {
+        return frames.size();
+    }
 
-        int srcWidth = nv21Buffer.getWidth();
-        int srcHeight = nv21Buffer.getHeight();
+    public TfFrame getTfFrameToInference(TfInferenceInput input) throws ExecutionException, InterruptedException {
+        return asyncRun((result) -> {
+            TfFrame inputFrame = input.inputFrame;
+            ArgbBuffer targetBuffer = inputFrame.buffer;
 
-        ArgbBuffer rawArgbBuffer = ArgbBuffer.Factory.allocate(srcWidth, srcHeight);
-        nv21Buffer.convertTo(rawArgbBuffer);
-
-        ArgbBuffer resizedArgbBuffer = null;
-
-        if (resizeFrame != null) {
-            int rszWidth = resizeFrame.getWidth();
-            int rszHeight = resizeFrame.getHeight();
-
-            if (rszWidth == -1 && rszHeight == -1) {
-                int minSize = Math.min(srcWidth, srcHeight);
-                rszWidth = minSize;
-                rszHeight = minSize;
-            } else if (rotation == 90 || rotation == 270) {
-                final int rszTemp = rszWidth;
-                rszWidth = rszHeight;
-                rszHeight = rszTemp;
+            if (input.inputSize != null && (targetBuffer.getWidth() != input.inputSize.getWidth() || targetBuffer.getHeight() != input.inputSize.getHeight())) {
+                ArgbBuffer resizedBuffer = ArgbBuffer.Factory.allocate(input.inputSize.getWidth(), input.inputSize.getHeight());
+                targetBuffer.scale(resizedBuffer, FilterMode.BILINEAR);
+                targetBuffer = resizedBuffer;
             }
 
-            resizedArgbBuffer = ArgbBuffer.Factory.allocate(rszWidth, rszHeight);
-            rawArgbBuffer.scale(resizedArgbBuffer, FilterMode.BILINEAR);
-
-            if(filter > 0) {
-                resizedArgbBuffer.drawGray(0, 0, rszWidth, rszHeight);
+            if (input.filter > 0) {
+                targetBuffer.drawGray(0, 0, targetBuffer.getWidth(), targetBuffer.getHeight());
             }
 
+            TfFrame frame = new TfFrame(targetBuffer.getWidth(), targetBuffer.getHeight(), inputFrame.id, targetBuffer);
+            synchronized (lock) {
+                frames.add(frame);
+                result.complete(frame);
+            }
+        });
+    }
 
-           /* Rgb565Buffer abgrFixed = Rgb565Buffer.Factory.allocate(srcWidth, srcHeight);
-            rawArgbBuffer.convertTo(abgrFixed);
+    public TfFrame newFrameCroppedById(String frameId, TfInferenceOutputBox box, boolean enableScale) throws ExecutionException, InterruptedException {
+        return asyncRun((result) -> {
+            TfFrame srcFrame = getFrameById(frameId);
+            if (srcFrame != null) {
+                if (box != null) {
+                    Rect crop;
+                    if (srcFrame.getParentFrame() != null && enableScale) {
+                        srcFrame = srcFrame.getParentFrame();
+                        crop = box.getScaledRect(srcFrame.getSize());
+                    } else {
+                        crop = box.getRect();
+                    }
 
-            Bitmap bitmap = Bitmap.createBitmap(srcWidth, srcHeight, Bitmap.Config.RGB_565);
+                    Log.d("CROP_DEBUG", "src=" + srcFrame.getSize().getWidth() + "x" + srcFrame.getSize().getHeight());
+                    Log.d("CROP_DEBUG", "crop=" + crop.left + "," + crop.top + " " + crop.right + "x" + crop.bottom);
+                    Log.d("CROP_DEBUG", "dst=" + crop.width() + "x" + crop.height());
 
-           // bitmap.setHasAlpha(false);
-            bitmap.copyPixelsFromBuffer(abgrFixed.asBuffer());
+                    ArgbBuffer copyBuffer = ArgbBuffer.Factory.allocate(srcFrame.width, srcFrame.height);
+                    srcFrame.buffer.convertTo(copyBuffer);
+                    copyBuffer.setCropRect(crop);
 
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out);*/
+                    ArgbBuffer cropBuffer = ArgbBuffer.Factory.allocate(crop.width(), crop.height());
+                    copyBuffer.convertTo(cropBuffer);
 
-           TfFrameNormalizer.getInstance().normalize(resizedArgbBuffer, "none", "float32");
+                    copyBuffer.close();
 
-            TfFrame rawFrame = new TfFrame(srcWidth, srcHeight, rawArgbBuffer);
-            TfFrame frame = new TfFrame(srcWidth, srcHeight, rawFrame.id, resizedArgbBuffer);
-            rawFrames.add(rawFrame);
-            frames.add(frame);
-            return frame.toMap();
-        } else {
+                    TfFrame frame = new TfFrame(cropBuffer.getWidth(), cropBuffer.getHeight(), srcFrame.id, cropBuffer);
+                    synchronized (lock) {
+                        frames.add(frame);
+                        result.complete(frame);
+                        return;
+                    }
+                }
+                result.complete(srcFrame);
+            }
+        });
+
+    }
+
+    private Map<String, Object> addFrame(Nv21Buffer nv21Buffer, int filter) throws ExecutionException, InterruptedException {
+        return asyncRun((result) -> {
+            int srcWidth = nv21Buffer.getWidth();
+            int srcHeight = nv21Buffer.getHeight();
+
+            ArgbBuffer rawArgbBuffer = ArgbBuffer.Factory.allocate(srcWidth, srcHeight);
+            nv21Buffer.convertTo(rawArgbBuffer);
+
+            if (filter > 0) {
+                rawArgbBuffer.drawGray(0, 0, srcWidth, srcHeight);
+            }
+
             TfFrame frame = new TfFrame(srcWidth, srcHeight, rawArgbBuffer);
-            frames.add(frame);
-            return  frame.toMap();
+            synchronized (lock) {
+                frames.add(frame);
+                result.complete(frame.toMap());
+            }
+        });
+    }
+
+    public TfFrame getFrameById(String id) {
+        synchronized (lock) {
+            for (TfFrame item : frames) {
+                if (item.id.equals(id)) {
+                    return item;
+                }
+            }
+            return null;
         }
-
     }
 
-    public TfFrame getRawFrameById(String id) {
-        final List<TfFrame> lst = rawFrames.stream()
-                .filter(item -> item.id.equals(id))
-                .collect(Collectors.toList());
-        if(lst.isEmpty()) {
-            return  null;
+    public List<TfFrame> getAllFrameChildrenFrameById(String id) {
+        synchronized (lock) {
+            List<TfFrame> lst = new ArrayList<>();
+            for (TfFrame item : frames) {
+                if (item.parentId != null && item.parentId.equals(id)) {
+                    lst.add(item);
+                }
+            }
+            return lst;
         }
-        return lst.get(0);
     }
 
-    public List<TfFrame> getAllFramesByRawFrameId(String rawFrameId) {
-        return frames.stream()
-                .filter(item -> item.rawFrameId != null && item.rawFrameId.equals(rawFrameId))
-                .collect(Collectors.toList());
+    public void removeFrame(TfFrame frame) {
+        synchronized (lock) {
+            frames.remove(frame);
+        }
     }
 
-    public boolean hasFramesByRawFrameId(String rawFrameId) {
-        return !getAllFramesByRawFrameId(rawFrameId).isEmpty();
+    public byte[] getFrameJpeg(String frameId) {
+        try {
+            return asyncRun((result) -> {
+                synchronized (lock) {
+                    TfFrame frame = getFrameById(frameId);
+                    if (frame != null) {
+                        Rgb565Buffer buffer = Rgb565Buffer.Factory.allocate(frame.buffer.getWidth(), frame.buffer.getHeight());
+                        frame.buffer.convertTo(buffer);
+                        Bitmap bitmap = Bitmap.createBitmap(frame.buffer.getWidth(), frame.buffer.getHeight(), Bitmap.Config.RGB_565);
+                        bitmap.copyPixelsFromBuffer(buffer.asBuffer());
+
+                        ByteArrayOutputStream out = new ByteArrayOutputStream();
+                        bitmap.compress(Bitmap.CompressFormat.JPEG, 100, out);
+                        buffer.close();
+                        result.complete(out.toByteArray());
+                        return;
+                    }
+                    result.complete(null);
+                }
+            });
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    public void closeFrame(String frameId) {
+        synchronized (lock) {
+            TfFrame frame = getFrameById(frameId);
+            if (frame != null) {
+                frame.close();
+            }
+        }
+    }
+
+    private <T> T asyncRun(AsyncRun<T> runner) throws ExecutionException, InterruptedException {
+        CompletableFuture<T> future = new CompletableFuture<>();
+        executor.execute(() -> {
+            try {
+                runner.run(future);
+            } catch (Exception e) {
+                if (!future.isCompletedExceptionally()) {
+                    future.completeExceptionally(e);
+                }
+            }
+        });
+        return future.get();
     }
 
     public class TfFrame {
+
         final String id;
         final int width;
         final int height;
-        final String rawFrameId;
+        final String parentId;
         final ArgbBuffer buffer;
+        private boolean closeCalled = false;
+        private boolean closed = false;
 
         public TfFrame(int width, int height, ArgbBuffer buffer) {
             this.width = width;
             this.height = height;
             this.buffer = buffer;
             this.id = UUID.randomUUID().toString();
-            ;
-            this.rawFrameId = null;
+            this.parentId = null;
         }
 
-        public TfFrame(int width, int height, String rawFrameId, ArgbBuffer buffer) {
+        public TfFrame(int width, int height, String parentId, ArgbBuffer buffer) {
             this.width = width;
             this.height = height;
             this.buffer = buffer;
             this.id = UUID.randomUUID().toString();
-            this.rawFrameId = rawFrameId;
+            this.parentId = parentId;
         }
 
-        Map<String, Object> toMap() {
+        Size getSize() {
+            return new Size(width, height);
+        }
+
+        public Map<String, Object> toMap() {
             return new HashMap<String, Object>() {{
                 put("id", id);
                 put("width", width);
@@ -206,18 +314,47 @@ public class TfFrameHandler {
             }};
         }
 
-        public void close() {
-            buffer.close();
-            if(rawFrameId == null) {
-                rawFrames.remove(this);
-                frames.remove(this);
-            } else {
-                frames.remove(this);
+        public TfFrame getParentFrame() {
+            if (parentId != null) {
+                return getFrameById(parentId);
             }
-            if(rawFrameId != null && !hasFramesByRawFrameId(rawFrameId)) {
-                TfFrame rawFrame = getRawFrameById(rawFrameId);
-                rawFrame.close();
+            return null;
+        }
+
+        boolean hasChildren() {
+            return !getAllFrameChildrenFrameById(id).isEmpty();
+        }
+
+        boolean canClose() {
+            return closeCalled && !hasChildren() && !closed;
+        }
+
+        public void close() {
+            closeCalled = true;
+            tryClose();
+        }
+
+        private void tryClose() {
+            if (!canClose()) return;
+
+            if (closed) return;
+            closed = true;
+            buffer.close();
+
+
+            removeFrame(this);
+
+            Log.i("TfFrameClosed", "closed: " + id + "frames" + frames.size());
+            if (parentId != null) {
+                TfFrame parent = getFrameById(parentId);
+                if (parent != null) {
+                    parent.tryClose();
+                }
             }
         }
+    }
+
+    private interface AsyncRun<T> {
+        void run(CompletableFuture<T> result);
     }
 }

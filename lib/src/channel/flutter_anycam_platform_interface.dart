@@ -10,6 +10,7 @@ import '../core/flutter_anycam_stream_listener.dart';
 import '../core/flutter_anycam_typedefs.dart';
 import '../tensorflow/flutter_anycam_tf_delegate.dart';
 import '../tensorflow/flutter_anycam_tf_frame.dart';
+import '../tensorflow/flutter_anycam_tf_normalize.dart';
 import 'flutter_anycam_method_channel.dart';
 
 abstract class FlutterAnycamPlatform extends PlatformInterface {
@@ -115,10 +116,10 @@ abstract class FlutterAnycamPlatform extends PlatformInterface {
 
   Future<dynamic> runTfInference({
     required FlutterAnycamTfFrame inputFrame,
-    required FlutterAnycamSize inputSize,
     required String modelKey,
+    required FlutterAnycamSize inputSize,
     FlutterAnycamFilter filter = FlutterAnycamFilter.none,
-    FlutterAnycamCrop? crop,
+    FlutterAnycamTfNormalize normalize = FlutterAnycamTfNormalize.none,
   }) {
     throw UnimplementedError('runTFInference() has not been implemented.');
   }
@@ -127,5 +128,52 @@ abstract class FlutterAnycamPlatform extends PlatformInterface {
     required String key,
   }) {
     throw UnimplementedError('disposeTFModel() has not been implemented.');
+  }
+
+  Future<bool> closeTfFrame({
+    required String frameId,
+  }) {
+    throw UnimplementedError('closeTfFrame() has not been implemented.');
+  }
+
+  Future<Map<String, dynamic>> getTfFrameJpeg({
+    required String frameId,
+  }) {
+    throw UnimplementedError('getTfFrameJpeg() has not been implemented.');
+  }
+
+  Future<bool> closeTfInferenceResult({
+    required String inferenceId,
+  }) {
+    throw UnimplementedError(
+        'closeTfInferenceResult() has not been implemented.');
+  }
+
+  Future<Map<String, dynamic>?> getInferenceResultScaledCroppedFrame({
+    required String id,
+  }) {
+    throw UnimplementedError(
+        'getInferenceResultScaledCroppedFrame() has not been implemented.');
+  }
+
+  Future<Map<String, dynamic>?> getInferenceResultCroppedFrame({
+    required String id,
+  }) {
+    throw UnimplementedError(
+        'getInferenceResultCroppedFrame() has not been implemented.');
+  }
+
+  Future<Map<String, dynamic>?> getInferenceResultInferenceFrame({
+    required String id,
+  }) {
+    throw UnimplementedError(
+        'getInferenceResultInferenceFrame() has not been implemented.');
+  }
+
+  Future<Map<String, dynamic>?> getInferenceResultRawFrame({
+    required String id,
+  }) {
+    throw UnimplementedError(
+        'getInferenceResultRawFrame() has not been implemented.');
   }
 }

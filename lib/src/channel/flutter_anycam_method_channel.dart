@@ -1,19 +1,22 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import '../core/flutter_anycam_event_stream.dart';
 import '../core/flutter_anycam_size.dart';
+import 'flutter_anycam_event_stream.dart';
 import '../tensorflow/flutter_anycam_tf_delegate.dart';
 import '../tensorflow/flutter_anycam_tf_frame.dart';
+import '../tensorflow/flutter_anycam_tf_normalize.dart';
 import 'flutter_anycam_platform_interface.dart';
 import '../core/flutter_anycam_camera_selector.dart';
 import '../core/flutter_anycam_crop.dart';
 import '../core/flutter_anycam_filter.dart';
 import '../core/flutter_anycam_stream_listener.dart';
 import '../core/flutter_anycam_typedefs.dart';
+import 'flutter_anycam_tf_output_processor.dart';
 
 class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
   MethodChannelFlutterAnycam() {
     FlutterAnycamEventStream.I.add(_listen);
+    FlutterAnycamTfOutputProcessor.I.setChannel(methodChannel);
   }
 
   final _streamListeners = <FlutterAnycamStreamListener>[];
@@ -212,16 +215,16 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
     required FlutterAnycamSize inputSize,
     required String modelKey,
     FlutterAnycamFilter filter = FlutterAnycamFilter.none,
-    FlutterAnycamCrop? crop,
+    FlutterAnycamTfNormalize normalize = FlutterAnycamTfNormalize.none,
   }) {
     return methodChannel.invokeMethod(
-      'loadTfModel',
+      'runTfInference',
       {
         "inputFrame": inputFrame.toMap(),
         "modelKey": modelKey,
-        "inputSize": inputSize.toMap(),
         "filter": filter.code,
-        "crop": crop?.toMap(),
+        "inputSize": inputSize.toMap(),
+        "normalize": normalize.value,
       },
     );
   }
@@ -234,5 +237,80 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
       'disposeTfModel',
       {"key": key},
     );
+  }
+
+  @override
+  Future<bool> closeTfFrame({
+    required String frameId,
+  }) async {
+    return await methodChannel.invokeMethod(
+      'closeTfFrame',
+      {"id": frameId},
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> getTfFrameJpeg({
+    required String frameId,
+  }) async {
+    final res = await methodChannel.invokeMethod(
+      'getTfFrameJpeg',
+      {"id": frameId},
+    );
+    return Map<String, dynamic>.from(res);
+  }
+
+  @override
+  Future<bool> closeTfInferenceResult({
+    required String inferenceId,
+  }) async {
+    return await methodChannel.invokeMethod(
+      'closeTfInferenceResult',
+      {"id": inferenceId},
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>?> getInferenceResultScaledCroppedFrame({
+    required String id,
+  }) async {
+    final res = await methodChannel.invokeMethod(
+      'getInferenceResultScaledCroppedFrame',
+      {"id": id},
+    );
+    return res != null ? Map<String, dynamic>.from(res) : null;
+  }
+
+  @override
+  Future<Map<String, dynamic>?> getInferenceResultCroppedFrame({
+    required String id,
+  }) async {
+    final res = await methodChannel.invokeMethod(
+      'getInferenceResultCroppedFrame',
+      {"id": id},
+    );
+    return res != null ? Map<String, dynamic>.from(res) : null;
+  }
+
+  @override
+  Future<Map<String, dynamic>?> getInferenceResultInferenceFrame({
+    required String id,
+  }) async {
+    final res = await methodChannel.invokeMethod(
+      'getInferenceResultInferenceFrame',
+      {"id": id},
+    );
+    return res != null ? Map<String, dynamic>.from(res) : null;
+  }
+
+  @override
+  Future<Map<String, dynamic>?> getInferenceResultRawFrame({
+    required String id,
+  }) async {
+    final res = await methodChannel.invokeMethod(
+      'getInferenceResultRawFrame',
+      {"id": id},
+    );
+    return res != null ? Map<String, dynamic>.from(res) : null;
   }
 }

@@ -33,6 +33,7 @@ public abstract class BaseCamera {
 
     private ActionCall lastAction = null;
     protected int filter = 0;
+    protected String type = "standard";
 
     public BaseCamera(TextureRegistry.SurfaceTextureEntry texture, Map<String, Object> params) {
         this.texture = texture;
@@ -57,7 +58,18 @@ public abstract class BaseCamera {
             }
         }
 
+        if (params.get("type") != null) {
+            final String tp = (String) params.get("type");
+            if(tp != null) {
+                type = tp;
+            }
+        }
+
         this.params = params;
+    }
+
+    public boolean isStandard() {
+        return  type.equals("standard");
     }
 
     public String getCameraId() {
