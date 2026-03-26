@@ -12,8 +12,9 @@ public class TfInferenceOutputBox {
     public int yMin;
     public int xMax;
     public int yMax;
-    public double score;
     public int classId = -1;
+
+    public String trackingId;
 
     public static TfInferenceOutputBox fromMap(Map<String, Object> map) {
         TfInferenceOutputBox box = new TfInferenceOutputBox();
@@ -22,7 +23,8 @@ public class TfInferenceOutputBox {
         box.yMin = ((Number) map.get("yMin")).intValue();
         box.xMax = ((Number) map.get("xMax")).intValue();
         box.yMax = ((Number) map.get("yMax")).intValue();
-        box.score = ((Number) map.get("score")).doubleValue();
+        box.trackingId = (String)map.get("trackingId");
+
 
         box.xMin &= ~1;
         box.yMin &= ~1;
@@ -74,71 +76,6 @@ public class TfInferenceOutputBox {
         return srcSize;
     }
 
-//    public Rect getScaledRect(Size toSize, Size minSize) {
-//        try {
-//            Size size = srcSize;
-//            double ratioW = (double) size.getWidth() / toSize.getWidth();
-//            double ratioH = (double) size.getHeight() / toSize.getHeight();
-//
-//            double scale = Math.min(ratioW, ratioH);
-//
-//            double newWidth = toSize.getWidth() * scale;
-//            double newHeight = toSize.getHeight() * scale;
-//
-//            double padX = (size.getWidth() - newWidth) / 2.0;
-//            double padY = (size.getHeight() - newHeight) / 2.0;
-//
-//            // Remove letterbox
-//            double left = (getLeft() - padX) / scale;
-//            double top = (getTop() - padY) / scale;
-//            double width = size.getWidth() / scale;
-//            double height = size.getHeight() / scale;
-//
-//            // Centro real do bbox
-//            double centerX = left + width / 2.0;
-//            double centerY = top + height / 2.0;
-//
-//            // Padding proporcional (16% cada lado)
-//            width *= 1.32;
-//            height *= 1.32;
-//
-//            double minCropWidth = minSize.getWidth();
-//            double minCropHeight = minSize.getHeight();
-//
-//            width = Math.max(width, minCropWidth);
-//            height = Math.max(height, minCropHeight);
-//
-//            left = centerX - width / 2.0;
-//            top = centerY - height / 2.0;
-//
-//            if (left < 0) {
-//                left = 0;
-//            } else if (left + width > toSize.getWidth()) {
-//                left = toSize.getWidth() - width;
-//            }
-//
-//            if (top < 0) {
-//                top = 0;
-//            } else if (top + height > toSize.getHeight()) {
-//                top = toSize.getHeight() - height;
-//            }
-//
-//            int finalLeft = Math.max(0, (int) left);
-//            int finalTop = Math.max(0, (int) top);
-//            int finalWidth = Math.min(toSize.getWidth(), (int) width);
-//            int finalHeight = Math.min(toSize.getHeight(), (int) height);
-//
-//            return new Rect(
-//                    finalLeft,
-//                    finalTop,
-//                    finalLeft + finalWidth,
-//                    finalTop + finalHeight
-//            );
-//
-//        } catch (Exception e) {
-//            throw e;
-//        }
-//    }
 
    public Rect getScaledRect(Size toSize, Size minSize) {
         try {
@@ -219,67 +156,6 @@ public class TfInferenceOutputBox {
         }
     }
 
- /*   public Rect getScaledRect(Size toSize) {
-        try {
-            Size modelSize = srcSize;
-            double bboxWidth  = getRight() - getLeft();
-            double bboxHeight = getBottom() - getTop();
-            double x = getLeft();
-            double y = getTop();
-
-            double ratioW = modelSize.getWidth() / (double) toSize.getWidth();
-            double ratioH = modelSize.getHeight() / (double) toSize.getHeight();
-
-            double scale = Math.min(ratioW, ratioH);
-
-            double newWidth  = toSize.getWidth()  * scale;
-            double newHeight = toSize.getHeight() * scale;
-
-            double padX = (modelSize.getWidth() - newWidth)  / 2.0;
-            double padY = (modelSize.getHeight() - newHeight) / 2.0;
-
-            // Remove letterbox
-            double left   = (x - padX) / scale;
-            double top    = (y - padY) / scale;
-            double width  = bboxWidth  / scale;
-            double height = bboxHeight / scale;
-
-            // Clamp dentro dos limites do toSize (igual ao dart)
-            if (left < 0) {
-                left = 0;
-            } else if (left + width > toSize.getWidth()) {
-                left = toSize.getWidth() - width;
-            }
-
-            if (top < 0) {
-                top = 0;
-            } else if (top + height > toSize.getHeight()) {
-                top = toSize.getHeight() - height;
-            }
-
-            int finalLeft   = Math.max(0, (int) left)  & ~1;
-            int finalTop    = Math.max(0, (int) top)   & ~1;
-
-            // Desconta offset para não ultrapassar o buffer
-            int finalWidth  = Math.min(toSize.getWidth()  - finalLeft, (int) width)  & ~1;
-            int finalHeight = Math.min(toSize.getHeight() - finalTop,  (int) height) & ~1;
-
-            // Garante tamanho mínimo de 2x2
-            finalWidth  = Math.max(2, finalWidth);
-            finalHeight = Math.max(2, finalHeight);
-
-            return new Rect(
-                    finalLeft,
-                    finalTop,
-                    finalLeft + finalWidth,
-                    finalTop  + finalHeight
-            );
-
-        } catch (Exception e) {
-            throw e;
-        }
-    }*/
-
     public Map<String, Object> toMap() {
         Map<String, Object> map = new HashMap<>();
 
@@ -289,8 +165,8 @@ public class TfInferenceOutputBox {
         map.put("yMax", yMax);
         map.put("srcWidth", srcSize.getWidth());
         map.put("srcHeight", srcSize.getHeight());
-        map.put("score", score);
         map.put("classId", classId);
+        map.put("trackingId", trackingId);
 
         return map;
     }

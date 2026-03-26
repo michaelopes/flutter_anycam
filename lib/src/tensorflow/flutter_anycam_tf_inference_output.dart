@@ -1,12 +1,15 @@
 // ignore_for_file: public_member_api_docs, sort_constructors_first
 import 'dart:convert';
 
+import 'flutter_anycam_tf_bbox_tracker.dart';
+
 class FlutterAnycamTfInferenceOutput {
   final FlutterAnycamTfInferenceOutputBox? box;
   final FlutterAnycamTfInferenceOutputKeypoint? keypoint;
   final List<double>? embedding;
   final List<List<double>>? segmentation;
   final String? text;
+  final double score;
 
   FlutterAnycamTfInferenceOutput({
     this.box,
@@ -14,10 +17,12 @@ class FlutterAnycamTfInferenceOutput {
     this.embedding,
     this.segmentation,
     this.text,
+    required this.score,
   });
 
   Map<String, dynamic> toMap() {
     return <String, dynamic>{
+      'score': score,
       'box': box?.toMap(),
       'keypoint': keypoint?.toMap(),
       'embedding': embedding,
@@ -28,6 +33,7 @@ class FlutterAnycamTfInferenceOutput {
 
   factory FlutterAnycamTfInferenceOutput.fromMap(Map<String, dynamic> map) {
     return FlutterAnycamTfInferenceOutput(
+      score: map['score'] ?? 0,
       box: map['box'] != null
           ? FlutterAnycamTfInferenceOutputBox.fromMap(
               Map<String, dynamic>.from(map['box']),
@@ -61,7 +67,7 @@ class FlutterAnycamTfInferenceOutput {
           json.decode(source) as Map<String, dynamic>);
 }
 
-class FlutterAnycamTfInferenceOutputBox {
+class FlutterAnycamTfInferenceOutputBox extends FlutterAnycamTfBoundingBox {
   final int xMin;
   final int yMin;
   final int xMax;
@@ -69,7 +75,6 @@ class FlutterAnycamTfInferenceOutputBox {
   final int classId;
   final int srcWidth;
   final int srcHeight;
-  final double score;
 
   FlutterAnycamTfInferenceOutputBox({
     required this.xMin,
@@ -78,7 +83,7 @@ class FlutterAnycamTfInferenceOutputBox {
     required this.yMax,
     required this.srcWidth,
     required this.srcHeight,
-    required this.score,
+    super.trackingId,
     this.classId = -1,
   });
 
@@ -90,8 +95,8 @@ class FlutterAnycamTfInferenceOutputBox {
       'yMax': yMax,
       'srcWidth': srcWidth,
       'srcHeight': srcHeight,
-      'score': score,
       'classId': classId,
+      'trackingId': trackingId,
     };
   }
 
@@ -103,8 +108,8 @@ class FlutterAnycamTfInferenceOutputBox {
       yMax: map['yMax'],
       srcWidth: map['srcWidth'],
       srcHeight: map['srcHeight'],
-      score: map['score'] as double,
       classId: map['classId'] as int,
+      trackingId: map['trackingId'],
     );
   }
 
@@ -113,6 +118,40 @@ class FlutterAnycamTfInferenceOutputBox {
   factory FlutterAnycamTfInferenceOutputBox.fromJson(String source) =>
       FlutterAnycamTfInferenceOutputBox.fromMap(
           json.decode(source) as Map<String, dynamic>);
+
+  FlutterAnycamTfInferenceOutputBox copyWith({
+    int? xMin,
+    int? yMin,
+    int? xMax,
+    int? yMax,
+    int? classId,
+    int? srcWidth,
+    int? srcHeight,
+    String? trackingId,
+  }) {
+    return FlutterAnycamTfInferenceOutputBox(
+      xMin: xMin ?? this.xMin,
+      yMin: yMin ?? this.yMin,
+      xMax: xMax ?? this.xMax,
+      yMax: yMax ?? this.yMax,
+      classId: classId ?? this.classId,
+      srcWidth: srcWidth ?? this.srcWidth,
+      srcHeight: srcHeight ?? this.srcHeight,
+      trackingId: trackingId ?? this.trackingId,
+    );
+  }
+
+  @override
+  double get height => (xMax - xMin).toDouble();
+
+  @override
+  double get width => (yMax - yMin).toDouble();
+
+  @override
+  double get x => xMin.toDouble();
+
+  @override
+  double get y => yMin.toDouble();
 }
 
 class FlutterAnycamTfInferenceOutputKeypoint {

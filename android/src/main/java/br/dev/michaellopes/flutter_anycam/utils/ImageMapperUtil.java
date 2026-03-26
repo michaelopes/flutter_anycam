@@ -49,7 +49,7 @@ public class ImageMapperUtil {
                 long start = System.currentTimeMillis();
                 rawFrame = imageProxyToNV21Map(imageProxy, null, 0, customRotationDegrees, bytesBuffer);
                 long inferenceMs = System.currentTimeMillis() - start;
-                Log.d("imageProxyToNV21Map_PERF", "inference=" + inferenceMs + "ms");
+               // Log.d("imageProxyToNV21Map_PERF", "inference=" + inferenceMs + "ms");
             }
 
             byte[] finalBytes;

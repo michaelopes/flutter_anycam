@@ -23,6 +23,8 @@ export 'src/tensorflow/flutter_anycam_tf_widget.dart';
 export 'src/tensorflow/flutter_anycam_tf_normalize.dart';
 export 'src/tensorflow/flutter_anycam_tf_inference_output.dart';
 export 'src/tensorflow/flutter_anycam_tf_inference_result.dart';
+export 'src/tensorflow/flutter_anycam_tf_bbox_tracker.dart';
+export 'src/tensorflow/flutter_anycam_tf_tracker_options.dart';
 
 import 'src/core/flutter_anycam_camera_selector.dart';
 

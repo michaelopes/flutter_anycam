@@ -13,12 +13,14 @@ public class TfInferenceOutput {
     public List<List<Double>> segmentation;
     public String text;
 
+    public double score;
+
     public TfInferenceOutput() {}
 
     @SuppressWarnings("unchecked")
     public static TfInferenceOutput fromMap(Map<String, Object> map) {
         TfInferenceOutput result = new TfInferenceOutput();
-
+        result.score = ((Number) map.get("score")).doubleValue();
         if (map.get("box") != null) {
             result.box = TfInferenceOutputBox.fromMap(
                     (Map<String, Object>) map.get("box")
@@ -65,7 +67,7 @@ public class TfInferenceOutput {
 
     public Map<String, Object> toMap() {
         Map<String, Object> map = new HashMap<>();
-
+        map.put("score", score);
         if (box != null) map.put("box", box.toMap());
         if (keypoint != null) map.put("keypoint", keypoint.toMap());
         if (embedding != null) map.put("embedding", embedding);

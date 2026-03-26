@@ -132,6 +132,7 @@ class _MyAppState extends State<MyApp> {
         try {
           vehicles.add(
             FlutterAnycamTfInferenceOutput(
+              score: confidence,
               box: FlutterAnycamTfInferenceOutputBox(
                 xMin: rX1.toInt(),
                 yMin: rY1.toInt(),
@@ -139,7 +140,6 @@ class _MyAppState extends State<MyApp> {
                 yMax: rY2.toInt(),
                 srcWidth: inputSize.width,
                 srcHeight: inputSize.height,
-                score: confidence,
                 classId: classId,
               ),
             ),
@@ -239,7 +239,7 @@ class _MyAppState extends State<MyApp> {
                       Expanded(
                         key: k,
                         child: FlutterAnycamTfWidget(
-                          fps: 30,
+                          fps: 10,
                           preferredSize: const FlutterAnycamSize(1280, 720),
                           resizeFrame: const FlutterAnycamSize(224, 224),
                           filter: FlutterAnycamFilter.none,
@@ -257,6 +257,9 @@ class _MyAppState extends State<MyApp> {
                               assetPath: "assets/vehicle_detection.tflite",
                               inputSize: const FlutterAnycamSize(224, 224),
                               outputProcessor: _processor,
+                              trackerOptions: FlutterAnycamTfTrackerOptions(
+                                threshold: .1,
+                              ),
                             );
                             final res = await modelSession!.runInference(
                               inputFrame: frame,
@@ -264,6 +267,9 @@ class _MyAppState extends State<MyApp> {
                             );
                             await frame.close();
                             if (res.isNotEmpty) {
+                              print(
+                                "TrackerId: ${res.first.output.box?.trackingId}",
+                              );
                               final frame =
                                   await res.first.getScaledCroppedFrame();
 

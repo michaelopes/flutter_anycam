@@ -279,9 +279,9 @@ public class TfModelHandler {
                 return;
             }*/
 
-            Log.i("TFLite_QUANT", "inputMeta scale=" + inMeta.scale
-                    + " invScale=" + inMeta.invScale
-                    + " zeroPoint=" + inMeta.zeroPoint);
+            // Log.i("TFLite_QUANT", "inputMeta scale=" + inMeta.scale
+            //         + " invScale=" + inMeta.invScale
+            //         + " zeroPoint=" + inMeta.zeroPoint);
 
             ByteBufferPoolUtil.PoolItem inputItem;
             TfFrameHandler.TfFrame targetFrame = TfFrameHandler.getInstance().getTfFrameToInference(input);

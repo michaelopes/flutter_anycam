@@ -1,5 +1,6 @@
 import '../channel/flutter_anycam_platform_interface.dart';
 import '../channel/flutter_anycam_tf_output_processor.dart';
+import 'flutter_anycam_tf_bbox_tracker.dart';
 import '../core/flutter_anycam_filter.dart';
 
 import '../core/flutter_anycam_size.dart';
@@ -7,18 +8,36 @@ import '../core/flutter_anycam_typedefs.dart';
 import 'flutter_anycam_tf_inference_result.dart';
 import 'flutter_anycam_tf_frame.dart';
 import 'flutter_anycam_tf_normalize.dart';
+import 'flutter_anycam_tf_tracker_options.dart';
 
 class FlutterAnycamTfSession {
   final String modelKey;
   final TfOutputProcessor outputProcessor;
   final FlutterAnycamSize inputSize;
   late final TfOutputListenerDisposer _listenerDisposer;
+  final FlutterAnycamTfTrackerOptions trackerOptions;
 
-  FlutterAnycamTfSession(this.modelKey, this.inputSize, this.outputProcessor) {
+  late final FlutterAnycamTfBBoxTracker _tracker;
+
+  FlutterAnycamTfSession(
+    this.modelKey,
+    this.inputSize,
+    this.outputProcessor,
+    this.trackerOptions,
+  ) {
+    _tracker = FlutterAnycamTfBBoxTracker(
+      threshold: trackerOptions.threshold,
+      maxMissed: trackerOptions.maxMissed,
+      minHits: trackerOptions.minHits,
+      matchFn: trackerOptions.matchFn,
+    );
     _listenerDisposer = FlutterAnycamTfOutputProcessor.I.addListener(
       modelKey: modelKey,
       listener: (data) async {
         final lst = outputProcessor(data, inputSize);
+        final bboxes =
+            lst.where((e) => e.box != null).map((e) => e.box!).toList();
+        _tracker.update(bboxes);
         return lst.map((e) => e.toMap()).toList();
       },
     );
@@ -47,6 +66,7 @@ class FlutterAnycamTfSession {
 
   Future<void> dispose() async {
     _listenerDisposer();
+    _tracker.reset();
     await FlutterAnycamPlatform.instance.disposeTfModel(
       key: modelKey,
     );

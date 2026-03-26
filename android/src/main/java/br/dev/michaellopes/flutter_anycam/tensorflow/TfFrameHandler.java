@@ -152,9 +152,9 @@ public class TfFrameHandler {
                         crop = box.getRect();
                     }
 
-                    Log.d("CROP_DEBUG", "src=" + srcFrame.getSize().getWidth() + "x" + srcFrame.getSize().getHeight());
-                    Log.d("CROP_DEBUG", "crop=" + crop.left + "," + crop.top + " " + crop.right + "x" + crop.bottom);
-                    Log.d("CROP_DEBUG", "dst=" + crop.width() + "x" + crop.height());
+                    // Log.d("CROP_DEBUG", "src=" + srcFrame.getSize().getWidth() + "x" + srcFrame.getSize().getHeight());
+                    // Log.d("CROP_DEBUG", "crop=" + crop.left + "," + crop.top + " " + crop.right + "x" + crop.bottom);
+                    // Log.d("CROP_DEBUG", "dst=" + crop.width() + "x" + crop.height());
 
                     ArgbBuffer copyBuffer = ArgbBuffer.Factory.allocate(srcFrame.width, srcFrame.height);
                     srcFrame.buffer.convertTo(copyBuffer);
@@ -344,7 +344,7 @@ public class TfFrameHandler {
 
             removeFrame(this);
 
-            Log.i("TfFrameClosed", "closed: " + id + "frames" + frames.size());
+            //Log.i("TfFrameClosed", "closed: " + id + "frames" + frames.size());
             if (parentId != null) {
                 TfFrame parent = getFrameById(parentId);
                 if (parent != null) {
