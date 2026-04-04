@@ -288,6 +288,11 @@ public class DeviceCamera extends BaseCamera {
         DeviceCameraUtils.getInstance().setZoom(zoom, getCameraId());
     }
 
+    @Override
+    public void setExposureCompensation(int value) {
+        DeviceCameraUtils.getInstance().setExposureCompensation(value, getCameraId());
+    }
+
     private static class LimiterFrame {
         public final ImageProxy imageProxy;
         public final byte[] nv21;

@@ -29,6 +29,9 @@ class FlutterAnycamCameraSelector {
   final Map<String, dynamic>? extras;
   bool _forceSensorOrientation = false;
 
+  final int minExposureValue;
+  final int maxExposureValue;
+
   FlutterAnycamCameraSelector({
     required this.id,
     required this.name,
@@ -36,7 +39,13 @@ class FlutterAnycamCameraSelector {
     required this.sensorOrientation,
     this.cameraType = FlutterAnycamCameraType.unknown,
     this.extras,
+    this.minExposureValue = 0,
+    this.maxExposureValue = 0,
   });
+
+  bool get isCustomExposureSupported {
+    return minExposureValue != 0 && maxExposureValue != 0;
+  }
 
   int get previewRotation {
     if (_forceSensorOrientation) {
@@ -54,6 +63,8 @@ class FlutterAnycamCameraSelector {
       'forceSensorOrientation': _forceSensorOrientation,
       'extras': extras,
       'cameraType': cameraType.value,
+      'minExposureValue': minExposureValue,
+      'maxExposureValue': maxExposureValue,
     };
   }
 
@@ -61,6 +72,8 @@ class FlutterAnycamCameraSelector {
     return FlutterAnycamCameraSelector(
       id: map['id'] as String,
       name: map['name'] as String,
+      minExposureValue: map['minExposureValue'] ?? 0,
+      maxExposureValue: map['maxExposureValue'] ?? 0,
       lensFacing: FlutterAnycamLensFacing.values.byName(map['lensFacing']),
       sensorOrientation: map['sensorOrientation'] as int,
       cameraType: FlutterAnycamCameraType.getByValue(map['cameraType'] ?? "") ??

@@ -15,9 +15,11 @@ import java.util.concurrent.ExecutionException;
 import android.hardware.usb.UsbInterface;
 import android.os.Build;
 import android.util.Log;
+import android.util.Range;
 
 import androidx.camera.camera2.internal.Camera2CameraInfoImpl;
 import androidx.camera.core.CameraInfo;
+import androidx.camera.core.ExposureState;
 import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.core.content.ContextCompat;
 
@@ -89,6 +91,9 @@ public class CameraUtil {
                         CameraInfo availableCameraInfo = provider.getAvailableCameraInfos().get(i);
                         Camera2CameraInfoImpl camera2CameraInfo = (Camera2CameraInfoImpl) availableCameraInfo;
 
+
+
+
                         Integer lensFacing = camera2CameraInfo.getLensFacing();
                         Integer sensorOrientation = camera2CameraInfo.getSensorRotationDegrees();
 
@@ -134,6 +139,9 @@ public class CameraUtil {
 
                             }
                         }
+                        ExposureState exposureState = availableCameraInfo.getExposureState();
+                        Range<Integer> range = exposureState.getExposureCompensationRange();
+                        io.flutter.Log.d("Camera", "Range: " + range.getLower() + " to " + range.getUpper());
 
                         cameraMap.put("id", camera2CameraInfo.getCameraId());
                         cameraMap.put("name", lensDirection + " camera");
@@ -141,7 +149,14 @@ public class CameraUtil {
                         cameraMap.put("sensorOrientation", sensorOrientation);
                         cameraMap.put("cameraType", cameraType);
                         cameraMap.put("focalLength", focal);
+
+
                         cameraMap.put("minFocusDistance", minFocus);
+
+                        if(exposureState.isExposureCompensationSupported()) {
+                            cameraMap.put("minExposureValue", range.getLower());
+                            cameraMap.put("maxExposureValue", range.getUpper());
+                        }
 
                         cameras.add(new CameraItem(camera2CameraInfo, cameraMap));
                     }

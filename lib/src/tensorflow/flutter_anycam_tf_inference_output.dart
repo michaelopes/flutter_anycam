@@ -1,6 +1,7 @@
 // ignore_for_file: public_member_api_docs, sort_constructors_first
 import 'dart:convert';
 
+import '../core/flutter_anycam_size.dart';
 import 'flutter_anycam_tf_bbox_tracker.dart';
 
 class FlutterAnycamTfInferenceOutput {
@@ -76,6 +77,10 @@ class FlutterAnycamTfInferenceOutputBox extends FlutterAnycamTfBoundingBox {
   final int srcWidth;
   final int srcHeight;
 
+  final double cropPadPercent;
+
+  final FlutterAnycamSize? minScaledCropSize;
+
   FlutterAnycamTfInferenceOutputBox({
     required this.xMin,
     required this.yMin,
@@ -84,6 +89,8 @@ class FlutterAnycamTfInferenceOutputBox extends FlutterAnycamTfBoundingBox {
     required this.srcWidth,
     required this.srcHeight,
     super.trackingId,
+    this.minScaledCropSize,
+    this.cropPadPercent = 0,
     this.classId = -1,
   });
 
@@ -97,6 +104,8 @@ class FlutterAnycamTfInferenceOutputBox extends FlutterAnycamTfBoundingBox {
       'srcHeight': srcHeight,
       'classId': classId,
       'trackingId': trackingId,
+      'minScaledCropSize': minScaledCropSize?.toMap(),
+      'cropPadPercent': cropPadPercent,
     };
   }
 
@@ -110,6 +119,14 @@ class FlutterAnycamTfInferenceOutputBox extends FlutterAnycamTfBoundingBox {
       srcHeight: map['srcHeight'],
       classId: map['classId'] as int,
       trackingId: map['trackingId'],
+      minScaledCropSize: map['minScaledCropSize'] != null
+          ? FlutterAnycamSize.fromMap(
+              Map<String, dynamic>.from(map['minScaledCropSize']),
+            )
+          : null,
+      cropPadPercent: map['cropPadPercent'] != null
+          ? (map['cropPadPercent'] as num).toDouble()
+          : 0,
     );
   }
 

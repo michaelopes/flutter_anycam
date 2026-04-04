@@ -113,7 +113,7 @@ class _MyAppState extends State<MyApp> {
       final confidence = item[4];
       final classId = item[5].toInt();
 
-      if (confidence >= .49 &&
+      if (confidence >= .35 &&
           confidence <= .999 &&
           VehicleLabels.isVehicle(classId)) {
         final y1 = item[1] as double; // ymin
@@ -141,6 +141,7 @@ class _MyAppState extends State<MyApp> {
                 srcWidth: inputSize.width,
                 srcHeight: inputSize.height,
                 classId: classId,
+                minScaledCropSize: FlutterAnycamSize(64, 64),
               ),
             ),
           );
@@ -239,7 +240,7 @@ class _MyAppState extends State<MyApp> {
                       Expanded(
                         key: k,
                         child: FlutterAnycamTfWidget(
-                          fps: 10,
+                          fps: 30,
                           preferredSize: const FlutterAnycamSize(1280, 720),
                           resizeFrame: const FlutterAnycamSize(224, 224),
                           filter: FlutterAnycamFilter.none,
@@ -251,6 +252,7 @@ class _MyAppState extends State<MyApp> {
                             password: "1",
                           ),*/
                           onFrame: (frame) async {
+                            print("aki 1");
                             m.count();
                             modelSession ??=
                                 await FlutterAnycamTfModel.loadModel(
@@ -265,8 +267,10 @@ class _MyAppState extends State<MyApp> {
                               inputFrame: frame,
                               normalize: FlutterAnycamTfNormalize.simple,
                             );
+
                             await frame.close();
                             if (res.isNotEmpty) {
+                              print("aki 2");
                               print(
                                 "TrackerId: ${res.first.output.box?.trackingId}",
                               );

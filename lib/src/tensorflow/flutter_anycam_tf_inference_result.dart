@@ -70,6 +70,10 @@ class FlutterAnycamTfInferenceResult {
   }
 
   Future<bool> close() async {
+    _frame = null;
+    _rawFrame = null;
+    _croppedFrame = null;
+    _scaledCroppedFrame = null;
     return await FlutterAnycamPlatform.instance
         .closeTfInferenceResult(inferenceId: id);
   }

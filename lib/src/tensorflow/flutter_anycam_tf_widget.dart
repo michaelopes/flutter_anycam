@@ -18,6 +18,8 @@ class FlutterAnycamTfWidget extends StatefulWidget {
     this.viewId,
     this.aspectRatio,
     this.onFrame,
+    this.maxConcurrentFrames = 2,
+    this.previewRotation,
   });
 
   final FlutterAnycamCameraSelector camera;
@@ -28,17 +30,33 @@ class FlutterAnycamTfWidget extends StatefulWidget {
   final bool enableDebug;
   final FlutterAnycamTexts texts;
   final bool autoRetry;
+  final int maxConcurrentFrames;
 
   final int fps;
   final double? aspectRatio;
   final double previewScale;
   final FlutterAnycamStreamTfFrameCallback? onFrame;
+  final int? previewRotation;
 
   @override
   State<FlutterAnycamTfWidget> createState() => _FlutterAnycamTfWidgetState();
 }
 
 class _FlutterAnycamTfWidgetState extends State<FlutterAnycamTfWidget> {
+  late int _inProcess = 0;
+
+  bool get _hasReachedLimit => _inProcess >= widget.maxConcurrentFrames;
+
+  void _startProcess() {
+    _inProcess++;
+  }
+
+  void _stopProcess() {
+    if (_inProcess > 0) {
+      _inProcess--;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return FlutterAnycamWidget(
@@ -54,9 +72,20 @@ class _FlutterAnycamTfWidgetState extends State<FlutterAnycamTfWidget> {
       aspectRatio: widget.aspectRatio,
       previewScale: widget.previewScale,
       type: FlutterAnycamType.tf,
-      onRawVideoFrameReceived: (data) {
+      previewRotation: widget.previewRotation,
+      onRawVideoFrameReceived: (data) async {
         if (data.entries.isNotEmpty) {
-          widget.onFrame?.call(FlutterAnycamTfFrame.fromMap(data));
+          final frame = FlutterAnycamTfFrame.fromMap(data);
+          if (!_hasReachedLimit) {
+            try {
+              _startProcess();
+              await widget.onFrame?.call(frame);
+            } finally {
+              _stopProcess();
+            }
+          } else {
+            frame.close();
+          }
         }
       },
     );

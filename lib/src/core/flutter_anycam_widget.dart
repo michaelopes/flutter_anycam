@@ -41,6 +41,7 @@ class FlutterAnycamWidget extends StatefulWidget {
     this.filter = FlutterAnycamFilter.none,
     this.type = FlutterAnycamType.standard,
     this.onRawVideoFrameReceived,
+    this.previewRotation,
   });
 
   final FlutterAnycamSize preferredSize;
@@ -57,6 +58,7 @@ class FlutterAnycamWidget extends StatefulWidget {
   final FlutterAnycamType type;
   final FlutterAnycamStreamFrameCallback? onFrame;
   final FlutterAnycamStreamMethod? onRawVideoFrameReceived;
+  final int? previewRotation;
 
   @override
   State<FlutterAnycamWidget> createState() => FlutterAnycamWidgetState();
@@ -288,7 +290,7 @@ class FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
           child: SizedBox(
             key: _internalBoxKey,
             child: FlutterAnycamRotation(
-              degress: widget.camera.previewRotation,
+              degress: widget.previewRotation ?? widget.camera.previewRotation,
               child: widget.previewScale > 1
                   ? Transform.scale(
                       scale: widget.previewScale,

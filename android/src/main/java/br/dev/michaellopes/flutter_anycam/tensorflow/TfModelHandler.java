@@ -88,7 +88,7 @@ public class TfModelHandler {
             Log.i("Selected threads: ", threads.toString());
             Interpreter interpreter = new Interpreter(loadModelFromAssets(assetPath), options);
 
-            ByteBuffer reusableInput = null;
+
             ByteBuffer[] reusableOutputs = null;
             TensorMeta inputMeta = null;
             TensorMeta[] outputMetas = null;
@@ -102,8 +102,6 @@ public class TfModelHandler {
                 for (int dim : inputShape) inputLength *= dim;
 
                 inputMeta = TensorMeta.from(inTensor);
-
-                reusableInput = ByteBuffer.allocateDirect(inTensor.numBytes()).order(ByteOrder.nativeOrder());
 
                 // ---- OUTPUTS ----
                 int outCount = interpreter.getOutputTensorCount();
@@ -348,6 +346,7 @@ public class TfModelHandler {
             }
 
             if(response.isEmpty()) {
+            //    Log.i("TfFrameClosed", "targetFrame: " + targetFrame.id);
                 targetFrame.close();
             }
 
@@ -569,7 +568,9 @@ public class TfModelHandler {
             synchronized (results) {
                 for (String frameId: frameIds.values()) {
                     TfFrameHandler.TfFrame frame = TfFrameHandler.getInstance().getFrameById(frameId);
-                    frame.close();
+                    if(frame != null) {
+                        frame.close();
+                    }
                 }
                 results.remove(this);
                 Log.i("InferenceResultClose", "I: " + results.size() + " Frames: " + TfFrameHandler.getInstance().getFramesSize());

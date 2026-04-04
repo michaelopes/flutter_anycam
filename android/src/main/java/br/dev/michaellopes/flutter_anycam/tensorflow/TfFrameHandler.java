@@ -20,11 +20,11 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.stream.Collectors;
 
 import br.dev.michaellopes.flutter_anycam.model.TfInferenceInput;
 import br.dev.michaellopes.flutter_anycam.model.TfInferenceOutputBox;
 import br.dev.michaellopes.flutter_anycam.utils.ByteArrayPoolUtil;
+import br.dev.michaellopes.flutter_anycam.utils.ByteBufferPoolUtil;
 import br.dev.michaellopes.flutter_anycam.utils.NativeUtil;
 import io.flutter.Log;
 import io.github.crow_misia.libyuv.ArgbBuffer;
@@ -39,6 +39,7 @@ public class TfFrameHandler {
 
     private ExecutorService executor = Executors.newSingleThreadExecutor();
     private final ByteArrayPoolUtil bytePool = new ByteArrayPoolUtil(6, 10);
+    private final ByteBufferPoolUtil byteBuffer = new ByteBufferPoolUtil(2);
     private static TfFrameHandler instance;
 
     private final Object lock = new Object();
@@ -84,17 +85,18 @@ public class TfFrameHandler {
         ByteArrayPoolUtil.PoolItem poolItem = bytePool.acquire(srcSize);
         NativeUtil.yuv420ToNv21(image, poolItem.data);
 
-        ByteBuffer srcNv21ByteBuffer = ByteBuffer.allocateDirect(poolItem.data.length);
-        srcNv21ByteBuffer.put(poolItem.data);
-        srcNv21ByteBuffer.flip();
+        ByteBufferPoolUtil.PoolItem byteBufferPoolItem = byteBuffer.acquire(poolItem.data.length);
+        byteBufferPoolItem.buffer.put(poolItem.data);
+        byteBufferPoolItem.buffer.flip();
 
         bytePool.release(poolItem);
 
-        Nv21Buffer srcNv21Buffer = Nv21Buffer.Factory.wrap(srcNv21ByteBuffer, srcWidth, srcHeight);
+        Nv21Buffer srcNv21Buffer = Nv21Buffer.Factory.wrap(byteBufferPoolItem.buffer, srcWidth, srcHeight);
         if (rotation > 0) {
             Nv21Buffer nv21RotateBuffer = Nv21Buffer.Factory.allocate(srcHeight, srcWidth);
             srcNv21Buffer.rotate(nv21RotateBuffer, rotateMode);
             srcNv21Buffer.close();
+            byteBufferPoolItem.release();
             srcNv21Buffer = nv21RotateBuffer;
             if (rotation == 270) {
                 srcNv21Buffer.mirrorTo(srcNv21Buffer);
@@ -105,8 +107,10 @@ public class TfFrameHandler {
             final Map<String, Object> result = addFrame(srcNv21Buffer, filter);
             long time = System.currentTimeMillis() - start;
             Log.d("addFrame_PERF", "time=" + time + "ms");
+            srcNv21Buffer.close();
             return result;
         } catch (Exception e) {
+            srcNv21Buffer.close();
             return null;
         }
 
@@ -121,10 +125,61 @@ public class TfFrameHandler {
             TfFrame inputFrame = input.inputFrame;
             ArgbBuffer targetBuffer = inputFrame.buffer;
 
-            if (input.inputSize != null && (targetBuffer.getWidth() != input.inputSize.getWidth() || targetBuffer.getHeight() != input.inputSize.getHeight())) {
+           /* if (input.inputSize != null && (targetBuffer.getWidth() != input.inputSize.getWidth() || targetBuffer.getHeight() != input.inputSize.getHeight())) {
                 ArgbBuffer resizedBuffer = ArgbBuffer.Factory.allocate(input.inputSize.getWidth(), input.inputSize.getHeight());
                 targetBuffer.scale(resizedBuffer, FilterMode.BILINEAR);
                 targetBuffer = resizedBuffer;
+            }*/
+
+            if (input.inputSize != null && (targetBuffer.getWidth() != input.inputSize.getWidth() || targetBuffer.getHeight() != input.inputSize.getHeight())) {
+
+                int srcW = targetBuffer.getWidth();
+                int srcH = targetBuffer.getHeight();
+                int dstW = input.inputSize.getWidth();
+                int dstH = input.inputSize.getHeight();
+
+                // Calcula o crop mantendo proporção do destino
+                float srcAspect = (float) srcW / srcH;
+                float dstAspect = (float) dstW / dstH;
+
+                int cropW, cropH;
+                if (srcAspect > dstAspect) {
+                    // Mais largo que o destino → corta as laterais
+                    cropH = srcH;
+                    cropW = (int) (srcH * dstAspect);
+                } else {
+                    // Mais alto que o destino → corta em cima/baixo
+                    cropW = srcW;
+                    cropH = (int) (srcW / dstAspect);
+                }
+
+                int offsetX = (srcW - cropW) / 2;
+                int offsetY = (srcH - cropH) / 2;
+
+
+                ArgbBuffer copyBuffer = ArgbBuffer.Factory.allocate(targetBuffer.getWidth(), targetBuffer.getHeight());
+                targetBuffer.convertTo(copyBuffer);
+                copyBuffer.setCropRect(new Rect(offsetX, offsetY, offsetX + cropW, offsetY + cropH));
+
+                ArgbBuffer croppedBuffer = ArgbBuffer.Factory.allocate(cropW, cropH);
+                copyBuffer.convertTo(croppedBuffer);
+
+                TfFrame newInputFrame = new TfFrame(croppedBuffer.getWidth(), croppedBuffer.getHeight(), inputFrame.id, croppedBuffer);
+                newInputFrame.closeWhenChildClosed = true;
+
+                synchronized (lock) {
+                    frames.add(newInputFrame);
+                }
+                // Log.i("TfFrameClosed", "inicio");
+                // Log.i("TfFrameClosed", "closed: newInputFrame" + newInputFrame.id + "inputFrame" + inputFrame.id);
+
+                inputFrame = newInputFrame;
+
+                ArgbBuffer resizedBuffer = ArgbBuffer.Factory.allocate(dstW, dstH);
+                croppedBuffer.scale(resizedBuffer, FilterMode.BILINEAR);
+                targetBuffer = resizedBuffer;
+
+                copyBuffer.close();
             }
 
             if (input.filter > 0) {
@@ -132,6 +187,8 @@ public class TfFrameHandler {
             }
 
             TfFrame frame = new TfFrame(targetBuffer.getWidth(), targetBuffer.getHeight(), inputFrame.id, targetBuffer);
+            //Log.i("TfFrameClosed", "closed: frame" + frame.id + "newInputFrame" + inputFrame.id);
+
             synchronized (lock) {
                 frames.add(frame);
                 result.complete(frame);
@@ -144,35 +201,42 @@ public class TfFrameHandler {
             TfFrame srcFrame = getFrameById(frameId);
             if (srcFrame != null) {
                 if (box != null) {
-                    Rect crop;
-                    if (srcFrame.getParentFrame() != null && enableScale) {
-                        srcFrame = srcFrame.getParentFrame();
-                        crop = box.getScaledRect(srcFrame.getSize());
-                    } else {
-                        crop = box.getRect();
+                    try {
+                        Rect crop;
+                        Log.d("CROP_DEBUG", "src_original=" + srcFrame.getSize().getWidth() + "x" + srcFrame.getSize().getHeight());
+                        if (srcFrame.getParentFrame() != null && enableScale) {
+                            srcFrame = srcFrame.getParentFrame();
+                            crop = box.getScaledRect(srcFrame.getSize());
+                        } else {
+                            crop = box.getRect();
+                        }
+
+                         Log.d("CROP_DEBUG", "src=" + srcFrame.getSize().getWidth() + "x" + srcFrame.getSize().getHeight());
+                         Log.d("CROP_DEBUG", "crop=" + crop.left + "," + crop.top + " " + crop.right + "x" + crop.bottom);
+                         Log.d("CROP_DEBUG", "dst=" + crop.width() + "x" + crop.height());
+
+                        ArgbBuffer copyBuffer = ArgbBuffer.Factory.allocate(srcFrame.width, srcFrame.height);
+                        srcFrame.buffer.convertTo(copyBuffer);
+                        copyBuffer.setCropRect(crop);
+
+                        ArgbBuffer cropBuffer = ArgbBuffer.Factory.allocate(crop.width(), crop.height());
+                        copyBuffer.convertTo(cropBuffer);
+
+                        copyBuffer.close();
+
+                        TfFrame frame = new TfFrame(cropBuffer.getWidth(), cropBuffer.getHeight(), srcFrame.id, cropBuffer);
+                        synchronized (lock) {
+                            frames.add(frame);
+                            result.complete(frame);
+                        }
+                    } catch (Exception e) {
+                        result.complete(null);
                     }
-
-                    // Log.d("CROP_DEBUG", "src=" + srcFrame.getSize().getWidth() + "x" + srcFrame.getSize().getHeight());
-                    // Log.d("CROP_DEBUG", "crop=" + crop.left + "," + crop.top + " " + crop.right + "x" + crop.bottom);
-                    // Log.d("CROP_DEBUG", "dst=" + crop.width() + "x" + crop.height());
-
-                    ArgbBuffer copyBuffer = ArgbBuffer.Factory.allocate(srcFrame.width, srcFrame.height);
-                    srcFrame.buffer.convertTo(copyBuffer);
-                    copyBuffer.setCropRect(crop);
-
-                    ArgbBuffer cropBuffer = ArgbBuffer.Factory.allocate(crop.width(), crop.height());
-                    copyBuffer.convertTo(cropBuffer);
-
-                    copyBuffer.close();
-
-                    TfFrame frame = new TfFrame(cropBuffer.getWidth(), cropBuffer.getHeight(), srcFrame.id, cropBuffer);
-                    synchronized (lock) {
-                        frames.add(frame);
-                        result.complete(frame);
-                        return;
-                    }
+                } else {
+                    result.complete(srcFrame);
                 }
-                result.complete(srcFrame);
+            } else {
+                result.complete(null);
             }
         });
 
@@ -236,12 +300,19 @@ public class TfFrameHandler {
                         Rgb565Buffer buffer = Rgb565Buffer.Factory.allocate(frame.buffer.getWidth(), frame.buffer.getHeight());
                         frame.buffer.convertTo(buffer);
                         Bitmap bitmap = Bitmap.createBitmap(frame.buffer.getWidth(), frame.buffer.getHeight(), Bitmap.Config.RGB_565);
-                        bitmap.copyPixelsFromBuffer(buffer.asBuffer());
+                        ByteBuffer jpegBuffer = buffer.asBuffer();
+                        bitmap.copyPixelsFromBuffer(jpegBuffer);
 
                         ByteArrayOutputStream out = new ByteArrayOutputStream();
                         bitmap.compress(Bitmap.CompressFormat.JPEG, 100, out);
+
+                        jpegBuffer.clear();
+                        jpegBuffer = null;
+
                         buffer.close();
+                        
                         result.complete(out.toByteArray());
+                        bitmap.recycle();
                         return;
                     }
                     result.complete(null);
@@ -286,6 +357,8 @@ public class TfFrameHandler {
         private boolean closeCalled = false;
         private boolean closed = false;
 
+        private boolean closeWhenChildClosed = true;;
+
         public TfFrame(int width, int height, ArgbBuffer buffer) {
             this.width = width;
             this.height = height;
@@ -293,6 +366,8 @@ public class TfFrameHandler {
             this.id = UUID.randomUUID().toString();
             this.parentId = null;
         }
+
+
 
         public TfFrame(int width, int height, String parentId, ArgbBuffer buffer) {
             this.width = width;
@@ -335,22 +410,35 @@ public class TfFrameHandler {
         }
 
         private void tryClose() {
+
+            // Log.i("TfFrameClosed", "tryClose: " + id);
+            // Log.i("TfFrameClosed", "closeCalled " + closeCalled + " !hasChildren() " + !hasChildren() + "!closed " + !closed);
+
             if (!canClose()) return;
 
             if (closed) return;
             closed = true;
             buffer.close();
 
-
             removeFrame(this);
 
-            //Log.i("TfFrameClosed", "closed: " + id + "frames" + frames.size());
+           Log.i("TfFrameClosed", "closed: " + id + "frames " + frames.size());
+            //Log.i("TfFrameClosed", "closed: " + id + "parent" + parentId);
+
             if (parentId != null) {
                 TfFrame parent = getFrameById(parentId);
                 if (parent != null) {
-                    parent.tryClose();
+                   // Log.i("TfFrameClosed", "chamou parent" + parent.id);
+                    if(parent.closeWhenChildClosed) {
+                        parent.close();
+                    } else {
+                        parent.tryClose();
+                    }
                 }
             }
+
+            Log.i("TfFrameClosed", "fim");
+
         }
     }
 

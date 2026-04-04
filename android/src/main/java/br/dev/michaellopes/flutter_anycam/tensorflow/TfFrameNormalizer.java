@@ -311,6 +311,9 @@ public class TfFrameNormalizer {
         ByteBufferPoolUtil.PoolItem item = byteBufferPool.acquire(outputSize);
         ByteBuffer output = item.buffer;
 
+
+
+
         ByteBuffer src = argbBuffer.asBuffer();
         src.rewind();
 
@@ -328,6 +331,7 @@ public class TfFrameNormalizer {
 
         output.rewind();
         item.release();
+       // src.clear();
         return item;
     }
 

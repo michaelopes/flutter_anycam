@@ -58,4 +58,15 @@ class FlutterAnycam {
       await FlutterAnycamPlatform.instance.setZoom(zoom, camera.id);
     }
   }
+
+  static Future<void> setExposureCompensation({
+    required FlutterAnycamCameraSelector camera,
+    int value = 0,
+  }) async {
+    if (camera.lensFacing == FlutterAnycamLensFacing.back ||
+        camera.lensFacing == FlutterAnycamLensFacing.front) {
+      await FlutterAnycamPlatform.instance
+          .setExposureCompensation(value, camera.id);
+    }
+  }
 }

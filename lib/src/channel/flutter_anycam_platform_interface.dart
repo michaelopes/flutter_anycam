@@ -70,6 +70,11 @@ abstract class FlutterAnycamPlatform extends PlatformInterface {
     throw UnimplementedError('setZoom() has not been implemented.');
   }
 
+  Future<void> setExposureCompensation(int value, String cameraId) {
+    throw UnimplementedError(
+        'setExposureCompensation() has not been implemented.');
+  }
+
   Future<void> setFlash(bool value) {
     throw UnimplementedError('setFlash() has not been implemented.');
   }

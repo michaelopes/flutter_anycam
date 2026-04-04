@@ -157,8 +157,23 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
                 });
                 break;
             }
+            case "setExposureCompensation": {
+                HashMap<?, ?> args4 = (HashMap<?, ?>) call.arguments;
+                Number value = (Number) args4.get("value");
+                int val = value.intValue();
+                String caId = (String) args4.get("cameraId");
+
+                BaseCamera camera = CameraViewFactory.getInstance().getCameraById(caId);
+                if (camera != null) {
+                    camera.setExposureCompensation(val);
+                }
+
+                uiHandler.post(() -> {
+                    result.success(true);
+                });
+                break;
+            }
             case "setZoom": {
-                long start = System.currentTimeMillis();
                 HashMap<?, ?> args4 = (HashMap<?, ?>) call.arguments;
                 Number zoomNumber = (Number) args4.get("zoom");
                 float zoom = zoomNumber.floatValue();
@@ -168,12 +183,10 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
                 if (camera != null) {
                     camera.setZoom(zoom);
                 }
-                //  DeviceCameraUtils.getInstance().setZoom(zoom, caId);
+
                 uiHandler.post(() -> {
                     result.success(true);
                 });
-                long timeMs = System.currentTimeMillis() - start;
-                Log.d("setZoom_PERF", "time=" + timeMs + "ms");
                 break;
             }
             case "loadTfModel": {

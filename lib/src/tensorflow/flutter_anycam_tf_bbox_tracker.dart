@@ -93,7 +93,7 @@ abstract class FlutterAnycamTfBoundingBox {
 // ---------------------------------------------------------------------------
 enum TrackState { tentative, confirmed, lost }
 
-class _Track {
+/*class _Track {
   final String id;
   FlutterAnycamTfBoundingBox ref; // última box conhecida, usada para matching
   TrackState state;
@@ -133,6 +133,83 @@ class _Track {
   void promoteIfReady(int minHits) {
     if (hits >= minHits) state = TrackState.confirmed;
   }
+}*/
+
+class _Track {
+  final String id;
+  FlutterAnycamTfBoundingBox ref;
+  TrackState state;
+  int hits;
+  int missed;
+  final int firstFrame;
+
+  _Track({
+    required this.id,
+    required FlutterAnycamTfBoundingBox box,
+    required this.firstFrame,
+  })  : ref = box,
+        state = TrackState.tentative,
+        hits = 1,
+        missed = 0;
+
+  void attach(FlutterAnycamTfBoundingBox box, int frame) {
+    ref = _smooth(ref, box);
+    hits++;
+    missed = 0;
+    _stamp(box);
+  }
+
+  void markMissed() {
+    missed++;
+    if (state != TrackState.tentative) {
+      state = TrackState.lost;
+    }
+  }
+
+  void _stamp(FlutterAnycamTfBoundingBox box) {
+    box._trackingId = id;
+  }
+
+  void promoteIfReady(int minHits) {
+    if (hits >= minHits) {
+      state = TrackState.confirmed;
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // SUAVIZAÇÃO (ESSENCIAL)
+  // -----------------------------------------------------------------------
+  FlutterAnycamTfBoundingBox _smooth(
+    FlutterAnycamTfBoundingBox a,
+    FlutterAnycamTfBoundingBox b,
+  ) {
+    const alpha = 0.8;
+
+    return _LerpBox(
+      x: a.x * alpha + b.x * (1 - alpha),
+      y: a.y * alpha + b.y * (1 - alpha),
+      width: a.width * alpha + b.width * (1 - alpha),
+      height: a.height * alpha + b.height * (1 - alpha),
+    );
+  }
+}
+
+class _LerpBox extends FlutterAnycamTfBoundingBox {
+  @override
+  final double x;
+  @override
+  final double y;
+  @override
+  final double width;
+  @override
+  final double height;
+
+  _LerpBox({
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -152,7 +229,7 @@ class _Track {
 ///   print('${box.trackId}  →  $box');
 /// }
 /// ```
-class FlutterAnycamTfBBoxTracker {
+/*class FlutterAnycamTfBBoxTracker {
   final double threshold;
   final int maxMissed;
   final int minHits;
@@ -237,6 +314,102 @@ class FlutterAnycamTfBBoxTracker {
   int get currentFrame => _frame;
 
   /// Reseta (útil ao trocar de câmera/vídeo).
+  void reset() {
+    _tracks.clear();
+    _frame = 0;
+  }
+}*/
+
+class FlutterAnycamTfBBoxTracker {
+  final double threshold;
+  final int maxMissed;
+  final int minHits;
+  final MatchFn matchFn;
+
+  final Map<String, _Track> _tracks = {};
+  int _frame = 0;
+
+  FlutterAnycamTfBBoxTracker({
+    this.threshold = 0.1,
+    this.maxMissed = 5,
+    this.minHits = 3,
+    MatchFn? matchFn,
+  }) : matchFn = matchFn ?? MatchStrategy.weighted();
+
+  // -------------------------------------------------------------------------
+  // API principal
+  // -------------------------------------------------------------------------
+
+  void update(List<FlutterAnycamTfBoundingBox> boxes, {int? frameNumber}) {
+    _frame = frameNumber ?? _frame + 1;
+
+    final matched = <String, int>{}; // trackId → box index
+    final unmatched = <int>[];
+    final usedTracks = <String>{};
+
+    // ---------------------------------------------------------------------
+    // 1. Matching (BOX → TRACK)  ✅ CORRIGIDO
+    // ---------------------------------------------------------------------
+    for (int i = 0; i < boxes.length; i++) {
+      double bestScore = threshold;
+      String? bestTrackId;
+
+      for (final track in _tracks.values) {
+        if (usedTracks.contains(track.id)) continue;
+
+        final score = matchFn(track.ref, boxes[i]);
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestTrackId = track.id;
+        }
+      }
+
+      if (bestTrackId != null) {
+        matched[bestTrackId] = i;
+        usedTracks.add(bestTrackId);
+      } else {
+        unmatched.add(i);
+      }
+    }
+
+    // ---------------------------------------------------------------------
+    // 2. Atualiza tracks com match
+    // ---------------------------------------------------------------------
+    for (final entry in matched.entries) {
+      final track = _tracks[entry.key]!;
+      final box = boxes[entry.value];
+
+      track.attach(box, _frame);
+      track.promoteIfReady(minHits);
+    }
+
+    // ---------------------------------------------------------------------
+    // 3. Marca missed
+    // ---------------------------------------------------------------------
+    for (final track in _tracks.values) {
+      if (!matched.containsKey(track.id)) {
+        track.markMissed();
+      }
+    }
+
+    // Remove tracks mortos
+    _tracks.removeWhere((_, t) => t.missed > maxMissed);
+
+    // ---------------------------------------------------------------------
+    // 4. Cria novos tracks
+    // ---------------------------------------------------------------------
+    for (final i in unmatched) {
+      final id = _uuid();
+      final track = _Track(id: id, box: boxes[i], firstFrame: _frame);
+      _tracks[id] = track;
+      track._stamp(boxes[i]);
+    }
+  }
+
+  int get count => _tracks.length;
+  int get currentFrame => _frame;
+
   void reset() {
     _tracks.clear();
     _frame = 0;

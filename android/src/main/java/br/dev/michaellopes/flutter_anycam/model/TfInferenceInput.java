@@ -1,7 +1,7 @@
 package br.dev.michaellopes.flutter_anycam.model;
 
 
-import android.graphics.Rect;
+
 import android.util.Size;
 
 import java.util.ArrayList;
@@ -16,6 +16,7 @@ public class TfInferenceInput {
     public final String modelKey;
     public final String normalize;
     public TfFrameHandler.TfFrame inputFrame;
+
     public int filter;
     public Size inputSize;
     private final OutputProcessor processor;

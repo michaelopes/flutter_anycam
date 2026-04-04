@@ -178,8 +178,18 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
   }
 
   @override
+  Future<void> setExposureCompensation(int value, String cameraId) async {
+    await methodChannel.invokeMethod(
+      'setExposureCompensation',
+      {
+        "cameraId": cameraId,
+        "value": value,
+      },
+    );
+  }
+
+  @override
   Future<void> setZoom(double value, String cameraId) async {
-    final stopwatch = Stopwatch()..start();
     await methodChannel.invokeMethod(
       'setZoom',
       {
@@ -187,8 +197,6 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
         "zoom": value,
       },
     );
-    stopwatch.stop();
-    debugPrint('setZoom_flutter: ${stopwatch.elapsedMilliseconds}ms');
   }
 
   @override

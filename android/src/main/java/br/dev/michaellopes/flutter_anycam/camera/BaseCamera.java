@@ -195,6 +195,9 @@ public abstract class BaseCamera {
 
     public void setZoom(float zoom) {}
 
+
+    public void setExposureCompensation(int value) {}
+
     @CallSuper
     public void dispose() {
         bridges.clear();

@@ -4,23 +4,34 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.hardware.camera2.CameraDevice;
 import android.hardware.camera2.CameraManager;
+import android.util.Range;
 
 
+import androidx.annotation.NonNull;
 import androidx.annotation.OptIn;
 import androidx.camera.camera2.internal.Camera2CameraInfoImpl;
 import androidx.camera.camera2.interop.Camera2CameraInfo;
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop;
 import androidx.camera.core.Camera;
 
+import androidx.camera.core.CameraControl;
+import androidx.camera.core.CameraInfo;
 import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ConcurrentCamera;
+import androidx.camera.core.ExposureState;
 import androidx.camera.core.ImageAnalysis;
 import androidx.camera.core.Preview;
 import androidx.camera.core.UseCaseGroup;
 import androidx.camera.core.ZoomState;
+import androidx.camera.core.impl.utils.futures.FutureCallback;
+import androidx.camera.core.impl.utils.futures.Futures;
 import androidx.camera.lifecycle.ProcessCameraProvider;
 
+import androidx.core.content.ContextCompat;
 import androidx.lifecycle.LifecycleOwner;
+
+
+import com.google.common.util.concurrent.ListenableFuture;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,6 +39,8 @@ import java.util.Objects;
 
 
 import br.dev.michaellopes.flutter_anycam.model.ViewCameraSelector;
+import io.flutter.Log;
+
 @SuppressLint("RestrictedApi")
 public class DeviceCameraUtils {
 
@@ -97,6 +110,54 @@ public class DeviceCameraUtils {
                     camera.getCameraControl().setZoomRatio(value);
                 }
             } catch (Exception ignored) {}
+        }
+    }
+
+    public void setExposureCompensation(int value, String cameraId) {
+        Camera camera = getCameraById(cameraId);
+        if (camera == null) {
+            Log.e("Camera", "Camera null para id: " + cameraId);
+            return;
+        }
+
+        try {
+            CameraInfo cameraInfo = camera.getCameraInfo();
+            ExposureState exposureState = cameraInfo.getExposureState();
+
+            // 🔍 LOG 1: Verifica se o device suporta exposição
+            Log.d("Camera", "isExposureCompensationSupported: " + exposureState.isExposureCompensationSupported());
+
+            Range<Integer> range = exposureState.getExposureCompensationRange();
+            Log.d("Camera", "Range: " + range.getLower() + " to " + range.getUpper());
+            Log.d("Camera", "Exposure atual: " + exposureState.getExposureCompensationIndex());
+            Log.d("Camera", "Valor recebido: " + value);
+
+            // Se não suporta ou range é [0,0], não faz nada
+            if (!exposureState.isExposureCompensationSupported()) {
+                Log.w("Camera", "Dispositivo não suporta exposure compensation");
+                return;
+            }
+
+            CameraControl cameraControl = camera.getCameraControl();
+            int clamped = Math.max(range.getLower(), Math.min(range.getUpper(), value));
+            Log.d("Camera", "Clamped value: " + clamped);
+
+            ListenableFuture<Integer> future = cameraControl.setExposureCompensationIndex(clamped);
+
+            Futures.addCallback(future, new FutureCallback<Integer>() {
+                @Override
+                public void onSuccess(Integer result) {
+                    Log.d("Camera", "✅ Exposure aplicado: " + result);
+                }
+
+                @Override
+                public void onFailure(@NonNull Throwable t) {
+                    Log.e("Camera", "❌ Falhou: " + t.getClass().getSimpleName() + " - " + t.getMessage());
+                }
+            }, ContextCompat.getMainExecutor(ContextUtil.get()));
+
+        } catch (Exception e) {
+            Log.e("Camera", "Exceção: " + e.getMessage());
         }
     }
 

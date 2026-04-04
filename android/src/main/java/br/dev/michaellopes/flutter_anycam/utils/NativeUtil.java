@@ -120,8 +120,8 @@ public class NativeUtil {
         cropW = Math.max(2, cropW);
         cropH = Math.max(2, cropH);
 
-        Log.i("cropNv21", "srcW=" + srcW +"srcH=" + srcH);
-        Log.i("cropNv21", "cropX="  +cropX+"cropY=" +cropY+ "cropW=" +cropW+"cropH=" + cropH);
+        // Log.i("cropNv21", "srcW=" + srcW +"srcH=" + srcH);
+        // Log.i("cropNv21", "cropX="  +cropX+"cropY=" +cropY+ "cropW=" +cropW+"cropH=" + cropH);
 
         cropNv21JNI(src, srcW, srcH, dst, cropX, cropY, cropW, cropH);
     }
@@ -246,13 +246,8 @@ public class NativeUtil {
             }
             NativeUtil.increaseContrast(nv21, width, height, contrast);
         }
-        if(level > 0) {
+        if (level > 0) {
             NativeUtil.nv21ToGrayscale(nv21, width, height);
         }
     }
-
-
-
-
-
 }
