@@ -13,6 +13,9 @@ public class FlutterAnycamPlugin: NSObject, FlutterPlugin {
         
         let eventChannel = FlutterEventChannel(name: "br.dev.michaellopes.flutter_anycam/event", binaryMessenger: registrar.messenger())
         
+        TfModelHandler.shared.configure(channel: channel) { assetPath in
+            registrar.lookupKey(forAsset: assetPath)
+        }
         
         let instance = FlutterAnycamPlugin()
         eventChannel.setStreamHandler(FlutterEventStreamChannel.shared)
@@ -133,6 +136,119 @@ public class FlutterAnycamPlugin: NSObject, FlutterPlugin {
                 result(res)
             }
             break;
+        case "loadTfModel":
+            guard let data = call.arguments as? [String: Any],
+                  let assetPath = data["assetPath"] as? String,
+                  let key = data["key"] as? String,
+                  let delegate = data["delegate"] as? String else {
+                result(FlutterError(code: "bad_args", message: "loadTfModel", details: nil))
+                return
+            }
+            let threads = (data["threads"] as? NSNumber)?.intValue ?? 1
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    try TfModelHandler.shared.loadModel(assetPath: assetPath, key: key, delegate: delegate, threads: threads)
+                    DispatchQueue.main.async { result(true) }
+                } catch {
+                    DispatchQueue.main.async {
+                        result(FlutterError(code: "loadTfModel", message: error.localizedDescription, details: nil))
+                    }
+                }
+            }
+            break
+        case "runTfInference":
+            guard let args = call.arguments as? [String: Any] else {
+                result(FlutterError(code: "bad_args", message: "runTfInference", details: nil))
+                return
+            }
+            TfModelHandler.shared.runInference(arguments: args, result: result)
+            break
+        case "disposeTfModel":
+            guard let data = call.arguments as? [String: Any], let key = data["key"] as? String else {
+                result(false)
+                return
+            }
+            TfModelHandler.shared.disposeModel(key: key)
+            result(true)
+            break
+        case "closeTfFrame":
+            guard let data = call.arguments as? [String: Any], let id = data["id"] as? String else {
+                result(false)
+                return
+            }
+            TfFrameHandler.shared.closeFrame(id)
+            result(true)
+            break
+        case "getTfFrameJpeg":
+            guard let data = call.arguments as? [String: Any], let id = data["id"] as? String else {
+                result(nil)
+                return
+            }
+            if let bytes = TfFrameHandler.shared.getFrameJpeg(frameId: id) {
+                result(["bytes": FlutterStandardTypedData(bytes: bytes)])
+            } else {
+                result(nil)
+            }
+            break
+        case "closeTfInferenceResult":
+            guard let data = call.arguments as? [String: Any], let id = data["id"] as? String else {
+                result(false)
+                return
+            }
+            TfModelHandler.shared.closeInferenceResult(id: id)
+            result(true)
+            break
+        case "getInferenceResultScaledCroppedFrame":
+            guard let data = call.arguments as? [String: Any], let id = data["id"] as? String else {
+                result(nil)
+                return
+            }
+            guard let mid = TfModelHandler.shared.mainFrameId(for: id) else {
+                result(nil)
+                return
+            }
+            let box = TfModelHandler.shared.boxMap(for: id)
+            if let f = TfFrameHandler.shared.newFrameCroppedById(frameId: mid, box: box, enableScale: true) {
+                result(TfFrameHandler.shared.toFrameMap(f))
+            } else {
+                result(nil)
+            }
+            break
+        case "getInferenceResultCroppedFrame":
+            guard let data = call.arguments as? [String: Any], let id = data["id"] as? String else {
+                result(nil)
+                return
+            }
+            let box = TfModelHandler.shared.boxMap(for: id)
+            if let mid = TfModelHandler.shared.mainFrameId(for: id),
+               let f = TfFrameHandler.shared.newFrameCroppedById(frameId: mid, box: box, enableScale: false) {
+                result(TfFrameHandler.shared.toFrameMap(f))
+            } else {
+                result(nil)
+            }
+            break
+        case "getInferenceResultInferenceFrame":
+            guard let data = call.arguments as? [String: Any], let id = data["id"] as? String else {
+                result(nil)
+                return
+            }
+            if let m = TfModelHandler.shared.frameMapForInference(id: id, kind: TfModelHandler.FrameKind.inference) {
+                result(m)
+            } else {
+                result(nil)
+            }
+            break
+        case "getInferenceResultRawFrame":
+            guard let data = call.arguments as? [String: Any], let id = data["id"] as? String else {
+                result(nil)
+                return
+            }
+            if let m = TfModelHandler.shared.frameMapForInference(id: id, kind: TfModelHandler.FrameKind.raw) {
+                result(m)
+            } else {
+                result(nil)
+            }
+            break
         default:
             result(FlutterMethodNotImplemented)
         }
