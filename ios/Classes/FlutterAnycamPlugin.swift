@@ -199,33 +199,18 @@ public class FlutterAnycamPlugin: NSObject, FlutterPlugin {
             result(true)
             break
         case "getInferenceResultScaledCroppedFrame":
-            guard let data = call.arguments as? [String: Any], let id = data["id"] as? String else {
+            guard let d = call.arguments as? [String: Any], let id = d["id"] as? String else {
                 result(nil)
                 return
             }
-            guard let mid = TfModelHandler.shared.mainFrameId(for: id) else {
-                result(nil)
-                return
-            }
-            let box = TfModelHandler.shared.boxMap(for: id)
-            if let f = TfFrameHandler.shared.newFrameCroppedById(frameId: mid, box: box, enableScale: true) {
-                result(TfFrameHandler.shared.toFrameMap(f))
-            } else {
-                result(nil)
-            }
+            result(TfModelHandler.shared.getScaledCroppedFrameMap(inferenceId: id))
             break
         case "getInferenceResultCroppedFrame":
-            guard let data = call.arguments as? [String: Any], let id = data["id"] as? String else {
+            guard let d = call.arguments as? [String: Any], let id = d["id"] as? String else {
                 result(nil)
                 return
             }
-            let box = TfModelHandler.shared.boxMap(for: id)
-            if let mid = TfModelHandler.shared.mainFrameId(for: id),
-               let f = TfFrameHandler.shared.newFrameCroppedById(frameId: mid, box: box, enableScale: false) {
-                result(TfFrameHandler.shared.toFrameMap(f))
-            } else {
-                result(nil)
-            }
+            result(TfModelHandler.shared.getCroppedFrameMap(inferenceId: id))
             break
         case "getInferenceResultInferenceFrame":
             guard let data = call.arguments as? [String: Any], let id = data["id"] as? String else {

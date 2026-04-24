@@ -44,8 +44,8 @@ final class TfFrameHandler {
                 if filter > 0 {
                     rd = Self.applyGrayscaleFilter(bgra: rd, width: rw, height: rh)
                 }
-                let rawFrame = TfFrame(id: UUID().uuidString, width: rw, height: rh, bgra: rd, parentId: nil)
-                let child = TfFrame(id: UUID().uuidString, width: w, height: h, bgra: processed, parentId: rawFrame.id)
+                let rawFrame = TfFrame(width: rw, height: rh, bgra: rd, parentId: nil)
+                let child = TfFrame(width: w, height: h, bgra: processed, parentId: rawFrame.id)
                 frames.append(contentsOf: [rawFrame, child])
                 return [
                     "id": child.id,
@@ -55,7 +55,7 @@ final class TfFrameHandler {
                     "rawHeight": rh,
                 ]
             } else {
-                let f = TfFrame(id: UUID().uuidString, width: w, height: h, bgra: processed, parentId: nil)
+                let f = TfFrame(width: w, height: h, bgra: processed, parentId: nil)
                 frames.append(f)
                 return [
                     "id": f.id,
@@ -74,9 +74,43 @@ final class TfFrameHandler {
         queue.sync { frames.first { $0.id == id } }
     }
 
+    /// Alinhado ao `TfFrame.close()` + `tryClose()` no Android: só remove quando não há filhos; depois propaga ao pai.
     func closeFrame(_ id: String) {
         queue.sync {
-            removeFrameTree(id: id)
+            guard let f = frames.first(where: { $0.id == id }) else { return }
+            requestClose(f)
+        }
+    }
+
+    private func hasChildren(_ f: TfFrame) -> Bool {
+        frames.contains { $0.parentId == f.id }
+    }
+
+    private func canClose(_ f: TfFrame) -> Bool {
+        f.closeCalled && !hasChildren(f) && !f.closed
+    }
+
+    /// `TfFrameHandler.close` no Android: marca intenção e tenta fechar.
+    private func requestClose(_ f: TfFrame) {
+        f.closeCalled = true
+        tryClose(f)
+    }
+
+    /// Espelha `tryClose()` private no Android.
+    private func tryClose(_ f: TfFrame) {
+        if !canClose(f) { return }
+        if f.closed { return }
+        f.closed = true
+        frames.removeAll { $0.id == f.id }
+
+        guard let pid = f.parentId,
+              let p = frames.first(where: { $0.id == pid }) else {
+            return
+        }
+        if p.closeWhenChildClosed {
+            requestClose(p)
+        } else {
+            tryClose(p)
         }
     }
 
@@ -117,9 +151,9 @@ final class TfFrameHandler {
             var h = src.height
             var parentId: String? = src.id
 
-            if let is = inputSize, Int(is.width) != w || Int(is.height) != h {
-                let dstW = Int(is.width)
-                let dstH = Int(is.height)
+            if let iz = inputSize, Int(iz.width) != w || Int(iz.height) != h {
+                let dstW = Int(iz.width)
+                let dstH = Int(iz.height)
                 guard let piped = Self.centerCropAspectThenScale(
                     bgra: data,
                     width: w,
@@ -129,7 +163,10 @@ final class TfFrameHandler {
                 ) else {
                     throw TfFrameError.resizeFailed
                 }
-                let resized = TfFrame(id: UUID().uuidString, width: dstW, height: dstH, bgra: piped, parentId: parentId)
+                // Igual a `newInputFrame.closeWhenChildClosed = true` (Android) na pipeline crop/resize.
+                let resized = TfFrame(
+                    width: dstW, height: dstH, bgra: piped, parentId: parentId, closeWhenChildClosed: true
+                )
                 frames.append(resized)
                 parentId = resized.id
                 data = piped
@@ -141,7 +178,7 @@ final class TfFrameHandler {
                 data = Self.applyGrayscaleFilter(bgra: data, width: w, height: h)
             }
 
-            let leaf = TfFrame(id: UUID().uuidString, width: w, height: h, bgra: data, parentId: parentId)
+            let leaf = TfFrame(width: w, height: h, bgra: data, parentId: parentId)
             frames.append(leaf)
             return PreparedFrame(frameId: leaf.id, bgra: data, width: w, height: h)
         }
@@ -173,7 +210,7 @@ final class TfFrameHandler {
             }
             let cw = Int(crop.width)
             let ch = Int(crop.height)
-            let nf = TfFrame(id: UUID().uuidString, width: cw, height: ch, bgra: cropped, parentId: workFrame.id)
+            let nf = TfFrame(width: cw, height: ch, bgra: cropped, parentId: workFrame.id)
             frames.append(nf)
             return nf
         }
@@ -188,14 +225,6 @@ final class TfFrameHandler {
     }
 
     // MARK: - BGRA
-
-    private func removeFrameTree(id: String) {
-        let children = frames.filter { $0.parentId == id }
-        for c in children {
-            removeFrameTree(id: c.id)
-        }
-        frames.removeAll { $0.id == id }
-    }
 
     private static func centerCropAspectThenScale(
         bgra: Data,
@@ -292,10 +321,31 @@ enum TfFrameError: Error {
     case resizeFailed
 }
 
-struct TfFrame {
+/// Espelha `TfFrame` no Android: fecho com `closeCalled` + `tryClose`, propagação ao `parentId` (e filhos bloqueiam fecho).
+final class TfFrame {
     let id: String
     let width: Int
     let height: Int
     let bgra: Data
     let parentId: String?
+    var closeWhenChildClosed: Bool
+    var closeCalled: Bool
+    var closed: Bool
+
+    init(
+        width: Int,
+        height: Int,
+        bgra: Data,
+        parentId: String?,
+        closeWhenChildClosed: Bool = true
+    ) {
+        self.id = UUID().uuidString
+        self.width = width
+        self.height = height
+        self.bgra = bgra
+        self.parentId = parentId
+        self.closeWhenChildClosed = closeWhenChildClosed
+        self.closeCalled = false
+        self.closed = false
+    }
 }

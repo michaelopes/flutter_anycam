@@ -42,20 +42,12 @@ final class TfModelHandler {
 
         var options = Interpreter.Options()
         options.threadCount = max(1, threads)
-
-        switch delegate {
-        case "gpu":
-            #if !targetEnvironment(simulator)
-            if let metal = try? MetalDelegate() {
-                options.addDelegate(metal)
-            }
-            #endif
-        case "xxnnpack", "nnapi":
-            break
-        default:
-            break
+        
+        if(delegate == "xxnnpack") {
+            options.isXNNPackEnabled = true;
         }
 
+    
         let interpreter = try Interpreter(modelPath: path, options: options)
         try interpreter.allocateTensors()
 
@@ -185,7 +177,11 @@ final class TfModelHandler {
         var response: [[String: Any]] = []
         resultsLock.lock()
         for item in processed {
-            let inf = InferenceResult(modelKey: modelKey, mainFrameId: prepared.frameId, output: item)
+            let inf = InferenceResult(
+                modelKey: modelKey,
+                frameIds: [InferenceResult.mainKey: prepared.frameId],
+                output: item
+            )
             results.append(inf)
             response.append(inf.toFlutterMap())
         }
@@ -194,57 +190,100 @@ final class TfModelHandler {
         return response
     }
 
-    func mainFrameId(for inferenceId: String) -> String? {
+    private func inferenceResult(byId inferenceId: String) -> InferenceResult? {
         resultsLock.lock()
-        defer { resultsLock.unlock() }
-        return results.first { $0.id == inferenceId }?.mainFrameId
+        let r = results.first { $0.id == inferenceId }
+        resultsLock.unlock()
+        return r
+    }
+
+    func mainFrameId(for inferenceId: String) -> String? {
+        inferenceResult(byId: inferenceId)?.frameIds[InferenceResult.mainKey]
     }
 
     func boxMap(for inferenceId: String) -> [String: Any]? {
-        resultsLock.lock()
-        defer { resultsLock.unlock() }
-        guard let o = results.first(where: { $0.id == inferenceId })?.output else { return nil }
+        guard let o = inferenceResult(byId: inferenceId)?.output else { return nil }
         return o["box"] as? [String: Any]
     }
 
+    /// Espelha `getScaledCroppedFrame` (Android) + `res.addScaledCroppedFrame` no primeiro pedido.
+    func getScaledCroppedFrameMap(inferenceId: String) -> [String: Any]? {
+        guard let res = inferenceResult(byId: inferenceId) else { return nil }
+        guard (res.output["box"] as? [String: Any]) != nil else { return nil }
+
+        if let eid = res.frameIds[InferenceResult.scaledCroppedKey],
+           let f = TfFrameHandler.shared.getFrameById(eid) {
+            return TfFrameHandler.shared.toFrameMap(f)
+        }
+        guard let mainId = res.frameIds[InferenceResult.mainKey],
+              let box = res.output["box"] as? [String: Any],
+              let f = TfFrameHandler.shared.newFrameCroppedById(frameId: mainId, box: box, enableScale: true) else {
+            return nil
+        }
+        res.frameIds[InferenceResult.scaledCroppedKey] = f.id
+        return TfFrameHandler.shared.toFrameMap(f)
+    }
+
+    /// Espelha `getCroppedFrame` (Android) + `addCroppedFrame`.
+    func getCroppedFrameMap(inferenceId: String) -> [String: Any]? {
+        guard let res = inferenceResult(byId: inferenceId) else { return nil }
+        guard (res.output["box"] as? [String: Any]) != nil else { return nil }
+
+        if let eid = res.frameIds[InferenceResult.croppedKey],
+           let f = TfFrameHandler.shared.getFrameById(eid) {
+            return TfFrameHandler.shared.toFrameMap(f)
+        }
+        guard let mainId = res.frameIds[InferenceResult.mainKey],
+              let box = res.output["box"] as? [String: Any],
+              let f = TfFrameHandler.shared.newFrameCroppedById(frameId: mainId, box: box, enableScale: false) else {
+            return nil
+        }
+        res.frameIds[InferenceResult.croppedKey] = f.id
+        return TfFrameHandler.shared.toFrameMap(f)
+    }
+
+    /// Espelha `InferenceResult.close()` (Android): fecha todos os `frameIds` (scaled-cropped, cropped, main) com ordem filhos → main.
     func closeInferenceResult(id: String) {
+        var toClose: [String] = []
         resultsLock.lock()
-        let mainIds = results.filter { $0.id == id }.map { $0.mainFrameId }
-        results.removeAll { $0.id == id }
+        if let r = results.first(where: { $0.id == id }) {
+            let v = r.frameIds
+            if let s = v[InferenceResult.scaledCroppedKey] { toClose.append(s) }
+            if let c = v[InferenceResult.croppedKey] { toClose.append(c) }
+            if let m = v[InferenceResult.mainKey] { toClose.append(m) }
+            for (_, fid) in v where !toClose.contains(fid) {
+                toClose.append(fid)
+            }
+            results.removeAll { $0.id == id }
+        }
         resultsLock.unlock()
-        for mid in mainIds {
-            TfFrameHandler.shared.closeFrame(mid)
+        for fid in toClose {
+            TfFrameHandler.shared.closeFrame(fid)
         }
     }
 
     func frameMapForInference(id: String, kind: FrameKind) -> [String: Any]? {
-        guard let box = boxMap(for: id) else { return nil }
-        let mainId = mainFrameId(for: id) ?? ""
-        let f: TfFrame?
         switch kind {
         case .scaledCropped:
-            f = TfFrameHandler.shared.newFrameCroppedById(frameId: mainId, box: box, enableScale: true)
+            return getScaledCroppedFrameMap(inferenceId: id)
         case .cropped:
-            f = TfFrameHandler.shared.newFrameCroppedById(frameId: mainId, box: box, enableScale: false)
+            return getCroppedFrameMap(inferenceId: id)
         case .inference:
-            f = TfFrameHandler.shared.getFrameById(mainId)
+            guard let mainId = mainFrameId(for: id),
+                  let f = TfFrameHandler.shared.getFrameById(mainId) else { return nil }
+            return TfFrameHandler.shared.toFrameMap(f)
         case .raw:
-            if let mid = mainFrameId(for: id), let leaf = TfFrameHandler.shared.getFrameById(mid) {
-                if let pid = leaf.parentId, let p = TfFrameHandler.shared.getFrameById(pid) {
-                    if let ppid = p.parentId, let raw = TfFrameHandler.shared.getFrameById(ppid) {
-                        f = raw
-                    } else {
-                        f = p
-                    }
-                } else {
-                    f = leaf
-                }
-            } else {
-                f = nil
+            guard let mid = mainFrameId(for: id), let leaf = TfFrameHandler.shared.getFrameById(mid) else {
+                return nil
             }
+            if let pid = leaf.parentId, let p = TfFrameHandler.shared.getFrameById(pid) {
+                if let ppid = p.parentId, let raw = TfFrameHandler.shared.getFrameById(ppid) {
+                    return TfFrameHandler.shared.toFrameMap(raw)
+                }
+                return TfFrameHandler.shared.toFrameMap(p)
+            }
+            return TfFrameHandler.shared.toFrameMap(leaf)
         }
-        guard let frame = f else { return nil }
-        return TfFrameHandler.shared.toFrameMap(frame)
     }
 
     enum FrameKind {
@@ -287,16 +326,17 @@ final class TfModelHandler {
                 return (0..<n).map { Float(buf[$0]) }
             }
         case .uInt8:
-            return data.map { Float($0) }
-        case .int8:
             let scale = meta.scale
             let zp = meta.zeroPoint
+            if scale != 1 || zp != 0 {
+                return data.map { (Float(Int($0)) - Float(zp)) * scale }
+            }
+            return data.map { Float($0) }
+        case .int16:
+            let n = data.count / MemoryLayout<Int16>.size
             return data.withUnsafeBytes { raw in
-                let buf = raw.bindMemory(to: Int8.self)
-                let n = data.count
-                return (0..<n).map { i in
-                    (Float(buf[i]) - Float(zp)) * scale
-                }
+                let buf = raw.bindMemory(to: Int16.self)
+                return (0..<n).map { Float(buf[$0]) }
             }
         default:
             throw NSError(domain: "TfModelHandler", code: 6, userInfo: [NSLocalizedDescriptionKey: "Output dtype não suportado"])
@@ -354,13 +394,14 @@ private struct TensorMeta {
 
     init(tensor: Tensor) {
         byteCount = tensor.data.count
+        // Tensor.DataType (TensorFlowLite Swift) não inclui int8 — só uInt8, int16, float32, etc.
+        // kTfLiteInt8 no runtime C não é mapeado no enum Swift; entradas/saídas INT8 puras podem
+        // exigir outro binding ou modelo em float/uint8. Ver: Tensor.init(type:) em Tensor.swift.
         switch tensor.dataType {
         case .float32:
             elementKind = .float32
         case .uInt8:
             elementKind = .uint8
-        case .int8:
-            elementKind = .int8
         default:
             elementKind = .float32
         }
@@ -378,16 +419,21 @@ private struct TensorMeta {
 
 // MARK: - Inference result
 
+/// Espelha `InferenceResult` no Android: `modelItemId` + `frameIds` (main, scaled-cropped, cropped) + `output.toMap()`.
 private final class InferenceResult {
+    static let mainKey = "main"
+    static let scaledCroppedKey = "scaled-cropped"
+    static let croppedKey = "cropped"
+
     let id: String
     let modelKey: String
-    let mainFrameId: String
+    var frameIds: [String: String]
     let output: [String: Any]
 
-    init(modelKey: String, mainFrameId: String, output: [String: Any]) {
+    init(modelKey: String, frameIds: [String: String], output: [String: Any]) {
         self.id = UUID().uuidString
         self.modelKey = modelKey
-        self.mainFrameId = mainFrameId
+        self.frameIds = frameIds
         self.output = output
     }
 

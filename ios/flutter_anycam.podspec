@@ -17,7 +17,7 @@ A new Flutter plugin project.
   s.source_files = ['Classes/**/*']
   s.static_framework = true
   s.dependency 'Flutter'
-  s.dependency 'TensorFlowLiteSwift', '~> 2.14.0', :subspecs => ['Core', 'Metal']
+  s.dependency 'TensorFlowLiteSwift'
 
   #s.dependency 'MobileVLCKit'
   #s.dependency 'MobileVLCKit', '~> 3.6.0'ð
