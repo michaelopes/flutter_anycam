@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import '../core/flutter_anycam_size.dart';
 import 'flutter_anycam_event_stream.dart';
+import '../tensorflow/flutter_anycam_tf_blur_roi.dart';
 import '../tensorflow/flutter_anycam_tf_delegate.dart';
 import '../tensorflow/flutter_anycam_tf_frame.dart';
 import '../tensorflow/flutter_anycam_tf_normalize.dart';
@@ -248,6 +249,54 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
   }
 
   @override
+  Future<Map<String, dynamic>?> registerTfFrameFromJpeg({
+    required Uint8List jpegBytes,
+  }) async {
+    final res = await methodChannel.invokeMethod(
+      'registerTfFrameFromJpeg',
+      {'jpegBytes': jpegBytes},
+    );
+    if (res == null) return null;
+    return Map<String, dynamic>.from(res as Map);
+  }
+
+  @override
+  Future<Map<String, dynamic>?> registerTfFrameCopy({
+    required String frameId,
+  }) async {
+    final res = await methodChannel.invokeMethod(
+      'registerTfFrameCopy',
+      {'frameId': frameId},
+    );
+    if (res == null) return null;
+    return Map<String, dynamic>.from(res as Map);
+  }
+
+  @override
+  Future<Map<String, dynamic>?> registerTfFrameCrop({
+    required String frameId,
+    required int x,
+    required int y,
+    required int width,
+    required int height,
+    FlutterAnycamSize? resizeTo,
+  }) async {
+    final res = await methodChannel.invokeMethod(
+      'registerTfFrameCrop',
+      {
+        'frameId': frameId,
+        'x': x,
+        'y': y,
+        'width': width,
+        'height': height,
+        if (resizeTo != null) 'resizeTo': resizeTo.toMap(),
+      },
+    );
+    if (res == null) return null;
+    return Map<String, dynamic>.from(res as Map);
+  }
+
+  @override
   Future<bool> closeTfFrame({
     required String frameId,
   }) async {
@@ -266,6 +315,42 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
       {"id": frameId},
     );
     return Map<String, dynamic>.from(res);
+  }
+
+  @override
+  Future<double?> getTfFrameBlurScore({
+    required String frameId,
+    FlutterAnycamTfBlurRoi? roi,
+    int sampleStep = 2,
+  }) async {
+    final res = await methodChannel.invokeMethod(
+      'getTfFrameBlurScore',
+      {
+        "id": frameId,
+        "sampleStep": sampleStep,
+        if (roi != null) "roi": roi.toMap(),
+      },
+    );
+    if (res == null) return null;
+    return (res as num).toDouble();
+  }
+
+  @override
+  Future<Map<String, dynamic>?> getTfFrameIlluminationScore({
+    required String frameId,
+    FlutterAnycamTfBlurRoi? roi,
+    int sampleStep = 2,
+  }) async {
+    final res = await methodChannel.invokeMethod(
+      'getTfFrameIlluminationScore',
+      {
+        "id": frameId,
+        "sampleStep": sampleStep,
+        if (roi != null) "roi": roi.toMap(),
+      },
+    );
+    if (res == null) return null;
+    return Map<String, dynamic>.from(res as Map);
   }
 
   @override

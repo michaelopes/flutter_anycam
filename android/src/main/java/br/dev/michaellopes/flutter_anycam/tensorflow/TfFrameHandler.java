@@ -1,6 +1,7 @@
 package br.dev.michaellopes.flutter_anycam.tensorflow;
 
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Rect;
 import android.media.Image;
 import android.util.Size;
@@ -98,8 +99,15 @@ public class TfFrameHandler {
             srcNv21Buffer.close();
             byteBufferPoolItem.release();
             srcNv21Buffer = nv21RotateBuffer;
-            if (rotation == 270) {
+            /*if (rotation == 270) {
                 srcNv21Buffer.mirrorTo(srcNv21Buffer);
+            }*/
+
+            if (rotation == 270) {
+                Nv21Buffer mirrored = Nv21Buffer.Factory.allocate(srcNv21Buffer.getWidth(), srcNv21Buffer.getHeight());
+                srcNv21Buffer.mirrorTo(mirrored);
+                srcNv21Buffer.close();
+                srcNv21Buffer = mirrored;
             }
         }
 
@@ -108,12 +116,73 @@ public class TfFrameHandler {
             long time = System.currentTimeMillis() - start;
             Log.d("addFrame_PERF", "time=" + time + "ms");
             srcNv21Buffer.close();
+            if (rotation == 0) {
+                byteBufferPoolItem.release();
+            }
             return result;
         } catch (Exception e) {
             srcNv21Buffer.close();
+            if (rotation == 0) {
+                byteBufferPoolItem.release();
+            }
             return null;
         }
 
+    }
+
+    public Map<String, Object> addFrame(byte[] nv21, int width, int height, int filter, Integer customRotationDegrees) {
+        int rotation = customRotationDegrees != null ? customRotationDegrees : 0;
+
+        RotateMode rotateMode;
+        switch (rotation) {
+            case 90:
+                rotateMode = RotateMode.ROTATE_90;
+                break;
+            case 180:
+                rotateMode = RotateMode.ROTATE_180;
+                break;
+            case 270:
+                rotateMode = RotateMode.ROTATE_270;
+                break;
+            default:
+                rotateMode = RotateMode.ROTATE_0;
+                break;
+        }
+
+        ByteBufferPoolUtil.PoolItem byteBufferPoolItem = byteBuffer.acquire(nv21.length);
+        byteBufferPoolItem.buffer.put(nv21);
+        byteBufferPoolItem.buffer.flip();
+
+        Nv21Buffer srcNv21Buffer = Nv21Buffer.Factory.wrap(byteBufferPoolItem.buffer, width, height);
+        if (rotation > 0) {
+            Nv21Buffer nv21RotateBuffer = Nv21Buffer.Factory.allocate(height, width);
+            srcNv21Buffer.rotate(nv21RotateBuffer, rotateMode);
+            srcNv21Buffer.close();
+            byteBufferPoolItem.release();
+            srcNv21Buffer = nv21RotateBuffer;
+
+            if (rotation == 270) {
+                Nv21Buffer mirrored = Nv21Buffer.Factory.allocate(srcNv21Buffer.getWidth(), srcNv21Buffer.getHeight());
+                srcNv21Buffer.mirrorTo(mirrored);
+                srcNv21Buffer.close();
+                srcNv21Buffer = mirrored;
+            }
+        }
+
+        try {
+            final Map<String, Object> result = addFrame(srcNv21Buffer, filter);
+            srcNv21Buffer.close();
+            if (rotation == 0) {
+                byteBufferPoolItem.release();
+            }
+            return result;
+        } catch (Exception e) {
+            srcNv21Buffer.close();
+            if (rotation == 0) {
+                byteBufferPoolItem.release();
+            }
+            return null;
+        }
     }
 
     public int getFramesSize() {
@@ -289,6 +358,206 @@ public class TfFrameHandler {
         synchronized (lock) {
             frames.remove(frame);
         }
+    }
+
+    public Double computeBlurScore(
+            String frameId,
+            double xMin,
+            double yMin,
+            double xMax,
+            double yMax,
+            int sampleStep
+    ) {
+        final int step = sampleStep < 1 ? 1 : sampleStep;
+        try {
+            return asyncRun((result) -> {
+                synchronized (lock) {
+                    TfFrame frame = getFrameById(frameId);
+                    if (frame == null) {
+                        result.complete(null);
+                        return;
+                    }
+
+                    int roiX = 0;
+                    int roiY = 0;
+                    int roiW = 0;
+                    int roiH = 0;
+                    if (xMax > xMin && yMax > yMin) {
+                        roiX = (int) Math.floor(xMin * frame.width);
+                        roiY = (int) Math.floor(yMin * frame.height);
+                        int roiRight = (int) Math.ceil(xMax * frame.width);
+                        int roiBottom = (int) Math.ceil(yMax * frame.height);
+                        roiW = Math.max(0, roiRight - roiX);
+                        roiH = Math.max(0, roiBottom - roiY);
+                    }
+
+                    double score = NativeUtil.laplacianVarianceArgb(
+                            frame.buffer.asBuffer(),
+                            frame.width,
+                            frame.height,
+                            roiX,
+                            roiY,
+                            roiW,
+                            roiH,
+                            step
+                    );
+                    result.complete(score);
+                }
+            });
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    public Map<String, Double> computeIlluminationScore(
+            String frameId,
+            double xMin,
+            double yMin,
+            double xMax,
+            double yMax,
+            int sampleStep
+    ) {
+        final int step = sampleStep < 1 ? 1 : sampleStep;
+        try {
+            return asyncRun((result) -> {
+                synchronized (lock) {
+                    TfFrame frame = getFrameById(frameId);
+                    if (frame == null) {
+                        result.complete(null);
+                        return;
+                    }
+
+                    int roiX = 0;
+                    int roiY = 0;
+                    int roiW = 0;
+                    int roiH = 0;
+                    if (xMax > xMin && yMax > yMin) {
+                        roiX = (int) Math.floor(xMin * frame.width);
+                        roiY = (int) Math.floor(yMin * frame.height);
+                        int roiRight = (int) Math.ceil(xMax * frame.width);
+                        int roiBottom = (int) Math.ceil(yMax * frame.height);
+                        roiW = Math.max(0, roiRight - roiX);
+                        roiH = Math.max(0, roiBottom - roiY);
+                    }
+
+                    Map<String, Double> stats = NativeUtil.illuminationStatsArgb(
+                            frame.buffer.asBuffer(),
+                            frame.width,
+                            frame.height,
+                            roiX,
+                            roiY,
+                            roiW,
+                            roiH,
+                            step
+                    );
+                    result.complete(stats);
+                }
+            });
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    public Map<String, Object> registerFrameFromJpeg(byte[] jpegBytes)
+            throws ExecutionException, InterruptedException {
+        return asyncRun((result) -> {
+            Bitmap bitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.length);
+            if (bitmap == null) {
+                result.complete(null);
+                return;
+            }
+            int w = bitmap.getWidth();
+            int h = bitmap.getHeight();
+            ArgbBuffer argbBuffer = ArgbBuffer.Factory.allocate(w, h);
+            int[] pixels = new int[w * h];
+            bitmap.getPixels(pixels, 0, w, 0, 0, w, h);
+            ByteBuffer buffer = argbBuffer.asBuffer();
+            for (int pixel : pixels) {
+                buffer.putInt(pixel);
+            }
+            bitmap.recycle();
+            TfFrame frame = new TfFrame(w, h, argbBuffer);
+            synchronized (lock) {
+                frames.add(frame);
+                result.complete(frame.toMap());
+            }
+        });
+    }
+
+    public Map<String, Object> registerFrameCopy(String frameId)
+            throws ExecutionException, InterruptedException {
+        return asyncRun((result) -> {
+            TfFrame srcFrame = getFrameById(frameId);
+            if (srcFrame == null) {
+                result.complete(null);
+                return;
+            }
+            ArgbBuffer copyBuffer = ArgbBuffer.Factory.allocate(srcFrame.width, srcFrame.height);
+            srcFrame.buffer.convertTo(copyBuffer);
+            TfFrame frame = new TfFrame(srcFrame.width, srcFrame.height, copyBuffer);
+            synchronized (lock) {
+                frames.add(frame);
+                result.complete(frame.toMap());
+            }
+        });
+    }
+
+    public Map<String, Object> registerFrameCrop(
+            String frameId,
+            int x,
+            int y,
+            int width,
+            int height,
+            Integer resizeWidth,
+            Integer resizeHeight
+    ) throws ExecutionException, InterruptedException {
+        return asyncRun((result) -> {
+            TfFrame srcFrame = getFrameById(frameId);
+            if (srcFrame == null) {
+                result.complete(null);
+                return;
+            }
+
+            int left = Math.max(0, x);
+            int top = Math.max(0, y);
+            int right = Math.min(srcFrame.width, x + width);
+            int bottom = Math.min(srcFrame.height, y + height);
+            if (right <= left || bottom <= top) {
+                result.complete(null);
+                return;
+            }
+
+            Rect crop = new Rect(left, top, right, bottom);
+            ArgbBuffer copyBuffer = ArgbBuffer.Factory.allocate(srcFrame.width, srcFrame.height);
+            srcFrame.buffer.convertTo(copyBuffer);
+            copyBuffer.setCropRect(crop);
+
+            ArgbBuffer cropBuffer = ArgbBuffer.Factory.allocate(crop.width(), crop.height());
+            copyBuffer.convertTo(cropBuffer);
+            copyBuffer.close();
+
+            ArgbBuffer targetBuffer = cropBuffer;
+            if (resizeWidth != null && resizeHeight != null
+                    && (cropBuffer.getWidth() != resizeWidth || cropBuffer.getHeight() != resizeHeight)) {
+                ArgbBuffer resizedBuffer = ArgbBuffer.Factory.allocate(resizeWidth, resizeHeight);
+                cropBuffer.scale(resizedBuffer, FilterMode.BILINEAR);
+                cropBuffer.close();
+                targetBuffer = resizedBuffer;
+            }
+
+            TfFrame frame = new TfFrame(
+                    targetBuffer.getWidth(),
+                    targetBuffer.getHeight(),
+                    srcFrame.id,
+                    targetBuffer
+            );
+            synchronized (lock) {
+                frames.add(frame);
+                result.complete(frame.toMap());
+            }
+        });
     }
 
     public byte[] getFrameJpeg(String frameId) {

@@ -6,6 +6,8 @@ import android.media.Image;
 import androidx.annotation.NonNull;
 
 import java.nio.ByteBuffer;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import io.flutter.Log;
@@ -137,6 +139,84 @@ public class NativeUtil {
             float meanR, float meanG, float meanB,
             float stdR, float stdG, float stdB
     );
+
+    private static native double laplacianVarianceArgbJNI(
+            ByteBuffer src,
+            int width,
+            int height,
+            int strideBytes,
+            int roiX,
+            int roiY,
+            int roiW,
+            int roiH,
+            int sampleStep
+    );
+
+    public static double laplacianVarianceArgb(
+            ByteBuffer src,
+            int width,
+            int height,
+            int roiX,
+            int roiY,
+            int roiW,
+            int roiH,
+            int sampleStep
+    ) {
+        return laplacianVarianceArgbJNI(
+                src,
+                width,
+                height,
+                width * 4,
+                roiX,
+                roiY,
+                roiW,
+                roiH,
+                sampleStep
+        );
+    }
+
+    private static native void illuminationStatsArgbJNI(
+            ByteBuffer src,
+            int width,
+            int height,
+            int strideBytes,
+            int roiX,
+            int roiY,
+            int roiW,
+            int roiH,
+            int sampleStep,
+            double[] outStats
+    );
+
+    public static Map<String, Double> illuminationStatsArgb(
+            ByteBuffer src,
+            int width,
+            int height,
+            int roiX,
+            int roiY,
+            int roiW,
+            int roiH,
+            int sampleStep
+    ) {
+        double[] stats = new double[3];
+        illuminationStatsArgbJNI(
+                src,
+                width,
+                height,
+                width * 4,
+                roiX,
+                roiY,
+                roiW,
+                roiH,
+                sampleStep,
+                stats
+        );
+        Map<String, Double> result = new HashMap<>();
+        result.put("mean", stats[0]);
+        result.put("darkPixelRatio", stats[1]);
+        result.put("brightPixelRatio", stats[2]);
+        return result;
+    }
 
     public static byte[] cropNV21(byte[] img, int imgWidth, @NonNull Rect cropRect) {
         // 1.5 mean 1.0 for Y and 0.25 each for U and V

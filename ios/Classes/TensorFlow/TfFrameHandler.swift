@@ -128,6 +128,167 @@ final class TfFrameHandler {
         }
     }
 
+    func registerFrameFromJpeg(_ jpeg: Data) -> [String: Any]? {
+        queue.sync {
+            guard let image = UIImage(data: jpeg), let cgImage = image.cgImage else {
+                return nil
+            }
+            let w = cgImage.width
+            let h = cgImage.height
+            var bgra = Data(count: w * h * 4)
+            bgra.withUnsafeMutableBytes { raw in
+                guard let base = raw.baseAddress else { return }
+                guard let ctx = CGContext(
+                    data: base,
+                    width: w,
+                    height: h,
+                    bitsPerComponent: 8,
+                    bytesPerRow: w * 4,
+                    space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+                        | CGBitmapInfo.byteOrder32Little.rawValue
+                ) else { return }
+                ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
+            }
+            let frame = TfFrame(width: w, height: h, bgra: bgra, parentId: nil)
+            frames.append(frame)
+            return toFrameMap(frame)
+        }
+    }
+
+    func registerFrameCopy(_ frameId: String) -> [String: Any]? {
+        queue.sync {
+            guard let src = frames.first(where: { $0.id == frameId }) else { return nil }
+            let frame = TfFrame(width: src.width, height: src.height, bgra: src.bgra, parentId: nil)
+            frames.append(frame)
+            return toFrameMap(frame)
+        }
+    }
+
+    func registerFrameCrop(
+        _ frameId: String,
+        x: Int,
+        y: Int,
+        width: Int,
+        height: Int,
+        resizeWidth: Int?,
+        resizeHeight: Int?
+    ) -> [String: Any]? {
+        queue.sync {
+            guard let src = frames.first(where: { $0.id == frameId }) else { return nil }
+            let left = max(0, x)
+            let top = max(0, y)
+            let right = min(src.width, x + width)
+            let bottom = min(src.height, y + height)
+            guard right > left, bottom > top else { return nil }
+
+            let rect = CGRect(
+                x: left,
+                y: top,
+                width: right - left,
+                height: bottom - top
+            )
+            guard var cropped = Self.cropBgra(
+                bgra: src.bgra,
+                width: src.width,
+                height: src.height,
+                rect: rect
+            ) else {
+                return nil
+            }
+
+            var cw = Int(rect.width)
+            var ch = Int(rect.height)
+            if let resizeWidth, let resizeHeight,
+               resizeWidth > 0, resizeHeight > 0,
+               (cw != resizeWidth || ch != resizeHeight) {
+                guard let scaled = Self.scaleBgraBilinear(
+                    bgra: cropped,
+                    width: cw,
+                    height: ch,
+                    dstWidth: resizeWidth,
+                    dstHeight: resizeHeight
+                ) else {
+                    return nil
+                }
+                cropped = scaled
+                cw = resizeWidth
+                ch = resizeHeight
+            }
+
+            let frame = TfFrame(width: cw, height: ch, bgra: cropped, parentId: src.id)
+            frames.append(frame)
+            return toFrameMap(frame)
+        }
+    }
+
+    func computeBlurScore(
+        frameId: String,
+        xMin: Double,
+        yMin: Double,
+        xMax: Double,
+        yMax: Double,
+        sampleStep: Int
+    ) -> Double? {
+        queue.sync {
+            guard let f = frames.first(where: { $0.id == frameId }) else { return nil }
+
+            var roi: CGRect?
+            if xMax > xMin, yMax > yMin {
+                roi = CGRect(
+                    x: xMin * Double(f.width),
+                    y: yMin * Double(f.height),
+                    width: (xMax - xMin) * Double(f.width),
+                    height: (yMax - yMin) * Double(f.height)
+                )
+            }
+
+            return BlurUtil.laplacianVariance(
+                bgra: f.bgra,
+                width: f.width,
+                height: f.height,
+                roi: roi,
+                sampleStep: sampleStep
+            )
+        }
+    }
+
+    func computeIlluminationScore(
+        frameId: String,
+        xMin: Double,
+        yMin: Double,
+        xMax: Double,
+        yMax: Double,
+        sampleStep: Int
+    ) -> [String: Double]? {
+        queue.sync {
+            guard let f = frames.first(where: { $0.id == frameId }) else { return nil }
+
+            var roi: CGRect?
+            if xMax > xMin, yMax > yMin {
+                roi = CGRect(
+                    x: xMin * Double(f.width),
+                    y: yMin * Double(f.height),
+                    width: (xMax - xMin) * Double(f.width),
+                    height: (yMax - yMin) * Double(f.height)
+                )
+            }
+
+            let stats = IlluminationUtil.stats(
+                bgra: f.bgra,
+                width: f.width,
+                height: f.height,
+                roi: roi,
+                sampleStep: sampleStep
+            )
+            return [
+                "mean": stats.mean,
+                "darkPixelRatio": stats.darkPixelRatio,
+                "brightPixelRatio": stats.brightPixelRatio,
+            ]
+        }
+    }
+
     // MARK: - Tensor
 
     struct PreparedFrame {

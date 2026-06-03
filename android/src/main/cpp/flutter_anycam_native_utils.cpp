@@ -629,10 +629,19 @@ Java_br_dev_michaellopes_flutter_1anycam_utils_NativeUtil_normalizeNative(
 
         for (int i = 0; i < pixelCount; i++) {
             uint32_t p = src[i];
+            const float r = lutR[(p >> 16) & 0xFF];
+            const float g = lutG[(p >> 8) & 0xFF];
+            const float b = lutB[p & 0xFF];
 
-            out[i * 3 + 0] = lutR[(p >> 16) & 0xFF];
-            out[i * 3 + 1] = lutG[(p >> 8) & 0xFF];
-            out[i * 3 + 2] = lutB[p & 0xFF];
+            if (normalization == 5) {
+                out[i * 3 + 0] = b;
+                out[i * 3 + 1] = g;
+                out[i * 3 + 2] = r;
+            } else {
+                out[i * 3 + 0] = r;
+                out[i * 3 + 1] = g;
+                out[i * 3 + 2] = b;
+            }
         }
     }
     else if (dataType == 1) {
@@ -783,3 +792,326 @@ Java_br_dev_michaellopes_flutter_1anycam_utils_NativeUtil_normalizeNative(
 //
 //    return result;
 //}
+
+static inline int luminanceFromArgb(uint32_t pixel) {
+    const int r = (pixel >> 16) & 0xFF;
+    const int g = (pixel >> 8) & 0xFF;
+    const int b = pixel & 0xFF;
+    return (77 * r + 150 * g + 29 * b) >> 8;
+}
+
+static inline int luminanceFromBgra(const uint8_t *pixel) {
+    const int b = pixel[0];
+    const int g = pixel[1];
+    const int r = pixel[2];
+    return (77 * r + 150 * g + 29 * b) >> 8;
+}
+
+static double laplacianVarianceArgb8888(
+        const uint8_t *base,
+        int width,
+        int height,
+        int strideBytes,
+        int roiX,
+        int roiY,
+        int roiW,
+        int roiH,
+        int sampleStep) {
+
+    roiX = std::max(0, std::min(roiX, width - 1));
+    roiY = std::max(0, std::min(roiY, height - 1));
+    if (roiW <= 0) roiW = width - roiX;
+    if (roiH <= 0) roiH = height - roiY;
+    roiW = std::min(roiW, width - roiX);
+    roiH = std::min(roiH, height - roiY);
+
+    if (roiW < 3 || roiH < 3) return 0.0;
+    if (sampleStep < 1) sampleStep = 1;
+
+    const int xStart = roiX + 1;
+    const int yStart = roiY + 1;
+    const int xEnd = roiX + roiW - 1;
+    const int yEnd = roiY + roiH - 1;
+
+    auto lumAt = [&](int x, int y) -> int {
+        const uint32_t *row = reinterpret_cast<const uint32_t *>(base + y * strideBytes);
+        return luminanceFromArgb(row[x]);
+    };
+
+    double sum = 0.0;
+    double sumSq = 0.0;
+    long count = 0;
+
+    for (int y = yStart; y < yEnd; y += sampleStep) {
+        for (int x = xStart; x < xEnd; x += sampleStep) {
+            const int c = lumAt(x, y);
+            const int l = lumAt(x - 1, y);
+            const int r = lumAt(x + 1, y);
+            const int t = lumAt(x, y - 1);
+            const int b = lumAt(x, y + 1);
+            const int lap = 4 * c - l - r - t - b;
+            sum += lap;
+            sumSq += static_cast<double>(lap) * lap;
+            count++;
+        }
+    }
+
+    if (count == 0) return 0.0;
+    const double mean = sum / count;
+    return (sumSq / count) - (mean * mean);
+}
+
+static double laplacianVarianceBgra8888(
+        const uint8_t *base,
+        int width,
+        int height,
+        int strideBytes,
+        int roiX,
+        int roiY,
+        int roiW,
+        int roiH,
+        int sampleStep) {
+
+    roiX = std::max(0, std::min(roiX, width - 1));
+    roiY = std::max(0, std::min(roiY, height - 1));
+    if (roiW <= 0) roiW = width - roiX;
+    if (roiH <= 0) roiH = height - roiY;
+    roiW = std::min(roiW, width - roiX);
+    roiH = std::min(roiH, height - roiY);
+
+    if (roiW < 3 || roiH < 3) return 0.0;
+    if (sampleStep < 1) sampleStep = 1;
+
+    const int xStart = roiX + 1;
+    const int yStart = roiY + 1;
+    const int xEnd = roiX + roiW - 1;
+    const int yEnd = roiY + roiH - 1;
+
+    auto lumAt = [&](int x, int y) -> int {
+        const uint8_t *pixel = base + y * strideBytes + x * 4;
+        return luminanceFromBgra(pixel);
+    };
+
+    double sum = 0.0;
+    double sumSq = 0.0;
+    long count = 0;
+
+    for (int y = yStart; y < yEnd; y += sampleStep) {
+        for (int x = xStart; x < xEnd; x += sampleStep) {
+            const int c = lumAt(x, y);
+            const int l = lumAt(x - 1, y);
+            const int r = lumAt(x + 1, y);
+            const int t = lumAt(x, y - 1);
+            const int b = lumAt(x, y + 1);
+            const int lap = 4 * c - l - r - t - b;
+            sum += lap;
+            sumSq += static_cast<double>(lap) * lap;
+            count++;
+        }
+    }
+
+    if (count == 0) return 0.0;
+    const double mean = sum / count;
+    return (sumSq / count) - (mean * mean);
+}
+
+extern "C"
+JNIEXPORT jdouble JNICALL
+Java_br_dev_michaellopes_flutter_1anycam_utils_NativeUtil_laplacianVarianceArgbJNI(
+        JNIEnv *env,
+        jclass,
+        jobject srcBuffer,
+        jint width,
+        jint height,
+        jint strideBytes,
+        jint roiX,
+        jint roiY,
+        jint roiW,
+        jint roiH,
+        jint sampleStep) {
+
+    auto *src = reinterpret_cast<uint8_t *>(env->GetDirectBufferAddress(srcBuffer));
+    if (!src) return 0.0;
+
+    const int stride = strideBytes > 0 ? strideBytes : width * 4;
+    return laplacianVarianceArgb8888(
+            src,
+            width,
+            height,
+            stride,
+            roiX,
+            roiY,
+            roiW,
+            roiH,
+            sampleStep
+    );
+}
+
+static void illuminationStatsArgb8888(
+        const uint8_t *base,
+        int width,
+        int height,
+        int strideBytes,
+        int roiX,
+        int roiY,
+        int roiW,
+        int roiH,
+        int sampleStep,
+        double *outMean,
+        double *outDarkRatio,
+        double *outBrightRatio) {
+
+    const int kDarkLum = 45;
+    const int kBrightLum = 210;
+
+    roiX = std::max(0, std::min(roiX, width - 1));
+    roiY = std::max(0, std::min(roiY, height - 1));
+    if (roiW <= 0) roiW = width - roiX;
+    if (roiH <= 0) roiH = height - roiY;
+    roiW = std::min(roiW, width - roiX);
+    roiH = std::min(roiH, height - roiY);
+
+    if (roiW < 1 || roiH < 1) {
+        *outMean = 0.0;
+        *outDarkRatio = 0.0;
+        *outBrightRatio = 0.0;
+        return;
+    }
+    if (sampleStep < 1) sampleStep = 1;
+
+    const int xEnd = roiX + roiW;
+    const int yEnd = roiY + roiH;
+
+    double sum = 0.0;
+    long darkCount = 0;
+    long brightCount = 0;
+    long count = 0;
+
+    for (int y = roiY; y < yEnd; y += sampleStep) {
+        const uint32_t *row = reinterpret_cast<const uint32_t *>(base + y * strideBytes);
+        for (int x = roiX; x < xEnd; x += sampleStep) {
+            const int lum = luminanceFromArgb(row[x]);
+            sum += lum;
+            if (lum < kDarkLum) darkCount++;
+            if (lum > kBrightLum) brightCount++;
+            count++;
+        }
+    }
+
+    if (count == 0) {
+        *outMean = 0.0;
+        *outDarkRatio = 0.0;
+        *outBrightRatio = 0.0;
+        return;
+    }
+
+    *outMean = sum / count;
+    *outDarkRatio = static_cast<double>(darkCount) / count;
+    *outBrightRatio = static_cast<double>(brightCount) / count;
+}
+
+static void illuminationStatsBgra8888(
+        const uint8_t *base,
+        int width,
+        int height,
+        int strideBytes,
+        int roiX,
+        int roiY,
+        int roiW,
+        int roiH,
+        int sampleStep,
+        double *outMean,
+        double *outDarkRatio,
+        double *outBrightRatio) {
+
+    const int kDarkLum = 45;
+    const int kBrightLum = 210;
+
+    roiX = std::max(0, std::min(roiX, width - 1));
+    roiY = std::max(0, std::min(roiY, height - 1));
+    if (roiW <= 0) roiW = width - roiX;
+    if (roiH <= 0) roiH = height - roiY;
+    roiW = std::min(roiW, width - roiX);
+    roiH = std::min(roiH, height - roiY);
+
+    if (roiW < 1 || roiH < 1) {
+        *outMean = 0.0;
+        *outDarkRatio = 0.0;
+        *outBrightRatio = 0.0;
+        return;
+    }
+    if (sampleStep < 1) sampleStep = 1;
+
+    const int xEnd = roiX + roiW;
+    const int yEnd = roiY + roiH;
+
+    double sum = 0.0;
+    long darkCount = 0;
+    long brightCount = 0;
+    long count = 0;
+
+    for (int y = roiY; y < yEnd; y += sampleStep) {
+        for (int x = roiX; x < xEnd; x += sampleStep) {
+            const uint8_t *pixel = base + y * strideBytes + x * 4;
+            const int lum = luminanceFromBgra(pixel);
+            sum += lum;
+            if (lum < kDarkLum) darkCount++;
+            if (lum > kBrightLum) brightCount++;
+            count++;
+        }
+    }
+
+    if (count == 0) {
+        *outMean = 0.0;
+        *outDarkRatio = 0.0;
+        *outBrightRatio = 0.0;
+        return;
+    }
+
+    *outMean = sum / count;
+    *outDarkRatio = static_cast<double>(darkCount) / count;
+    *outBrightRatio = static_cast<double>(brightCount) / count;
+}
+
+extern "C"
+JNIEXPORT void JNICALL
+Java_br_dev_michaellopes_flutter_1anycam_utils_NativeUtil_illuminationStatsArgbJNI(
+        JNIEnv *env,
+        jclass,
+        jobject srcBuffer,
+        jint width,
+        jint height,
+        jint strideBytes,
+        jint roiX,
+        jint roiY,
+        jint roiW,
+        jint roiH,
+        jint sampleStep,
+        jdoubleArray outStats) {
+
+    auto *src = reinterpret_cast<uint8_t *>(env->GetDirectBufferAddress(srcBuffer));
+    if (!src || outStats == nullptr) return;
+
+    double mean = 0.0;
+    double darkRatio = 0.0;
+    double brightRatio = 0.0;
+    const int stride = strideBytes > 0 ? strideBytes : width * 4;
+
+    illuminationStatsArgb8888(
+            src,
+            width,
+            height,
+            stride,
+            roiX,
+            roiY,
+            roiW,
+            roiH,
+            sampleStep,
+            &mean,
+            &darkRatio,
+            &brightRatio
+    );
+
+    jdouble stats[3] = {mean, darkRatio, brightRatio};
+    env->SetDoubleArrayRegion(outStats, 0, 3, stats);
+}

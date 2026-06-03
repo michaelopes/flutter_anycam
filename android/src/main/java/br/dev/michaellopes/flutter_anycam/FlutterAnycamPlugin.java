@@ -316,6 +316,66 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
                 });
                 break;
             }
+            case "registerTfFrameFromJpeg": {
+                Map<String, Object> data = (Map<String, Object>) call.arguments;
+                byte[] jpegBytes = (byte[]) data.get("jpegBytes");
+                try {
+                    Map<String, Object> frameMap =
+                            TfFrameHandler.getInstance().registerFrameFromJpeg(jpegBytes);
+                    uiHandler.post(() -> {
+                        result.success(frameMap);
+                    });
+                } catch (ExecutionException | InterruptedException e) {
+                    uiHandler.post(() -> {
+                        result.error("registerTfFrameFromJpeg", e.getMessage(), null);
+                    });
+                }
+                break;
+            }
+            case "registerTfFrameCopy": {
+                Map<String, Object> data = (Map<String, Object>) call.arguments;
+                String frameId = (String) data.get("frameId");
+                try {
+                    Map<String, Object> frameMap =
+                            TfFrameHandler.getInstance().registerFrameCopy(frameId);
+                    uiHandler.post(() -> {
+                        result.success(frameMap);
+                    });
+                } catch (ExecutionException | InterruptedException e) {
+                    uiHandler.post(() -> {
+                        result.error("registerTfFrameCopy", e.getMessage(), null);
+                    });
+                }
+                break;
+            }
+            case "registerTfFrameCrop": {
+                Map<String, Object> data = (Map<String, Object>) call.arguments;
+                String frameId = (String) data.get("frameId");
+                int x = ((Number) data.get("x")).intValue();
+                int y = ((Number) data.get("y")).intValue();
+                int width = ((Number) data.get("width")).intValue();
+                int height = ((Number) data.get("height")).intValue();
+                Integer resizeWidth = null;
+                Integer resizeHeight = null;
+                Object resizeTo = data.get("resizeTo");
+                if (resizeTo instanceof Map) {
+                    resizeWidth = (Integer) ((Map<?, ?>) resizeTo).get("width");
+                    resizeHeight = (Integer) ((Map<?, ?>) resizeTo).get("height");
+                }
+                try {
+                    Map<String, Object> frameMap = TfFrameHandler.getInstance().registerFrameCrop(
+                            frameId, x, y, width, height, resizeWidth, resizeHeight
+                    );
+                    uiHandler.post(() -> {
+                        result.success(frameMap);
+                    });
+                } catch (ExecutionException | InterruptedException e) {
+                    uiHandler.post(() -> {
+                        result.error("registerTfFrameCrop", e.getMessage(), null);
+                    });
+                }
+                break;
+            }
             case "getTfFrameJpeg": {
                 Map<String, Object> fdata = (Map<String, Object>) call.arguments;
                 String fid = (String) fdata.get("id");
@@ -325,6 +385,52 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
                         put("bytes", bytes);
                     }});
                 });
+                break;
+            }
+            case "getTfFrameBlurScore": {
+                Map<String, Object> fdata = (Map<String, Object>) call.arguments;
+                String fid = (String) fdata.get("id");
+                Integer sampleStep = fdata.get("sampleStep") != null
+                        ? ((Number) fdata.get("sampleStep")).intValue()
+                        : 2;
+                double xMin = -1;
+                double yMin = -1;
+                double xMax = -1;
+                double yMax = -1;
+                if (fdata.get("roi") instanceof Map) {
+                    Map<?, ?> roi = (Map<?, ?>) fdata.get("roi");
+                    if (roi.get("xMin") != null) xMin = ((Number) roi.get("xMin")).doubleValue();
+                    if (roi.get("yMin") != null) yMin = ((Number) roi.get("yMin")).doubleValue();
+                    if (roi.get("xMax") != null) xMax = ((Number) roi.get("xMax")).doubleValue();
+                    if (roi.get("yMax") != null) yMax = ((Number) roi.get("yMax")).doubleValue();
+                }
+                Double score = TfFrameHandler.getInstance().computeBlurScore(
+                        fid, xMin, yMin, xMax, yMax, sampleStep
+                );
+                uiHandler.post(() -> result.success(score));
+                break;
+            }
+            case "getTfFrameIlluminationScore": {
+                Map<String, Object> fdata = (Map<String, Object>) call.arguments;
+                String fid = (String) fdata.get("id");
+                Integer sampleStep = fdata.get("sampleStep") != null
+                        ? ((Number) fdata.get("sampleStep")).intValue()
+                        : 2;
+                double xMin = -1;
+                double yMin = -1;
+                double xMax = -1;
+                double yMax = -1;
+                if (fdata.get("roi") instanceof Map) {
+                    Map<?, ?> roi = (Map<?, ?>) fdata.get("roi");
+                    if (roi.get("xMin") != null) xMin = ((Number) roi.get("xMin")).doubleValue();
+                    if (roi.get("yMin") != null) yMin = ((Number) roi.get("yMin")).doubleValue();
+                    if (roi.get("xMax") != null) xMax = ((Number) roi.get("xMax")).doubleValue();
+                    if (roi.get("yMax") != null) yMax = ((Number) roi.get("yMax")).doubleValue();
+                }
+                Map<String, Double> stats = TfFrameHandler.getInstance().computeIlluminationScore(
+                        fid, xMin, yMin, xMax, yMax, sampleStep
+                );
+                uiHandler.post(() -> result.success(stats));
                 break;
             }
             case "closeTfInferenceResult": {

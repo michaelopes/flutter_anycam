@@ -3,6 +3,7 @@ enum FlutterAnycamTfNormalize {
   custom("custom"),
   imageNet("imageNet"),
   simple("simple"),
+  bgr("bgr"),
   none("none");
 
   final String value;

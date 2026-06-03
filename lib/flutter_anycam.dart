@@ -17,6 +17,8 @@ export 'src/core/flutter_anycam_extensions.dart';
 //TENSORFLOW
 export 'src/tensorflow/flutter_anycam_tf_delegate.dart';
 export 'src/tensorflow/flutter_anycam_tf_frame.dart';
+export 'src/tensorflow/flutter_anycam_tf_blur_roi.dart';
+export 'src/tensorflow/flutter_anycam_tf_illumination_score.dart';
 export 'src/tensorflow/flutter_anycam_tf_model.dart';
 export 'src/tensorflow/flutter_anycam_tf_session.dart';
 export 'src/tensorflow/flutter_anycam_tf_widget.dart';

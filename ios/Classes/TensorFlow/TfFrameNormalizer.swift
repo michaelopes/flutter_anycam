@@ -19,6 +19,7 @@ enum TfNormalizeMode: String {
     case simple = "simple"
     case centered = "centered"
     case imagenet = "imagenet"
+    case bgr = "bgr"
 }
 
 final class TfFrameNormalizer {
@@ -117,7 +118,7 @@ final class TfFrameNormalizer {
             offR = -0.485 / 0.229
             offG = -0.456 / 0.224
             offB = -0.406 / 0.225
-        case .none:
+        case .none, .bgr:
             break
         }
 
@@ -127,7 +128,14 @@ final class TfFrameNormalizer {
                 let b = Float(src[o])
                 let g = Float(src[o + 1])
                 let r = Float(src[o + 2])
-                writer(r * scaleR + offR, g * scaleG + offG, b * scaleB + offB)
+                let nr = r * scaleR + offR
+                let ng = g * scaleG + offG
+                let nb = b * scaleB + offB
+                if mode == .bgr {
+                    writer(nb, ng, nr)
+                } else {
+                    writer(nr, ng, nb)
+                }
             }
         }
     }

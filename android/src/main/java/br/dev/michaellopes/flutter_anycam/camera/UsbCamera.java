@@ -23,8 +23,8 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 
+import br.dev.michaellopes.flutter_anycam.tensorflow.TfFrameHandler;
 import br.dev.michaellopes.flutter_anycam.utils.ContextUtil;
-import br.dev.michaellopes.flutter_anycam.utils.DeviceCameraUtils;
 import br.dev.michaellopes.flutter_anycam.utils.FrameRateLimiterUtil;
 import io.flutter.view.TextureRegistry;
 
@@ -40,6 +40,7 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
     private android.util.Size size;
 
     private volatile boolean processing = false;
+    private volatile boolean disposed = false;
 
     private ExecutorService mainExecutor;
 
@@ -71,14 +72,32 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
 
     private void processFrame(FrameTask task) {
         try {
-            Map<String, Object> imageData = imageAnalysisUtil.usbFrameToNV21Map(
-                    task.frame,
-                    task.width,
-                    task.height,
-                    resizeFrame,
-                    filter,
-                    task.rotation);
-            onVideoFrameReceived(imageData);
+            if (disposed) {
+                return;
+            }
+            Map<String, Object> frameMap;
+            if (isStandard()) {
+                frameMap = imageAnalysisUtil.usbFrameToNV21Map(
+                        task.frame,
+                        task.width,
+                        task.height,
+                        resizeFrame,
+                        filter,
+                        task.rotation);
+            } else {
+                byte[] nv21 = new byte[task.frame.remaining()];
+                ByteBuffer frameCopy = task.frame.duplicate();
+                frameCopy.get(nv21);
+                frameMap = TfFrameHandler.getInstance().addFrame(
+                        nv21,
+                        task.width,
+                        task.height,
+                        filter,
+                        task.rotation);
+            }
+            if (frameMap != null && !disposed) {
+                onVideoFrameReceived(frameMap);
+            }
         } catch (Exception e) {
             e.printStackTrace();
             onFailed(e.getMessage());
@@ -87,12 +106,15 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
 
 
     private void startProcessingWorker() {
+        if (disposed) {
+            return;
+        }
         processing = true;
         if (mainExecutor == null) {
             mainExecutor = Executors.newSingleThreadExecutor();
         }
         mainExecutor.execute(() -> {
-            while (!Thread.currentThread().isInterrupted()) {
+            while (!Thread.currentThread().isInterrupted() && !disposed) {
                 try {
                     FrameTask task = frameQueue.poll(100, TimeUnit.MILLISECONDS);
                     if (task != null) {
@@ -108,7 +130,7 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
                 }
             }
             processing = false;
-            if (!frameQueue.isEmpty()) {
+            if (!frameQueue.isEmpty() && !disposed) {
                 startProcessingWorker();
             }
         });
@@ -285,6 +307,7 @@ public class UsbCamera extends BaseCamera implements IFrameCallback, USBMonitor.
 
     @Override
     public void dispose() {
+        disposed = true;
 
         synchronized (bufferLock) {
             reusableFrameBuffer = null;

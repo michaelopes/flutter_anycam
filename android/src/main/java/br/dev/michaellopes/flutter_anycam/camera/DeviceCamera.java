@@ -46,6 +46,7 @@ import io.flutter.view.TextureRegistry;
 public class DeviceCamera extends BaseCamera {
 
     private volatile boolean processing = false;
+    private volatile boolean disposed = false;
 
     private final BlockingQueue<ImageProxy> frameQueue = new LinkedBlockingQueue<>(2);
 
@@ -60,6 +61,10 @@ public class DeviceCamera extends BaseCamera {
     FrameRateLimiterUtil<ImageProxy> limiter = new FrameRateLimiterUtil<ImageProxy>(getFps()) {
         @Override
         protected void onFrameLimited(ImageProxy image) {
+            if (disposed) {
+                image.close();
+                return;
+            }
             boolean added = frameQueue.offer(image);
             if (added && !processing) {
                 startProcessingWorker();
@@ -203,7 +208,7 @@ public class DeviceCamera extends BaseCamera {
                     flutterSurface,
                     Executors.newSingleThreadExecutor(),
                     (result) -> {
-                        //   flutterSurface.release();
+                        flutterSurface.release();
                         int resultCode = result.getResultCode();
                         switch (resultCode) {
                             case SurfaceRequest.Result.RESULT_REQUEST_CANCELLED:
@@ -222,12 +227,33 @@ public class DeviceCamera extends BaseCamera {
 
     @Override
     public void dispose() {
+        disposed = true;
+
         if (imageAnalysis != null) {
             imageAnalysis.clearAnalyzer();
+            imageAnalysis = null;
+        }
+
+        ImageProxy pending;
+        while ((pending = frameQueue.poll()) != null) {
+            pending.close();
         }
 
         cameraExecutor.shutdown();
         queueExecutor.shutdown();
+
+        try {
+            if (!cameraExecutor.awaitTermination(2, TimeUnit.SECONDS)) {
+                cameraExecutor.shutdownNow();
+            }
+            if (!queueExecutor.awaitTermination(3, TimeUnit.SECONDS)) {
+                queueExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            cameraExecutor.shutdownNow();
+            queueExecutor.shutdownNow();
+        }
 
         DeviceCameraUtils.getInstance().dispose(cameraSelector);
         super.dispose();
@@ -241,9 +267,12 @@ public class DeviceCamera extends BaseCamera {
     }
 
     private void startProcessingWorker() {
+        if (disposed) {
+            return;
+        }
         processing = true;
         queueExecutor.execute(() -> {
-            while (!Thread.currentThread().isInterrupted()) {
+            while (!Thread.currentThread().isInterrupted() && !disposed) {
                 try {
                     ImageProxy task = frameQueue.poll(100, TimeUnit.MILLISECONDS);
                     if (task != null) {
@@ -259,7 +288,7 @@ public class DeviceCamera extends BaseCamera {
                 }
             }
             processing = false;
-            if (!frameQueue.isEmpty()) {
+            if (!frameQueue.isEmpty() && !disposed) {
                 startProcessingWorker();
             }
         });
@@ -267,6 +296,9 @@ public class DeviceCamera extends BaseCamera {
 
     public void analyze(@NonNull ImageProxy image) {
         try {
+            if (disposed) {
+                return;
+            }
             Map<String, Object> frameMap;
             if (isStandard()) {
                 frameMap = imageAnalysisUtil.imageProxyToNV21Map(image, resizeFrame, filter, getCustomRotationDegrees());
@@ -274,7 +306,9 @@ public class DeviceCamera extends BaseCamera {
                 frameMap = TfFrameHandler.getInstance().addFrame(image, resizeFrame, filter, getCustomRotationDegrees());
             }
 
-            onVideoFrameReceived(frameMap);
+            if (frameMap != null && !disposed) {
+                onVideoFrameReceived(frameMap);
+            }
         } catch (Exception e) {
             throw new RuntimeException(e);
         } finally {

@@ -330,8 +330,6 @@ public class TfFrameNormalizer {
         );
 
         output.rewind();
-        item.release();
-       // src.clear();
         return item;
     }
 
@@ -345,6 +343,8 @@ public class TfFrameNormalizer {
                 return 2;
             case "custom":
                 return 3;
+            case "bgr":
+                return 5;
             default:
                 return 4;
         }

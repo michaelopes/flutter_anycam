@@ -9,6 +9,7 @@ import androidx.annotation.Nullable;
 import com.alexvas.rtsp.RtspClient;
 import com.alexvas.utils.NetUtils;
 
+import br.dev.michaellopes.flutter_anycam.tensorflow.TfFrameHandler;
 import br.dev.michaellopes.flutter_anycam.utils.RtspDecoderUtil;
 import io.flutter.view.TextureRegistry;
 
@@ -29,6 +30,7 @@ public class RTSPCamera extends BaseCamera {
 
 
     private final AtomicBoolean stopped = new AtomicBoolean(true);
+    private volatile boolean disposed = false;
     private final ExecutorService executor;
 
     CompletableFuture<Map<String, Object>> connectionFuture = new CompletableFuture<>();
@@ -47,14 +49,37 @@ public class RTSPCamera extends BaseCamera {
 
         @Override
         public void onYuvFrame(RtspDecoderUtil.YuvFrame frame, RtspDecoderUtil.YuvFrame rawFrame) {
-            Map<String, Object> imageData = imageAnalysisUtil.rtspFrameToNV21Map(frame.nv21, frame.width, frame.height, filter, getCustomRotationDegrees());
-
-            if(rawFrame != null) {
-                Map<String, Object> rawData = imageAnalysisUtil.rtspFrameToNV21Map(rawFrame.nv21, rawFrame.width, rawFrame.height, 0, getCustomRotationDegrees());
-                imageData.put("rawFrame", rawData);
+            if (disposed) {
+                return;
             }
-
-            onVideoFrameReceived(imageData);
+            Map<String, Object> frameMap;
+            if (isStandard()) {
+                frameMap = imageAnalysisUtil.rtspFrameToNV21Map(
+                        frame.nv21,
+                        frame.width,
+                        frame.height,
+                        filter,
+                        getCustomRotationDegrees());
+                if (rawFrame != null) {
+                    Map<String, Object> rawData = imageAnalysisUtil.rtspFrameToNV21Map(
+                            rawFrame.nv21,
+                            rawFrame.width,
+                            rawFrame.height,
+                            0,
+                            getCustomRotationDegrees());
+                    frameMap.put("rawFrame", rawData);
+                }
+            } else {
+                frameMap = TfFrameHandler.getInstance().addFrame(
+                        frame.nv21,
+                        frame.width,
+                        frame.height,
+                        filter,
+                        getCustomRotationDegrees());
+            }
+            if (frameMap != null && !disposed) {
+                onVideoFrameReceived(frameMap);
+            }
         }
     }, e -> onFailed(e.getMessage()));
 
@@ -163,6 +188,7 @@ public class RTSPCamera extends BaseCamera {
 
     @Override
     public void dispose() {
+        disposed = true;
         stopped.set(true);
         rtspDecoder.dispose();
         executor.shutdownNow();

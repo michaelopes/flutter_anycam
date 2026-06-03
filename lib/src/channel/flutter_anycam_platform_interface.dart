@@ -8,6 +8,7 @@ import '../core/flutter_anycam_filter.dart';
 import '../core/flutter_anycam_size.dart';
 import '../core/flutter_anycam_stream_listener.dart';
 import '../core/flutter_anycam_typedefs.dart';
+import '../tensorflow/flutter_anycam_tf_blur_roi.dart';
 import '../tensorflow/flutter_anycam_tf_delegate.dart';
 import '../tensorflow/flutter_anycam_tf_frame.dart';
 import '../tensorflow/flutter_anycam_tf_normalize.dart';
@@ -135,6 +136,31 @@ abstract class FlutterAnycamPlatform extends PlatformInterface {
     throw UnimplementedError('disposeTFModel() has not been implemented.');
   }
 
+  Future<Map<String, dynamic>?> registerTfFrameFromJpeg({
+    required Uint8List jpegBytes,
+  }) {
+    throw UnimplementedError(
+      'registerTfFrameFromJpeg() has not been implemented.',
+    );
+  }
+
+  Future<Map<String, dynamic>?> registerTfFrameCopy({
+    required String frameId,
+  }) {
+    throw UnimplementedError('registerTfFrameCopy() has not been implemented.');
+  }
+
+  Future<Map<String, dynamic>?> registerTfFrameCrop({
+    required String frameId,
+    required int x,
+    required int y,
+    required int width,
+    required int height,
+    FlutterAnycamSize? resizeTo,
+  }) {
+    throw UnimplementedError('registerTfFrameCrop() has not been implemented.');
+  }
+
   Future<bool> closeTfFrame({
     required String frameId,
   }) {
@@ -145,6 +171,24 @@ abstract class FlutterAnycamPlatform extends PlatformInterface {
     required String frameId,
   }) {
     throw UnimplementedError('getTfFrameJpeg() has not been implemented.');
+  }
+
+  Future<double?> getTfFrameBlurScore({
+    required String frameId,
+    FlutterAnycamTfBlurRoi? roi,
+    int sampleStep = 2,
+  }) {
+    throw UnimplementedError('getTfFrameBlurScore() has not been implemented.');
+  }
+
+  Future<Map<String, dynamic>?> getTfFrameIlluminationScore({
+    required String frameId,
+    FlutterAnycamTfBlurRoi? roi,
+    int sampleStep = 2,
+  }) {
+    throw UnimplementedError(
+      'getTfFrameIlluminationScore() has not been implemented.',
+    );
   }
 
   Future<bool> closeTfInferenceResult({

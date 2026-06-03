@@ -190,6 +190,101 @@ public class FlutterAnycamPlugin: NSObject, FlutterPlugin {
                 result(nil)
             }
             break
+        case "registerTfFrameFromJpeg":
+            guard let data = call.arguments as? [String: Any],
+                  let typed = data["jpegBytes"] as? FlutterStandardTypedData else {
+                result(nil)
+                return
+            }
+            result(TfFrameHandler.shared.registerFrameFromJpeg(typed.data))
+            break
+        case "registerTfFrameCopy":
+            guard let data = call.arguments as? [String: Any],
+                  let frameId = data["frameId"] as? String else {
+                result(nil)
+                return
+            }
+            result(TfFrameHandler.shared.registerFrameCopy(frameId))
+            break
+        case "registerTfFrameCrop":
+            guard let data = call.arguments as? [String: Any],
+                  let frameId = data["frameId"] as? String,
+                  let x = data["x"] as? NSNumber,
+                  let y = data["y"] as? NSNumber,
+                  let width = data["width"] as? NSNumber,
+                  let height = data["height"] as? NSNumber else {
+                result(nil)
+                return
+            }
+            var resizeWidth: Int?
+            var resizeHeight: Int?
+            if let resizeTo = data["resizeTo"] as? [String: Any] {
+                resizeWidth = (resizeTo["width"] as? NSNumber)?.intValue
+                resizeHeight = (resizeTo["height"] as? NSNumber)?.intValue
+            }
+            result(
+                TfFrameHandler.shared.registerFrameCrop(
+                    frameId,
+                    x: x.intValue,
+                    y: y.intValue,
+                    width: width.intValue,
+                    height: height.intValue,
+                    resizeWidth: resizeWidth,
+                    resizeHeight: resizeHeight
+                )
+            )
+            break
+        case "getTfFrameBlurScore":
+            guard let data = call.arguments as? [String: Any], let id = data["id"] as? String else {
+                result(nil)
+                return
+            }
+            let sampleStep = (data["sampleStep"] as? NSNumber)?.intValue ?? 2
+            var xMin = -1.0
+            var yMin = -1.0
+            var xMax = -1.0
+            var yMax = -1.0
+            if let roi = data["roi"] as? [String: Any] {
+                if let v = roi["xMin"] as? NSNumber { xMin = v.doubleValue }
+                if let v = roi["yMin"] as? NSNumber { yMin = v.doubleValue }
+                if let v = roi["xMax"] as? NSNumber { xMax = v.doubleValue }
+                if let v = roi["yMax"] as? NSNumber { yMax = v.doubleValue }
+            }
+            let score = TfFrameHandler.shared.computeBlurScore(
+                frameId: id,
+                xMin: xMin,
+                yMin: yMin,
+                xMax: xMax,
+                yMax: yMax,
+                sampleStep: sampleStep
+            )
+            result(score)
+            break
+        case "getTfFrameIlluminationScore":
+            guard let data = call.arguments as? [String: Any], let id = data["id"] as? String else {
+                result(nil)
+                return
+            }
+            let sampleStep = (data["sampleStep"] as? NSNumber)?.intValue ?? 2
+            var xMin = -1.0
+            var yMin = -1.0
+            var xMax = -1.0
+            var yMax = -1.0
+            if let roi = data["roi"] as? [String: Any] {
+                if let v = roi["xMin"] as? NSNumber { xMin = v.doubleValue }
+                if let v = roi["yMin"] as? NSNumber { yMin = v.doubleValue }
+                if let v = roi["xMax"] as? NSNumber { xMax = v.doubleValue }
+                if let v = roi["yMax"] as? NSNumber { yMax = v.doubleValue }
+            }
+            result(TfFrameHandler.shared.computeIlluminationScore(
+                frameId: id,
+                xMin: xMin,
+                yMin: yMin,
+                xMax: xMax,
+                yMax: yMax,
+                sampleStep: sampleStep
+            ))
+            break
         case "closeTfInferenceResult":
             guard let data = call.arguments as? [String: Any], let id = data["id"] as? String else {
                 result(false)

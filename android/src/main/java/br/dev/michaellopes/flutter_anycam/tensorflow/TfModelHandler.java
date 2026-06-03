@@ -20,7 +20,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
-import java.util.ListIterator;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
@@ -28,7 +28,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 import br.dev.michaellopes.flutter_anycam.model.TfInferenceInput;
 import br.dev.michaellopes.flutter_anycam.model.TfInferenceOutput;
@@ -55,6 +54,7 @@ public class TfModelHandler {
 
     private final List<ModelItem> models = new ArrayList<>();
     private final List<InferenceResult> results = new ArrayList<>();
+    private final Object modelLock = new Object();
 
     public static synchronized TfModelHandler getInstance() {
         if (instance == null) instance = new TfModelHandler();
@@ -131,21 +131,51 @@ public class TfModelHandler {
     }
 
     public void disposeModelByKey(String modelKey) {
-        ModelItem item = getModelByKey(modelKey);
-        if (item != null) {
-            item.close();
-            models.remove(item);
+        synchronized (modelLock) {
+            cancelQueuedInferences(modelKey);
+
             List<InferenceResult> res = getInferenceResultByModelId(modelKey);
             for (InferenceResult it : res) {
                 it.close();
             }
-        }
 
-        if (models.isEmpty()) {
-            queue.clear();
+            ModelItem item = getModelByKey(modelKey);
+            if (item != null) {
+                item.close();
+                models.remove(item);
+            }
+
+            if (models.isEmpty()) {
+                shutdownInferenceExecutor();
+            }
+        }
+    }
+
+    private void cancelQueuedInferences(String modelKey) {
+        Iterator<QueueItem> iterator = queue.iterator();
+        while (iterator.hasNext()) {
+            QueueItem pending = iterator.next();
+            if (pending.input.modelKey.equals(modelKey)) {
+                iterator.remove();
+                pending.callback.error("TfLite model disposed");
+            }
+        }
+    }
+
+    private void shutdownInferenceExecutor() {
+        processing = false;
+        queue.clear();
+        if (queueExecutor != null) {
             queueExecutor.shutdown();
+            try {
+                if (!queueExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                    queueExecutor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                queueExecutor.shutdownNow();
+            }
             queueExecutor = null;
-            processing = false;
         }
     }
 
@@ -272,102 +302,103 @@ public class TfModelHandler {
     }
 
     private void processQueueItem(QueueItem queueItem) {
-        long start = System.currentTimeMillis();
-        TfInferenceInput input = queueItem.input;
-        InferenceCallback callback = queueItem.callback;
+        synchronized (modelLock) {
+            long start = System.currentTimeMillis();
+            TfInferenceInput input = queueItem.input;
+            InferenceCallback callback = queueItem.callback;
 
-        ModelItem item = getModelByKey(input.modelKey);
-        if (item == null) {
-            callback.error("TfLite model is not loaded");
-            return;
-        }
-
-        Interpreter tflite = item.interpreter;
-        ByteBuffer[] outputs = item.reusableOutputs;
-        TensorMeta inMeta = item.inputMeta;
-
-        try {
-
-            ByteBufferPoolUtil.PoolItem inputItem;
-            TfFrameHandler.TfFrame targetFrame = TfFrameHandler.getInstance().getTfFrameToInference(input);
-
-            if (inMeta.dataType == DataType.UINT8) {
-                inputItem = TfFrameNormalizer.getInstance().normalizeUint8(targetFrame.buffer, input.normalize);
-            } else if (inMeta.dataType == DataType.INT8) {
-                inputItem = TfFrameNormalizer.getInstance().normalizeInt8(targetFrame.buffer, input.normalize, inMeta.invScale, inMeta.zeroPoint);
-            } else {
-                inputItem = TfFrameNormalizer.getInstance().normalizeFloat32(targetFrame.buffer, input.normalize);
+            ModelItem item = getModelByKey(input.modelKey);
+            if (item == null || item.isClosed()) {
+                callback.error("TfLite model is not loaded");
+                return;
             }
 
+            Interpreter tflite = item.interpreter;
+            ByteBuffer[] outputs = item.reusableOutputs;
+            TensorMeta inMeta = item.inputMeta;
+            ByteBufferPoolUtil.PoolItem inputItem = null;
+            TfFrameHandler.TfFrame targetFrame = null;
 
-            Map<Integer, Object> outputMap = new HashMap<>();
-            for (int i = 0; i < outputs.length; i++) {
-                outputs[i].rewind();
-                outputMap.put(i, outputs[i]);
-            }
+            try {
+                targetFrame = TfFrameHandler.getInstance().getTfFrameToInference(input);
 
+                if (inMeta.dataType == DataType.UINT8) {
+                    inputItem = TfFrameNormalizer.getInstance().normalizeUint8(targetFrame.buffer, input.normalize);
+                } else if (inMeta.dataType == DataType.INT8) {
+                    inputItem = TfFrameNormalizer.getInstance().normalizeInt8(targetFrame.buffer, input.normalize, inMeta.invScale, inMeta.zeroPoint);
+                } else {
+                    inputItem = TfFrameNormalizer.getInstance().normalizeFloat32(targetFrame.buffer, input.normalize);
+                }
 
-            if (!item.isClosed()) {
-                // RUN
-                tflite.runForMultipleInputsOutputs(new Object[]{inputItem.buffer}, outputMap);
-                // ---- OUTPUTS ----
-                Map<Integer, Object> outs = new HashMap<>();
+                Map<Integer, Object> outputMap = new HashMap<>();
                 for (int i = 0; i < outputs.length; i++) {
-                    Tensor outT = tflite.getOutputTensor(i);
-                    int[] shape = outT.shape();
-                    int outputLength = 1;
-                    for (int dim : shape) outputLength *= dim;
-                    ByteBuffer b = (ByteBuffer) outputMap.get(i);
-                    b.rewind();
+                    outputs[i].rewind();
+                    outputMap.put(i, outputs[i]);
+                }
 
-                    TensorMeta outMeta = item.outputMetas[i];
-                    float[] flatArray = new float[outputLength];
+                if (!item.isClosed()) {
+                    tflite.runForMultipleInputsOutputs(new Object[]{inputItem.buffer}, outputMap);
 
-                    if (outMeta.dataType == DataType.FLOAT32) {
-                        for (int j = 0; j < outputLength; j++) {
-                            flatArray[j] = b.getFloat();
+                    Map<Integer, Object> outs = new HashMap<>();
+                    for (int i = 0; i < outputs.length; i++) {
+                        Tensor outT = tflite.getOutputTensor(i);
+                        int[] shape = outT.shape();
+                        int outputLength = 1;
+                        for (int dim : shape) outputLength *= dim;
+                        ByteBuffer b = (ByteBuffer) outputMap.get(i);
+                        b.rewind();
+
+                        TensorMeta outMeta = item.outputMetas[i];
+                        float[] flatArray = new float[outputLength];
+
+                        if (outMeta.dataType == DataType.FLOAT32) {
+                            for (int j = 0; j < outputLength; j++) {
+                                flatArray[j] = b.getFloat();
+                            }
+                        } else {
+                            final float outScale = outMeta.scale;
+                            final int outZp = outMeta.zeroPoint;
+                            for (int j = 0; j < outputLength; j++) {
+                                int rawByte = b.get();
+                                flatArray[j] = (rawByte - outZp) * outScale;
+                            }
                         }
-                    } else {
-                        // INT8: dequantiza  f = (q - zeroPoint) * scale
-                        final float outScale = outMeta.scale;
-                        final int outZp = outMeta.zeroPoint;
-                        for (int j = 0; j < outputLength; j++) {
-                            // Converte byte signed → unsigned (0–255)
-                            int rawByte = b.get();
-                            flatArray[j] = (rawByte - outZp) * outScale;
-                        }
+
+                        Object structured = reshape(flatArray, shape, 0);
+                        outs.put(i, structured);
                     }
 
-                    Object structured = reshape(flatArray, shape, 0);
-                    outs.put(i, structured);
+                    List<TfInferenceOutput> processedOutputs = input.processOutput(outs);
+
+                    List<Map<String, Object>> response = new ArrayList<>();
+                    for (TfInferenceOutput it : processedOutputs) {
+                        InferenceResult res = new InferenceResult(item.key, targetFrame.id, it);
+                        this.results.add(res);
+                        response.add(res.toMap());
+                    }
+
+                    if (response.isEmpty()) {
+                        targetFrame.close();
+                    }
+
+                    callback.success(response);
+                    long inferenceMs = System.currentTimeMillis() - start;
+                    Log.d("TFLite_PERF", "inference=" + inferenceMs + "ms | queue=" + queue.size());
+                } else {
+                    targetFrame.close();
+                    callback.success(new ArrayList<>());
                 }
-
-                inputItem.release();
-
-                List<TfInferenceOutput> processedOutputs = input.processOutput(outs);
-
-                List<Map<String, Object>> response = new ArrayList<>();
-                for (TfInferenceOutput it : processedOutputs) {
-                    InferenceResult res = new InferenceResult(item.key, targetFrame.id, it);
-                    this.results.add(res);
-                    response.add(res.toMap());
-                }
-
-                if (response.isEmpty()) {
+            } catch (Exception e) {
+                Log.e("TFLite", "Erro na inferência: " + e.getMessage());
+                if (targetFrame != null) {
                     targetFrame.close();
                 }
-
-                callback.success(response);
-                long inferenceMs = System.currentTimeMillis() - start;
-                Log.d("TFLite_PERF", "inference=" + inferenceMs + "ms | queue=" + queue.size());
-            } else {
-                List<Map<String, Object>> response = new ArrayList<>();
-                targetFrame.close();
-                callback.success(response);
+                callback.error(e.getMessage());
+            } finally {
+                if (inputItem != null) {
+                    inputItem.release();
+                }
             }
-        } catch (Exception e) {
-            Log.e("TFLite", "Erro na inferência: " + e.getMessage());
-            callback.error(e.getMessage());
         }
     }
 

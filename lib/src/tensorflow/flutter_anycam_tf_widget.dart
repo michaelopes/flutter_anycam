@@ -43,7 +43,8 @@ class FlutterAnycamTfWidget extends StatefulWidget {
 }
 
 class _FlutterAnycamTfWidgetState extends State<FlutterAnycamTfWidget> {
-  late int _inProcess = 0;
+  int _inProcess = 0;
+  bool _disposed = false;
 
   bool get _hasReachedLimit => _inProcess >= widget.maxConcurrentFrames;
 
@@ -55,6 +56,12 @@ class _FlutterAnycamTfWidgetState extends State<FlutterAnycamTfWidget> {
     if (_inProcess > 0) {
       _inProcess--;
     }
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 
   @override
@@ -74,18 +81,25 @@ class _FlutterAnycamTfWidgetState extends State<FlutterAnycamTfWidget> {
       type: FlutterAnycamType.tf,
       previewRotation: widget.previewRotation,
       onRawVideoFrameReceived: (data) async {
-        if (data.entries.isNotEmpty) {
-          final frame = FlutterAnycamTfFrame.fromMap(data);
-          if (!_hasReachedLimit) {
-            try {
-              _startProcess();
-              await widget.onFrame?.call(frame);
-            } finally {
-              _stopProcess();
-            }
-          } else {
-            frame.close();
+        if (_disposed || data.entries.isEmpty) {
+          return;
+        }
+
+        final frame = FlutterAnycamTfFrame.fromMap(data);
+        if (_disposed) {
+          await frame.close();
+          return;
+        }
+
+        if (!_hasReachedLimit) {
+          try {
+            _startProcess();
+            await widget.onFrame?.call(frame);
+          } finally {
+            _stopProcess();
           }
+        } else {
+          await frame.close();
         }
       },
     );
