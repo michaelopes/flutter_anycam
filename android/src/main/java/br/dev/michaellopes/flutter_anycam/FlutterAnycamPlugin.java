@@ -21,6 +21,7 @@ import br.dev.michaellopes.flutter_anycam.integration.CameraViewFactory;
 import br.dev.michaellopes.flutter_anycam.integration.FlutterEventChannel;
 import br.dev.michaellopes.flutter_anycam.model.TfInferenceInput;
 import br.dev.michaellopes.flutter_anycam.stream.CameraStreamManager;
+import br.dev.michaellopes.flutter_anycam.stream.HeadlessTfCameraManager;
 import br.dev.michaellopes.flutter_anycam.tensorflow.TfFrameHandler;
 import br.dev.michaellopes.flutter_anycam.tensorflow.TfModelHandler;
 import br.dev.michaellopes.flutter_anycam.utils.ByteArrayPoolUtil;
@@ -147,6 +148,19 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
                 uiHandler.post(() -> {
                     result.success(true);
                 });
+                break;
+            }
+            case "registerTfCameraStream": {
+                HashMap<String, Object> args = (HashMap<String, Object>) call.arguments;
+                boolean res = HeadlessTfCameraManager.getInstance().register(args);
+                uiHandler.post(() -> result.success(res));
+                break;
+            }
+            case "disposeTfCameraStream": {
+                HashMap<?, ?> args = (HashMap<?, ?>) call.arguments;
+                String cameraId = (String) args.get("cameraId");
+                HeadlessTfCameraManager.getInstance().dispose(cameraId);
+                uiHandler.post(() -> result.success(true));
                 break;
             }
             case "setFlash": {

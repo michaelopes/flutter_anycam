@@ -56,6 +56,12 @@ public class DeviceCamera extends BaseCamera {
 
     private ImageAnalysis imageAnalysis;
 
+    private Surface activeSurface;
+
+    private Camera2CameraSession camera2Session;
+
+    private boolean usingCamera2 = false;
+
     private boolean resolutionStrategy = true;
 
     FrameRateLimiterUtil<ImageProxy> limiter = new FrameRateLimiterUtil<ImageProxy>(getFps()) {
@@ -85,12 +91,17 @@ public class DeviceCamera extends BaseCamera {
     @SuppressLint("RestrictedApi")
     public void init() {
         synchronized (DeviceCameraUtils.getInstance()) {
-            Preview.SurfaceProvider surfaceProvider = createSurfaceProvider();
+            boolean previewEnabled = true;
+            if (params.get("previewEnabled") != null) {
+                previewEnabled = (Boolean) params.get("previewEnabled");
+            }
 
-            Preview preview = new Preview.Builder()
-                    .build();
-
-            preview.setSurfaceProvider(surfaceProvider);
+            Preview preview = null;
+            if (previewEnabled) {
+                Preview.SurfaceProvider surfaceProvider = createSurfaceProvider();
+                preview = new Preview.Builder().build();
+                preview.setSurfaceProvider(surfaceProvider);
+            }
 
             try {
                 ImageAnalysis.Builder aBuilder = new ImageAnalysis.Builder()
@@ -98,49 +109,56 @@ public class DeviceCamera extends BaseCamera {
                         .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888);
 
                 List<Size> supportedSizes = getSupportedResolutions();
+                boolean multiCamera = DeviceCameraUtils.getInstance().getActiveBindCount() > 0;
 
                 if (!supportedSizes.isEmpty() && resolutionStrategy) {
-                    Size pSize = getClosestSize(supportedSizes);
+                    Size pSize = multiCamera
+                            ? getSmallestSize(supportedSizes)
+                            : getClosestSize(supportedSizes);
                     ResolutionSelector resolutionSelector = new ResolutionSelector.Builder()
                             .setResolutionStrategy(
                                     new ResolutionStrategy(
                                             pSize,
-                                            ResolutionStrategy.FALLBACK_RULE_NONE
+                                            ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER
                                     )
                             )
                             .build();
                     aBuilder.setResolutionSelector(resolutionSelector);
                 }
 
-                imageAnalysis = aBuilder
-                        .build();
-
+                imageAnalysis = aBuilder.build();
 
                 imageAnalysis.setAnalyzer(cameraExecutor, (imageProxy) -> {
-                    CameraStreamManager.getInstance().sendFrame(getCameraId(), imageProxy, getCustomRotationDegrees());
+                    CameraStreamManager.getInstance().sendFrame(
+                            getCameraId(), imageProxy, getCustomRotationDegrees()
+                    );
                     limiter.onNewFrame(imageProxy);
-                    // analyze(imageProxy);
                 });
 
-                Camera2CameraInfoImpl cameraInfo = DeviceCameraUtils.getInstance().bind(cameraSelector.getId(), preview, imageAnalysis);
-                Size ps = preview.getAttachedSurfaceResolution();
+                final Preview finalPreview = preview;
+                final boolean finalPreviewEnabled = previewEnabled;
 
-                int sensorOrientation = cameraInfo.getSensorRotationDegrees();
+                DeviceCameraUtils.getInstance().bind(
+                        cameraSelector.getId(),
+                        preview,
+                        imageAnalysis,
+                        new DeviceCameraUtils.BindCallback() {
+                            @Override
+                            public void onCameraXBound(Camera2CameraInfoImpl cameraInfo) {
+                                completeCameraXBind(cameraInfo, finalPreview, finalPreviewEnabled);
+                            }
 
-                int width = ps.getWidth();
-                int height = ps.getHeight();
+                            @Override
+                            public void onUseCamera2Direct() {
+                                initCamera2Direct(finalPreviewEnabled);
+                            }
 
-                if (sensorOrientation == 90 || sensorOrientation == 270) {
-                    int temp = width;
-                    width = height;
-                    height = temp;
-                }
-
-                final Map<String, Object> result = new HashMap<>();
-                result.put("width", width);
-                result.put("height", height);
-
-                onConnected(result);
+                            @Override
+                            public void onBindFailed(String message) {
+                                onFailed(message);
+                            }
+                        }
+                );
 
             } catch (IllegalArgumentException e) {
                 if (resolutionStrategy) {
@@ -155,7 +173,94 @@ public class DeviceCamera extends BaseCamera {
                 e.printStackTrace();
             }
         }
+    }
 
+    @SuppressLint("RestrictedApi")
+    private void completeCameraXBind(
+            Camera2CameraInfoImpl cameraInfo,
+            Preview preview,
+            boolean previewEnabled
+    ) {
+        if (disposed) return;
+
+        int sensorOrientation = cameraInfo.getSensorRotationDegrees();
+        int width;
+        int height;
+
+        if (preview != null && previewEnabled) {
+            Size ps = preview.getAttachedSurfaceResolution();
+            width = ps.getWidth();
+            height = ps.getHeight();
+        } else {
+            width = preferredSize.getWidth();
+            height = preferredSize.getHeight();
+        }
+
+        if (sensorOrientation == 90 || sensorOrientation == 270) {
+            int temp = width;
+            width = height;
+            height = temp;
+        }
+
+        final Map<String, Object> result = new HashMap<>();
+        result.put("width", width);
+        result.put("height", height);
+        onConnected(result);
+    }
+
+    private void initCamera2Direct(boolean previewEnabled) {
+        if (disposed) return;
+        if (camera2Session != null) return;
+
+        usingCamera2 = true;
+        Log.i("DeviceCamera", "Starting Camera2 direct session for " + getCameraId());
+
+        camera2Session = new Camera2CameraSession(
+                getCameraId(),
+                preferredSize,
+                previewEnabled,
+                texture.surfaceTexture(),
+                image -> {
+                    if (disposed) return;
+                    analyzeCamera2Image(image);
+                },
+                new Camera2CameraSession.Listener() {
+                    @Override
+                    public void onOpened(Size resolution) {
+                        if (disposed) return;
+                        int width = resolution.getWidth();
+                        int height = resolution.getHeight();
+                        int orientation = getSensorOrientation();
+                        if (orientation == 90 || orientation == 270) {
+                            int temp = width;
+                            width = height;
+                            height = temp;
+                        }
+                        Map<String, Object> result = new HashMap<>();
+                        result.put("width", width);
+                        result.put("height", height);
+                        onConnected(result);
+                    }
+
+                    @Override
+                    public void onFailed(String message) {
+                        onFailed(message);
+                    }
+                }
+        );
+        camera2Session.start();
+    }
+
+    private int getSensorOrientation() {
+        try {
+            Context context = ContextUtil.get();
+            CameraManager cameraManager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
+            CameraCharacteristics characteristics = cameraManager.getCameraCharacteristics(getCameraId());
+            Integer orientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
+            return orientation != null ? orientation : 0;
+        } catch (CameraAccessException e) {
+            return cameraSelector.getSensorOrientation();
+        }
     }
 
     public List<Size> getSupportedResolutions() {
@@ -199,26 +304,33 @@ public class DeviceCamera extends BaseCamera {
         return closest;
     }
 
+    private Size getSmallestSize(List<Size> sizes) {
+        if (sizes == null || sizes.isEmpty()) return null;
+        Size smallest = sizes.get(0);
+        for (Size s : sizes) {
+            if (s.getWidth() * s.getHeight() < smallest.getWidth() * smallest.getHeight()) {
+                smallest = s;
+            }
+        }
+        return smallest;
+    }
+
     private @NonNull Preview.SurfaceProvider createSurfaceProvider() {
         return request -> {
             Size resolution = request.getResolution();
             texture.surfaceTexture().setDefaultBufferSize(resolution.getWidth(), resolution.getHeight());
-            Surface flutterSurface = getSurface();
+            if (activeSurface != null) {
+                activeSurface.release();
+                activeSurface = null;
+            }
+            activeSurface = new Surface(texture.surfaceTexture());
             request.provideSurface(
-                    flutterSurface,
+                    activeSurface,
                     Executors.newSingleThreadExecutor(),
                     (result) -> {
-                        flutterSurface.release();
                         int resultCode = result.getResultCode();
-                        switch (resultCode) {
-                            case SurfaceRequest.Result.RESULT_REQUEST_CANCELLED:
-                            case SurfaceRequest.Result.RESULT_WILL_NOT_PROVIDE_SURFACE:
-                            case SurfaceRequest.Result.RESULT_SURFACE_ALREADY_PROVIDED:
-                            case SurfaceRequest.Result.RESULT_SURFACE_USED_SUCCESSFULLY:
-                                break;
-                            case SurfaceRequest.Result.RESULT_INVALID_SURFACE:
-                            default:
-                                throw new RuntimeException("Create Surface Provider error");
+                        if (resultCode == SurfaceRequest.Result.RESULT_INVALID_SURFACE) {
+                            Log.e("DeviceCamera", "Invalid surface for camera " + getCameraId());
                         }
                     });
         };
@@ -255,7 +367,18 @@ public class DeviceCamera extends BaseCamera {
             queueExecutor.shutdownNow();
         }
 
-        DeviceCameraUtils.getInstance().dispose(cameraSelector);
+        if (activeSurface != null) {
+            activeSurface.release();
+            activeSurface = null;
+        }
+
+        if (camera2Session != null) {
+            camera2Session.dispose();
+            camera2Session = null;
+            DeviceCameraUtils.getInstance().removeBind(getCameraId());
+        } else {
+            DeviceCameraUtils.getInstance().dispose(cameraSelector);
+        }
         super.dispose();
     }
 
@@ -301,9 +424,13 @@ public class DeviceCamera extends BaseCamera {
             }
             Map<String, Object> frameMap;
             if (isStandard()) {
-                frameMap = imageAnalysisUtil.imageProxyToNV21Map(image, resizeFrame, filter, getCustomRotationDegrees());
+                frameMap = imageAnalysisUtil.imageProxyToNV21Map(
+                        image, resizeFrame, filter, getCustomRotationDegrees()
+                );
             } else {
-                frameMap = TfFrameHandler.getInstance().addFrame(image, resizeFrame, filter, getCustomRotationDegrees());
+                frameMap = TfFrameHandler.getInstance().addFrame(
+                        image, resizeFrame, filter, getCustomRotationDegrees()
+                );
             }
 
             if (frameMap != null && !disposed) {
@@ -313,6 +440,24 @@ public class DeviceCamera extends BaseCamera {
             throw new RuntimeException(e);
         } finally {
             image.close();
+        }
+    }
+
+    private void analyzeCamera2Image(android.media.Image image) {
+        try {
+            if (disposed) return;
+            Map<String, Object> frameMap = imageAnalysisUtil.imageToNV21Map(
+                    image,
+                    getSensorOrientation(),
+                    resizeFrame,
+                    filter,
+                    getCustomRotationDegrees()
+            );
+            if (frameMap != null && !disposed) {
+                onVideoFrameReceived(frameMap);
+            }
+        } catch (Exception e) {
+            Log.e("DeviceCamera", "analyzeCamera2Image failed", e);
         }
     }
 

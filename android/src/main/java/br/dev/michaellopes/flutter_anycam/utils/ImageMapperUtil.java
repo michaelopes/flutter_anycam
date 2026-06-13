@@ -22,6 +22,76 @@ public class ImageMapperUtil {
         return imageProxyToNV21Map(imageProxy, resizeFrame, filter, customRotationDegrees, null);
     }
 
+    public Map<String, Object> imageToNV21Map(
+            Image image,
+            int rotationDegrees,
+            Size resizeFrame,
+            int filter,
+            Integer customRotationDegrees
+    ) {
+        try {
+            if (image == null) return new HashMap<>();
+
+            int width = image.getWidth();
+            int height = image.getHeight();
+            int rowStride;
+            int pixelStride;
+
+            int srcSize = width * height * 3 / 2;
+            if (bytesBuffer == null || srcSize != bytesBuffer.length) {
+                bytesBuffer = new byte[srcSize];
+            }
+            NativeUtil.yuv420ToNv21(image, bytesBuffer);
+
+            byte[] finalBytes;
+            if (resizeFrame != null) {
+                int targetWidth;
+                int targetHeight;
+                if (resizeFrame.getHeight() == -1 && resizeFrame.getWidth() == -1) {
+                    int minSize = Math.min(width, height);
+                    targetWidth = minSize;
+                    targetHeight = minSize;
+                } else {
+                    targetWidth = resizeFrame.getWidth();
+                    targetHeight = resizeFrame.getHeight();
+                }
+
+                int dstSize = targetWidth * targetHeight * 3 / 2;
+                if (bytesResizedBuffer == null || dstSize != bytesResizedBuffer.length) {
+                    bytesResizedBuffer = new byte[dstSize];
+                }
+                NativeUtil.resizeNv21(bytesBuffer, width, height, bytesResizedBuffer, targetWidth, targetHeight);
+                finalBytes = bytesResizedBuffer;
+                width = targetWidth;
+                height = targetHeight;
+                rowStride = targetWidth;
+                pixelStride = 1;
+            } else {
+                Image.Plane firstPlane = image.getPlanes()[0];
+                rowStride = firstPlane.getRowStride();
+                pixelStride = firstPlane.getPixelStride();
+                finalBytes = bytesBuffer;
+            }
+
+            Map<String, Object> result = new HashMap<>();
+            int sensorOrientation = customRotationDegrees != null
+                    ? customRotationDegrees
+                    : rotationDegrees;
+
+            result.put("height", height);
+            result.put("width", width);
+            result.put("format", "NV21");
+            NativeUtil.applyFilter(finalBytes, width, height, filter);
+            result.put("bytes", finalBytes);
+            result.put("rotation", sensorOrientation);
+            result.put("rowStride", rowStride);
+            result.put("pixelStride", pixelStride);
+            return result;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     @SuppressLint({"RestrictedApi", "UnsafeOptInUsageError"})
     public Map<String, Object> imageProxyToNV21Map(ImageProxy imageProxy, Size resizeFrame, int filter, Integer customRotationDegrees, byte[] nv21) {
         try {

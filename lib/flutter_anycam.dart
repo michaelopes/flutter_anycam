@@ -22,6 +22,7 @@ export 'src/tensorflow/flutter_anycam_tf_illumination_score.dart';
 export 'src/tensorflow/flutter_anycam_tf_model.dart';
 export 'src/tensorflow/flutter_anycam_tf_session.dart';
 export 'src/tensorflow/flutter_anycam_tf_widget.dart';
+export 'src/tensorflow/flutter_anycam_tf_camera_stream.dart';
 export 'src/tensorflow/flutter_anycam_tf_normalize.dart';
 export 'src/tensorflow/flutter_anycam_tf_inference_output.dart';
 export 'src/tensorflow/flutter_anycam_tf_inference_result.dart';

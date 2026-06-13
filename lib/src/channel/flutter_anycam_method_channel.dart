@@ -42,6 +42,9 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
           "onFailed": listener.onFailed,
           "onVideoFrameReceived": listener.onVideoFrameReceived,
           "onCameraRawFrame": listener.onCameraRawFrame,
+          "onTfCameraStreamConnected": listener.onTfCameraStreamConnected,
+          "onTfCameraStreamFrame": listener.onTfCameraStreamFrame,
+          "onTfCameraStreamFailed": listener.onTfCameraStreamFailed,
         };
         if (methods[method] != null) {
           methods[method]!(data);
@@ -172,6 +175,37 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
   Future<bool> disposeRawStream(String cameraId) async {
     return await methodChannel.invokeMethod(
       'disposeRawStream',
+      {
+        "cameraId": cameraId,
+      },
+    );
+  }
+
+  @override
+  Future<bool> registerTfCameraStream({
+    required String cameraId,
+    required int fps,
+    required FlutterAnycamSize preferredSize,
+    required FlutterAnycamFilter filter,
+    required FlutterAnycamCameraSelector camera,
+  }) async {
+    return await methodChannel.invokeMethod(
+      'registerTfCameraStream',
+      {
+        "cameraId": cameraId,
+        "fps": fps,
+        "preferredSize": preferredSize.toMap(),
+        "filter": filter.code,
+        "sensorOrientation": camera.sensorOrientation,
+        "forceSensorOrientation": camera.toMap()["forceSensorOrientation"] ?? false,
+      },
+    );
+  }
+
+  @override
+  Future<bool> disposeTfCameraStream(String cameraId) async {
+    return await methodChannel.invokeMethod(
+      'disposeTfCameraStream',
       {
         "cameraId": cameraId,
       },

@@ -42,6 +42,7 @@ class FlutterAnycamWidget extends StatefulWidget {
     this.type = FlutterAnycamType.standard,
     this.onRawVideoFrameReceived,
     this.previewRotation,
+    this.previewEnabled = true,
   });
 
   final FlutterAnycamSize preferredSize;
@@ -59,6 +60,7 @@ class FlutterAnycamWidget extends StatefulWidget {
   final FlutterAnycamStreamFrameCallback? onFrame;
   final FlutterAnycamStreamMethod? onRawVideoFrameReceived;
   final int? previewRotation;
+  final bool previewEnabled;
 
   @override
   State<FlutterAnycamWidget> createState() => FlutterAnycamWidgetState();
@@ -111,6 +113,7 @@ class FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
         filter: widget.filter.code,
         fps: widget.fps,
         type: widget.type,
+        previewEnabled: widget.previewEnabled,
       );
     });
   }

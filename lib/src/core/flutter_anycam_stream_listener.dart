@@ -8,6 +8,9 @@ class FlutterAnycamStreamListener {
   final FlutterAnycamStreamMethod? onFailed;
   final FlutterAnycamStreamMethod? onVideoFrameReceived;
   final FlutterAnycamStreamMethod? onCameraRawFrame;
+  final FlutterAnycamStreamMethod? onTfCameraStreamConnected;
+  final FlutterAnycamStreamMethod? onTfCameraStreamFrame;
+  final FlutterAnycamStreamMethod? onTfCameraStreamFailed;
 
   FlutterAnycamStreamListener({
     this.viewId = -1,
@@ -17,5 +20,8 @@ class FlutterAnycamStreamListener {
     this.onFailed,
     this.onVideoFrameReceived,
     this.onCameraRawFrame,
+    this.onTfCameraStreamConnected,
+    this.onTfCameraStreamFrame,
+    this.onTfCameraStreamFailed,
   });
 }

@@ -111,6 +111,20 @@ abstract class FlutterAnycamPlatform extends PlatformInterface {
     throw UnimplementedError('disposeRawStream() has not been implemented.');
   }
 
+  Future<bool> registerTfCameraStream({
+    required String cameraId,
+    required int fps,
+    required FlutterAnycamSize preferredSize,
+    required FlutterAnycamFilter filter,
+    required FlutterAnycamCameraSelector camera,
+  }) {
+    throw UnimplementedError('registerTfCameraStream() has not been implemented.');
+  }
+
+  Future<bool> disposeTfCameraStream(String cameraId) {
+    throw UnimplementedError('disposeTfCameraStream() has not been implemented.');
+  }
+
   Future<bool> loadTfModel({
     required String assetPath,
     required String key,
