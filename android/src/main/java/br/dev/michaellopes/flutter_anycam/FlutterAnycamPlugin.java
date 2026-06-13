@@ -54,7 +54,6 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
     @Override
     public void onAttachedToActivity(@NonNull ActivityPluginBinding binding) {
         CameraPermissionsUtil.getInstance().init(binding::addRequestPermissionsResultListener);
-        CameraUtil.getInstance().init(binding.getActivity());
         ContextUtil.init(binding.getActivity());
         LivecycleUtil.init(binding.getLifecycle());
 
@@ -75,6 +74,8 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
 
     @Override
     public void onAttachedToEngine(@NonNull FlutterPluginBinding flutterPluginBinding) {
+        ContextUtil.init(flutterPluginBinding.getApplicationContext());
+        CameraUtil.getInstance().init(flutterPluginBinding.getApplicationContext());
 
         CameraViewFactory.getInstance().init(flutterPluginBinding.getTextureRegistry());
 
@@ -249,9 +250,9 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
             case "disposeTfModel": {
                 Map<String, Object> ddata = (Map<String, Object>) call.arguments;
                 String dkey = (String) ddata.get("key");
-                TfModelHandler.getInstance().disposeModelByKey(dkey);
-                uiHandler.post(() -> {
-                    result.success(true);
+                executor.execute(() -> {
+                    TfModelHandler.getInstance().disposeModelByKey(dkey);
+                    uiHandler.post(() -> result.success(true));
                 });
                 break;
             }
@@ -592,6 +593,8 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
     @Override
     public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
         CameraViewFactory.getInstance().disposeAll();
+        TfModelHandler.getInstance().disposeAllModels();
+        CameraUtil.getInstance().reset();
         FlutterEventChannel.getInstance().release();
         ImageConverterUtil.shutdown();
         byteArrayPool.shutdown();
