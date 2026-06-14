@@ -158,10 +158,6 @@ public class WebRtcStreamer {
                 new MediaConstraints.KeyValuePair("googAutoGainControl", "true"));
         audioConstraints.mandatory.add(
                 new MediaConstraints.KeyValuePair("googNoiseSuppression", "true"));
-        audioConstraints.mandatory.add(
-                new MediaConstraints.KeyValuePair("googHighpassFilter", "true"));
-        audioConstraints.mandatory.add(
-                new MediaConstraints.KeyValuePair("googTypingNoiseDetection", "true"));
 
         org.webrtc.AudioSource audioSource = factory.createAudioSource(audioConstraints);
         audioTrack = factory.createAudioTrack("audio", audioSource);
@@ -414,5 +410,9 @@ public class WebRtcStreamer {
         if (started.get() && connected.get()) {
             videoSource.getCapturerObserver().onFrameCaptured(frame);
         }
+    }
+
+    public boolean isVideoReady() {
+        return started.get() && connected.get();
     }
 }

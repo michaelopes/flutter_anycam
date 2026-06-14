@@ -9,14 +9,13 @@ import java.util.concurrent.Executors;
 import br.dev.michaellopes.flutter_anycam.integration.FlutterEventChannel;
 import br.dev.michaellopes.flutter_anycam.utils.FrameRateLimiterUtil;
 import br.dev.michaellopes.flutter_anycam.utils.ImageMapperUtil;
-import br.dev.michaellopes.flutter_anycam.webrtc.I420Image;
 import br.dev.michaellopes.flutter_anycam.webrtc.WebRtcImageUtil;
 import br.dev.michaellopes.flutter_anycam.webrtc.WebRtcStreamHandler;
 
 public class CameraRawStream {
     private final String cameraId;
-    private final FrameRateLimiterUtil<Map<String, Object>> flutterLimiter;
-    private final FrameRateLimiterUtil<I420Image> webRtcLimiter;
+    private final FrameRateLimiterUtil<RawStreamImageRef> flutterLimiter;
+    private final FrameRateLimiterUtil<RawStreamImageRef> webRtcLimiter;
     private final ExecutorService executor;
 
     protected final ImageMapperUtil imageAnalysisUtil = new ImageMapperUtil();
@@ -28,9 +27,13 @@ public class CameraRawStream {
         this.cameraId = cameraId;
 
         executor = Executors.newSingleThreadExecutor();
-        this.flutterLimiter = new FrameRateLimiterUtil<Map<String, Object>>(fps) {
+        this.flutterLimiter = new FrameRateLimiterUtil<RawStreamImageRef>(fps) {
             @Override
-            protected void onFrameLimited(Map<String, Object> data) {
+            protected void onFrameLimited(RawStreamImageRef ref) {
+                Map<String, Object> data = imageAnalysisUtil.imageProxyToI420Map(
+                        ref.image,
+                        ref.customRotationDegrees
+                );
                 executor.execute(() -> FlutterEventChannel.getInstance().send(
                         -2,
                         "onCameraRawFrame",
@@ -38,15 +41,12 @@ public class CameraRawStream {
                 ));
             }
         };
-        this.webRtcLimiter = new FrameRateLimiterUtil<I420Image>(fps) {
+        this.webRtcLimiter = new FrameRateLimiterUtil<RawStreamImageRef>(fps) {
             @Override
-            protected void onFrameLimited(I420Image data) {
-                WebRtcStreamHandler.getInstance().pushFrame(data, webRtcStreamId);
-            }
-
-            @Override
-            protected void onFrameSkipped(I420Image data) {
-                data.close();
+            protected void onFrameLimited(RawStreamImageRef ref) {
+                WebRtcImageUtil.fromImageProxy(ref.image, ref.customRotationDegrees)
+                        .ifPresent(image -> WebRtcStreamHandler.getInstance()
+                                .pushFrame(image, webRtcStreamId));
             }
         };
     }
@@ -72,15 +72,15 @@ public class CameraRawStream {
     }
 
     public void sendFrame(ImageProxy image, Integer customRotationDegrees) {
-        if (webRtcStreamId != null) {
-            I420Image i420 = WebRtcImageUtil.fromImageProxy(image, customRotationDegrees);
-            if (i420 != null) {
-                webRtcLimiter.onNewFrame(i420);
-            }
+        RawStreamImageRef ref = new RawStreamImageRef(image, customRotationDegrees);
+
+        if (webRtcStreamId != null
+                && WebRtcStreamHandler.getInstance().shouldPushVideoFrames(webRtcStreamId)) {
+            webRtcLimiter.onNewFrame(ref);
         }
+
         if (deliverToFlutter) {
-            Map<String, Object> data = imageAnalysisUtil.imageProxyToI420Map(image, customRotationDegrees);
-            flutterLimiter.onNewFrame(data);
+            flutterLimiter.onNewFrame(ref);
         }
     }
 }

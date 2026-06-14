@@ -74,6 +74,16 @@ public class WebRtcStreamHandler {
 
     public void pushFrame(I420Image image, String streamId) {
         executor.execute(() -> {
+            synchronized (streamers) {
+                if (streamId != null) {
+                    WebRtcStreamer streamer = getStreamById(streamId);
+                    if (streamer == null || !streamer.isVideoReady()) {
+                        image.close();
+                        return;
+                    }
+                }
+            }
+
             @SuppressLint("UnsafeOptInUsageError")
             I420Image nImg = ensureI420(image);
             JavaI420Buffer i420 = JavaI420Buffer.wrap(
@@ -92,17 +102,26 @@ public class WebRtcStreamHandler {
             synchronized (streamers) {
                 if (streamId != null) {
                     WebRtcStreamer streamer = getStreamById(streamId);
-                    if (streamer != null) {
+                    if (streamer != null && streamer.isVideoReady()) {
                         streamer.pushFrame(frame);
                     }
                 } else {
                     for (WebRtcStreamer streamer : streamers) {
-                        streamer.pushFrame(frame);
+                        if (streamer.isVideoReady()) {
+                            streamer.pushFrame(frame);
+                        }
                     }
                 }
             }
             frame.release();
         });
+    }
+
+    public boolean shouldPushVideoFrames(String streamId) {
+        synchronized (streamers) {
+            WebRtcStreamer streamer = getStreamById(streamId);
+            return streamer != null && streamer.isVideoReady();
+        }
     }
 
     public void stopAll() {

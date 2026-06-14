@@ -34,6 +34,7 @@ public abstract class BaseCamera {
     private ActionCall lastAction = null;
     protected int filter = 0;
     protected String type = "standard";
+    protected boolean frameDeliveryEnabled = true;
 
     public BaseCamera(TextureRegistry.SurfaceTextureEntry texture, Map<String, Object> params) {
         this.texture = texture;
@@ -63,6 +64,10 @@ public abstract class BaseCamera {
             if(tp != null) {
                 type = tp;
             }
+        }
+
+        if (params.get("frameDeliveryEnabled") != null) {
+            frameDeliveryEnabled = (Boolean) params.get("frameDeliveryEnabled");
         }
 
         this.params = params;

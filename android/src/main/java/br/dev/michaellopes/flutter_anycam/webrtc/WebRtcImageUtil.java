@@ -6,6 +6,7 @@ import android.media.Image;
 import androidx.camera.core.ImageProxy;
 
 import java.nio.ByteBuffer;
+import java.util.Optional;
 
 public final class WebRtcImageUtil {
 
@@ -13,15 +14,18 @@ public final class WebRtcImageUtil {
     }
 
     @SuppressLint("UnsafeOptInUsageError")
-    public static I420Image fromImageProxy(ImageProxy imageProxy, Integer customRotationDegrees) {
+    public static Optional<I420Image> fromImageProxy(
+            ImageProxy imageProxy,
+            Integer customRotationDegrees
+    ) {
         Image image = imageProxy.getImage();
         if (image == null) {
-            return null;
+            return Optional.empty();
         }
 
         Image.Plane[] planes = image.getPlanes();
         if (planes.length < 3) {
-            return null;
+            return Optional.empty();
         }
 
         int rotation = imageProxy.getImageInfo().getRotationDegrees();
@@ -33,25 +37,27 @@ public final class WebRtcImageUtil {
         Image.Plane uPlane = planes[1];
         Image.Plane vPlane = planes[2];
 
-        return new I420Image(
+        return Optional.of(new I420Image(
                 image.getWidth(),
                 image.getHeight(),
                 rotation,
-                bufferToBytes(yPlane.getBuffer()),
+                copyToDirect(yPlane.getBuffer()),
                 yPlane.getRowStride(),
-                bufferToBytes(uPlane.getBuffer()),
+                copyToDirect(uPlane.getBuffer()),
                 uPlane.getRowStride(),
-                bufferToBytes(vPlane.getBuffer()),
+                copyToDirect(vPlane.getBuffer()),
                 vPlane.getRowStride(),
                 uPlane.getPixelStride(),
                 vPlane.getPixelStride()
-        );
+        ));
     }
 
-    private static byte[] bufferToBytes(ByteBuffer buffer) {
-        buffer.rewind();
-        byte[] bytes = new byte[buffer.remaining()];
-        buffer.get(bytes);
-        return bytes;
+    private static ByteBuffer copyToDirect(ByteBuffer src) {
+        src.rewind();
+        ByteBuffer direct = ByteBuffer.allocateDirect(src.remaining());
+        direct.put(src);
+        direct.flip();
+        src.rewind();
+        return direct;
     }
 }

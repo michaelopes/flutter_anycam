@@ -380,6 +380,42 @@ MethodChannel (mesmo canal do anycam):
 
 ---
 
+## Performance / CPU
+
+### Configuração recomendada (WebRTC-only)
+
+```dart
+FlutterAnycamWidget(
+  camera: camera,
+  fps: 10,                                      // igual ao attach()
+  preferredSize: const FlutterAnycamSize(640, 480),
+  previewEnabled: true,                         // false se não precisa ver preview
+  frameDeliveryEnabled: false,                  // desliga conversão NV21 pro Flutter
+)
+
+await FlutterAnycamWebRtcCameraFeed.I.attach(
+  cameraId: camera.id,
+  fps: 10,
+  streamId: stream.id,
+);
+```
+
+| Parâmetro | Efeito |
+|-----------|--------|
+| `frameDeliveryEnabled: false` | Elimina conversão NV21 do widget quando você só precisa do WebRTC |
+| `fps` alinhado (widget + attach) | Evita trabalho extra na câmera |
+| `preferredSize` menor | Menos pixels = menos CPU no encode |
+| `attach` só em `onConnectedCallback` | Não converte frames antes do peer conectar |
+
+### Otimizações nativas (automáticas)
+
+- Conversão YUV só **após** o limiter de FPS (não em todo frame da câmera)
+- Frames ignorados quando o peer WebRTC **não está conectado**
+- Cópia única de planos YUV para `ByteBuffer` direct (sem `byte[]` intermediário)
+- Menos processamento de áudio (AEC/AGC/NS essenciais apenas)
+
+---
+
 ## Limitações e observações
 
 1. **Somente câmeras internas (front/back)** — o feed nativo usa `DeviceCamera` via `CameraStreamManager`. USB e RTSP ainda não estão integrados ao pipeline WebRTC.

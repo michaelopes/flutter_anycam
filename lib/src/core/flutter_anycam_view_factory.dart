@@ -13,6 +13,7 @@ class FlutterAnycamViewFactory {
     required FlutterAnycamSize? resizeFrame,
     required FlutterAnycamType type,
     bool previewEnabled = true,
+    bool frameDeliveryEnabled = true,
   }) {
     return FlutterAnycamPlatform.instance.createView({
       "viewId": viewId,
@@ -23,6 +24,7 @@ class FlutterAnycamViewFactory {
       "fps": fps,
       "type": type.value,
       "previewEnabled": previewEnabled,
+      "frameDeliveryEnabled": frameDeliveryEnabled,
     });
   }
 

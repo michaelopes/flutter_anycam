@@ -132,7 +132,11 @@ public class DeviceCamera extends BaseCamera {
                     CameraStreamManager.getInstance().sendFrame(
                             getCameraId(), imageProxy, getCustomRotationDegrees()
                     );
-                    limiter.onNewFrame(imageProxy);
+                    if (frameDeliveryEnabled) {
+                        limiter.onNewFrame(imageProxy);
+                    } else {
+                        imageProxy.close();
+                    }
                 });
 
                 final Preview finalPreview = preview;
