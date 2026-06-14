@@ -12,6 +12,8 @@ import '../tensorflow/flutter_anycam_tf_blur_roi.dart';
 import '../tensorflow/flutter_anycam_tf_delegate.dart';
 import '../tensorflow/flutter_anycam_tf_frame.dart';
 import '../tensorflow/flutter_anycam_tf_normalize.dart';
+import '../webrtc/flutter_anycam_webrtc_callbacks.dart';
+import '../webrtc/flutter_anycam_webrtc_ice_server.dart';
 import 'flutter_anycam_method_channel.dart';
 
 abstract class FlutterAnycamPlatform extends PlatformInterface {
@@ -238,5 +240,60 @@ abstract class FlutterAnycamPlatform extends PlatformInterface {
   }) {
     throw UnimplementedError(
         'getInferenceResultRawFrame() has not been implemented.');
+  }
+
+  Future<String?> newWebRtcStream({
+    List<FlutterAnycamWebRtcIceServer>? iceServers,
+  }) {
+    throw UnimplementedError('newWebRtcStream() has not been implemented.');
+  }
+
+  Future<bool?> stopWebRtcStream(String streamId) {
+    throw UnimplementedError('stopWebRtcStream() has not been implemented.');
+  }
+
+  Future<String?> createWebRtcAnswer(
+    String streamId,
+    Map<String, dynamic> data,
+  ) {
+    throw UnimplementedError('createWebRtcAnswer() has not been implemented.');
+  }
+
+  Future<bool?> addWebRtcCandidate(
+    String streamId,
+    Map<String, dynamic> data,
+  ) {
+    throw UnimplementedError('addWebRtcCandidate() has not been implemented.');
+  }
+
+  Future<bool?> pushWebRtcFrame(Map<String, dynamic> data) {
+    throw UnimplementedError('pushWebRtcFrame() has not been implemented.');
+  }
+
+  Future<bool?> sendWebRtcDataMessage(
+    String streamId,
+    Map<String, dynamic> data,
+  ) {
+    throw UnimplementedError('sendWebRtcDataMessage() has not been implemented.');
+  }
+
+  FlutterAnycamWebRtcCallbacksDisposer addWebRtcCallbacks({
+    required String streamId,
+    required FlutterAnycamWebRtcCallbacks callbacks,
+  }) {
+    throw UnimplementedError('addWebRtcCallbacks() has not been implemented.');
+  }
+
+  Future<bool> registerWebRtcCameraFeed({
+    required String cameraId,
+    required int fps,
+    required String streamId,
+    bool alsoDeliverToFlutter = false,
+  }) {
+    throw UnimplementedError('registerWebRtcCameraFeed() has not been implemented.');
+  }
+
+  Future<bool> disposeWebRtcCameraFeed(String cameraId) {
+    throw UnimplementedError('disposeWebRtcCameraFeed() has not been implemented.');
   }
 }

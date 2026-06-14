@@ -99,6 +99,7 @@ dependencies {
     implementation("org.tensorflow:tensorflow-lite-gpu:${tflite_version}")
     implementation("org.tensorflow:tensorflow-lite-gpu-api:${tflite_version}")
 
+    implementation 'io.github.webrtc-sdk:android:125.6422.06'
 
     //implementation "com.github.michaelopes:RTSP-Client-Android:5.1.1"
    //implementation "com.github.am3n:rtsp-client-android:5.1.0"

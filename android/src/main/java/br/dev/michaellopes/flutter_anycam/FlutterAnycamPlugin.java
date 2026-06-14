@@ -24,6 +24,9 @@ import br.dev.michaellopes.flutter_anycam.stream.CameraStreamManager;
 import br.dev.michaellopes.flutter_anycam.stream.HeadlessTfCameraManager;
 import br.dev.michaellopes.flutter_anycam.tensorflow.TfFrameHandler;
 import br.dev.michaellopes.flutter_anycam.tensorflow.TfModelHandler;
+import br.dev.michaellopes.flutter_anycam.webrtc.I420Image;
+import br.dev.michaellopes.flutter_anycam.webrtc.WebRtcStreamHandler;
+import br.dev.michaellopes.flutter_anycam.webrtc.WebRtcStreamer;
 import br.dev.michaellopes.flutter_anycam.utils.ByteArrayPoolUtil;
 import br.dev.michaellopes.flutter_anycam.utils.CameraUtil;
 import br.dev.michaellopes.flutter_anycam.utils.ContextUtil;
@@ -148,6 +151,113 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
                 uiHandler.post(() -> {
                     result.success(true);
                 });
+                break;
+            }
+            case "newWebRtcStream": {
+                List<Map<String, Object>> iceServers = call.argument("iceServers");
+                WebRtcStreamer streamer = WebRtcStreamHandler.getInstance().newStream(channel);
+                result.success(streamer.id);
+                streamer.start(iceServers);
+                break;
+            }
+            case "stopWebRtcStream": {
+                String streamId = call.argument("streamId");
+                WebRtcStreamer streamer = WebRtcStreamHandler.getInstance().getStreamById(streamId);
+                if (streamer != null) {
+                    streamer.stop();
+                    WebRtcStreamHandler.getInstance().removeStream(streamer);
+                }
+                result.success(true);
+                break;
+            }
+            case "createWebRtcAnswer": {
+                String streamId = call.argument("streamId");
+                String offerSdp = call.argument("sdp");
+                List<Map<String, Object>> iceServers = call.argument("iceServers");
+                WebRtcStreamer streamer = WebRtcStreamHandler.getInstance().getStreamById(streamId);
+                if (streamer != null) {
+                    streamer.setOffer(offerSdp, iceServers, result::success);
+                } else {
+                    result.error("WebRtcStreamNotFound", "Stream not found: " + streamId, null);
+                }
+                break;
+            }
+            case "addWebRtcCandidate": {
+                String streamId = call.argument("streamId");
+                String sdpMid = call.argument("sdpMid");
+                int sdpMLineIndex = call.argument("sdpMLineIndex");
+                String candidate = call.argument("candidate");
+                WebRtcStreamer streamer = WebRtcStreamHandler.getInstance().getStreamById(streamId);
+                if (streamer != null) {
+                    streamer.addIceCandidate(sdpMid, sdpMLineIndex, candidate);
+                }
+                result.success(true);
+                break;
+            }
+            case "sendWebRtcDataMessage": {
+                String streamId = call.argument("streamId");
+                String message = call.argument("message");
+                WebRtcStreamer streamer = WebRtcStreamHandler.getInstance().getStreamById(streamId);
+                if (streamer != null) {
+                    streamer.sendDataMessage(message);
+                }
+                result.success(true);
+                break;
+            }
+            case "pushWebRtcFrame": {
+                Integer width = call.argument("width");
+                Integer height = call.argument("height");
+                Integer rotation = call.argument("rotation");
+                Integer strideY = call.argument("strideY");
+                Integer strideU = call.argument("strideU");
+                Integer strideV = call.argument("strideV");
+                Integer pixelStrideU = call.argument("pixelStrideU");
+                Integer pixelStrideV = call.argument("pixelStrideV");
+                String streamId = call.argument("streamId");
+
+                byte[] dataY = call.argument("dataY");
+                byte[] dataU = call.argument("dataU");
+                byte[] dataV = call.argument("dataV");
+
+                I420Image image = new I420Image(
+                        width,
+                        height,
+                        rotation,
+                        dataY,
+                        strideY,
+                        dataU,
+                        strideU,
+                        dataV,
+                        strideV,
+                        pixelStrideU,
+                        pixelStrideV
+                );
+
+                WebRtcStreamHandler.getInstance().pushFrame(image, streamId);
+                result.success(true);
+                break;
+            }
+            case "registerWebRtcCameraFeed": {
+                HashMap<?, ?> args = (HashMap<?, ?>) call.arguments;
+                String cameraId = (String) args.get("cameraId");
+                int fps = (int) args.get("fps");
+                String streamId = (String) args.get("streamId");
+                boolean alsoDeliverToFlutter = args.get("alsoDeliverToFlutter") != null
+                        && (boolean) args.get("alsoDeliverToFlutter");
+                boolean res = CameraStreamManager.getInstance().addWebRtcFeed(
+                        cameraId,
+                        fps,
+                        streamId,
+                        alsoDeliverToFlutter
+                );
+                uiHandler.post(() -> result.success(res));
+                break;
+            }
+            case "disposeWebRtcCameraFeed": {
+                HashMap<?, ?> args = (HashMap<?, ?>) call.arguments;
+                String cameraId = (String) args.get("cameraId");
+                CameraStreamManager.getInstance().removeWebRtcFeed(cameraId);
+                uiHandler.post(() -> result.success(true));
                 break;
             }
             case "registerTfCameraStream": {
@@ -608,6 +718,7 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
     public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
         CameraViewFactory.getInstance().disposeAll();
         TfModelHandler.getInstance().disposeAllModels();
+        WebRtcStreamHandler.getInstance().stopAll();
         CameraUtil.getInstance().reset();
         FlutterEventChannel.getInstance().release();
         ImageConverterUtil.shutdown();

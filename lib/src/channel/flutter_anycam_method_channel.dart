@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import '../core/flutter_anycam_size.dart';
@@ -12,12 +14,20 @@ import '../core/flutter_anycam_crop.dart';
 import '../core/flutter_anycam_filter.dart';
 import '../core/flutter_anycam_stream_listener.dart';
 import '../core/flutter_anycam_typedefs.dart';
+import '../webrtc/flutter_anycam_webrtc_callbacks.dart';
+import '../webrtc/flutter_anycam_webrtc_ice_server.dart';
 import 'flutter_anycam_tf_output_processor.dart';
+import 'flutter_anycam_webrtc_callback_processor.dart';
 
 class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
   MethodChannelFlutterAnycam() {
     FlutterAnycamEventStream.I.add(_listen);
-    FlutterAnycamTfOutputProcessor.I.setChannel(methodChannel);
+    methodChannel.setMethodCallHandler((call) async {
+      if (call.method == 'processTfOutput') {
+        return FlutterAnycamTfOutputProcessor.I.notify(call.arguments);
+      }
+      return FlutterAnycamWebRtcCallbackProcessor.I.handle(call);
+    });
   }
 
   final _streamListeners = <FlutterAnycamStreamListener>[];
@@ -439,5 +449,98 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
       {"id": id},
     );
     return res != null ? Map<String, dynamic>.from(res) : null;
+  }
+
+  @override
+  Future<String?> newWebRtcStream({
+    List<FlutterAnycamWebRtcIceServer>? iceServers,
+  }) {
+    return methodChannel.invokeMethod<String?>('newWebRtcStream', {
+      'iceServers': iceServers?.map((e) => e.toMap()).toList(),
+    });
+  }
+
+  @override
+  Future<bool?> stopWebRtcStream(String streamId) {
+    return methodChannel.invokeMethod<bool>('stopWebRtcStream', {
+      'streamId': streamId,
+    });
+  }
+
+  @override
+  Future<String?> createWebRtcAnswer(
+    String streamId,
+    Map<String, dynamic> data,
+  ) async {
+    return await methodChannel.invokeMethod<String>('createWebRtcAnswer', {
+      'streamId': streamId,
+      ...data,
+    });
+  }
+
+  @override
+  Future<bool?> addWebRtcCandidate(
+    String streamId,
+    Map<String, dynamic> data,
+  ) async {
+    return await methodChannel.invokeMethod<bool>('addWebRtcCandidate', {
+      'streamId': streamId,
+      ...data,
+    });
+  }
+
+  @override
+  Future<bool?> pushWebRtcFrame(Map<String, dynamic> data) async {
+    return await methodChannel.invokeMethod<bool>('pushWebRtcFrame', data);
+  }
+
+  @override
+  Future<bool?> sendWebRtcDataMessage(
+    String streamId,
+    Map<String, dynamic> data,
+  ) async {
+    return await methodChannel.invokeMethod<bool>('sendWebRtcDataMessage', {
+      'streamId': streamId,
+      'message': jsonEncode(data),
+    });
+  }
+
+  @override
+  FlutterAnycamWebRtcCallbacksDisposer addWebRtcCallbacks({
+    required String streamId,
+    required FlutterAnycamWebRtcCallbacks callbacks,
+  }) {
+    return FlutterAnycamWebRtcCallbackProcessor.I.addCallbacks(
+      streamId: streamId,
+      callbacks: callbacks,
+    );
+  }
+
+  @override
+  Future<bool> registerWebRtcCameraFeed({
+    required String cameraId,
+    required int fps,
+    required String streamId,
+    bool alsoDeliverToFlutter = false,
+  }) async {
+    final result = await methodChannel.invokeMethod<bool>(
+      'registerWebRtcCameraFeed',
+      {
+        'cameraId': cameraId,
+        'fps': fps,
+        'streamId': streamId,
+        'alsoDeliverToFlutter': alsoDeliverToFlutter,
+      },
+    );
+    return result ?? false;
+  }
+
+  @override
+  Future<bool> disposeWebRtcCameraFeed(String cameraId) async {
+    final result = await methodChannel.invokeMethod<bool>(
+      'disposeWebRtcCameraFeed',
+      {'cameraId': cameraId},
+    );
+    return result ?? false;
   }
 }

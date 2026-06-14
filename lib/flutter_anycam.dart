@@ -29,6 +29,13 @@ export 'src/tensorflow/flutter_anycam_tf_inference_result.dart';
 export 'src/tensorflow/flutter_anycam_tf_bbox_tracker.dart';
 export 'src/tensorflow/flutter_anycam_tf_tracker_options.dart';
 
+// WEBRTC
+export 'src/webrtc/flutter_anycam_webrtc_stream.dart';
+export 'src/webrtc/flutter_anycam_webrtc_callbacks.dart';
+export 'src/webrtc/flutter_anycam_webrtc_ice_server.dart';
+export 'src/webrtc/flutter_anycam_webrtc_camera_feed.dart';
+export 'src/webrtc/flutter_anycam_webrtc_i420_image.dart';
+
 import 'src/core/flutter_anycam_camera_selector.dart';
 
 import 'src/core/flutter_anycam_image_conversor.dart';
