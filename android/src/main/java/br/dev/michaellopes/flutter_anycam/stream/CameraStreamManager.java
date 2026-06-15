@@ -1,10 +1,14 @@
 package br.dev.michaellopes.flutter_anycam.stream;
 
+import android.util.Size;
+
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.camera.core.ImageProxy;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 public class CameraStreamManager {
     private static CameraStreamManager instance;
@@ -40,6 +44,26 @@ public class CameraStreamManager {
         return stream;
     }
 
+    @Nullable
+    public static Size parseStreamSizeFromArgs(Map<?, ?> args) {
+        Object streamSize = args.get("streamSize");
+        if (!(streamSize instanceof Map)) {
+            return null;
+        }
+        Map<?, ?> sizeMap = (Map<?, ?>) streamSize;
+        Object width = sizeMap.get("width");
+        Object height = sizeMap.get("height");
+        if (!(width instanceof Integer) || !(height instanceof Integer)) {
+            return null;
+        }
+        int w = (Integer) width;
+        int h = (Integer) height;
+        if (w <= 0 || h <= 0) {
+            return null;
+        }
+        return new Size(w, h);
+    }
+
     public boolean add(String cameraId, int fps) {
         CameraRawStream stream = getOrCreateStream(cameraId, fps);
         stream.setDeliverToFlutter(true);
@@ -50,10 +74,16 @@ public class CameraStreamManager {
             String cameraId,
             int fps,
             String streamId,
-            boolean alsoDeliverToFlutter
+            boolean alsoDeliverToFlutter,
+            @Nullable Size streamSize
     ) {
         CameraRawStream stream = getOrCreateStream(cameraId, fps);
         stream.setWebRtcStreamId(streamId);
+        if (streamSize != null) {
+            stream.setWebRtcStreamSize(streamSize.getWidth(), streamSize.getHeight());
+        } else {
+            stream.clearWebRtcStreamSize();
+        }
         if (alsoDeliverToFlutter) {
             stream.setDeliverToFlutter(true);
         }
@@ -64,6 +94,7 @@ public class CameraStreamManager {
         CameraRawStream stream = getCameraStream(cameraId);
         if (stream != null) {
             stream.setWebRtcStreamId(null);
+            stream.clearWebRtcStreamSize();
             if (!stream.isDeliverToFlutter()) {
                 streams.remove(stream);
             }

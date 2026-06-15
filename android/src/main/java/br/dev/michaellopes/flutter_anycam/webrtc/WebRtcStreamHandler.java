@@ -85,7 +85,7 @@ public class WebRtcStreamHandler {
             }
 
             @SuppressLint("UnsafeOptInUsageError")
-            I420Image nImg = ensureI420(image);
+            I420Image nImg = WebRtcImageUtil.ensureI420(image);
             JavaI420Buffer i420 = JavaI420Buffer.wrap(
                     nImg.width,
                     nImg.height,
@@ -131,22 +131,6 @@ public class WebRtcStreamHandler {
             }
             streamers.clear();
         }
-    }
-
-    private I420Image ensureI420(I420Image src) {
-        int expectedChromaStride = src.width / 2;
-
-        boolean alreadyI420 =
-                src.pixelStrideU == 1
-                        && src.pixelStrideV == 1
-                        && src.strideU == expectedChromaStride
-                        && src.strideV == expectedChromaStride;
-
-        if (alreadyI420) {
-            return src;
-        }
-
-        return YuvUtil.normalizeToI420(src);
     }
 
     public WebRtcStreamer getStreamById(String streamId) {

@@ -522,6 +522,7 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
     required int fps,
     required String streamId,
     bool alsoDeliverToFlutter = false,
+    FlutterAnycamSize? streamSize,
   }) async {
     final result = await methodChannel.invokeMethod<bool>(
       'registerWebRtcCameraFeed',
@@ -530,6 +531,7 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
         'fps': fps,
         'streamId': streamId,
         'alsoDeliverToFlutter': alsoDeliverToFlutter,
+        if (streamSize != null) 'streamSize': streamSize.toMap(),
       },
     );
     return result ?? false;

@@ -22,6 +22,8 @@ public class CameraRawStream {
 
     private boolean deliverToFlutter = false;
     private String webRtcStreamId = null;
+    private int webRtcStreamWidth = 0;
+    private int webRtcStreamHeight = 0;
 
     public CameraRawStream(String cameraId, int fps) {
         this.cameraId = cameraId;
@@ -44,7 +46,12 @@ public class CameraRawStream {
         this.webRtcLimiter = new FrameRateLimiterUtil<RawStreamImageRef>(fps) {
             @Override
             protected void onFrameLimited(RawStreamImageRef ref) {
-                WebRtcImageUtil.fromImageProxy(ref.image, ref.customRotationDegrees)
+                WebRtcImageUtil.prepareWebRtcFrame(
+                                ref.image,
+                                ref.customRotationDegrees,
+                                webRtcStreamWidth,
+                                webRtcStreamHeight
+                        )
                         .ifPresent(image -> WebRtcStreamHandler.getInstance()
                                 .pushFrame(image, webRtcStreamId));
             }
@@ -65,6 +72,16 @@ public class CameraRawStream {
 
     public void setWebRtcStreamId(String webRtcStreamId) {
         this.webRtcStreamId = webRtcStreamId;
+    }
+
+    public void setWebRtcStreamSize(int width, int height) {
+        this.webRtcStreamWidth = width;
+        this.webRtcStreamHeight = height;
+    }
+
+    public void clearWebRtcStreamSize() {
+        this.webRtcStreamWidth = 0;
+        this.webRtcStreamHeight = 0;
     }
 
     public boolean hasActiveSink() {

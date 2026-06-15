@@ -289,6 +289,7 @@ abstract class FlutterAnycamPlatform extends PlatformInterface {
     required int fps,
     required String streamId,
     bool alsoDeliverToFlutter = false,
+    FlutterAnycamSize? streamSize,
   }) {
     throw UnimplementedError('registerWebRtcCameraFeed() has not been implemented.');
   }

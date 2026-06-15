@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import '../channel/flutter_anycam_platform_interface.dart';
+import '../core/flutter_anycam_size.dart';
 
 typedef FlutterAnycamWebRtcCameraFeedDisposer = Future<void> Function();
 
@@ -16,6 +17,7 @@ class FlutterAnycamWebRtcCameraFeed {
     required int fps,
     required String streamId,
     bool alsoDeliverToFlutter = false,
+    FlutterAnycamSize? streamSize,
   }) async {
     if (!Platform.isAndroid) {
       return () async {};
@@ -26,6 +28,7 @@ class FlutterAnycamWebRtcCameraFeed {
       fps: fps,
       streamId: streamId,
       alsoDeliverToFlutter: alsoDeliverToFlutter,
+      streamSize: streamSize,
     );
 
     if (!result) {
