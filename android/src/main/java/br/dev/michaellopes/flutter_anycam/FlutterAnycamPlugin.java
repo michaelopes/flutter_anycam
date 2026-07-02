@@ -241,7 +241,6 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
                 HashMap<?, ?> args = (HashMap<?, ?>) call.arguments;
                 String cameraId = (String) args.get("cameraId");
                 int fps = (int) args.get("fps");
-                String streamId = (String) args.get("streamId");
                 boolean alsoDeliverToFlutter = args.get("alsoDeliverToFlutter") != null
                         && (boolean) args.get("alsoDeliverToFlutter");
                 android.util.Size streamSize =
@@ -249,7 +248,6 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
                 boolean res = CameraStreamManager.getInstance().addWebRtcFeed(
                         cameraId,
                         fps,
-                        streamId,
                         alsoDeliverToFlutter,
                         streamSize
                 );

@@ -81,6 +81,9 @@ public class WebRtcStreamHandler {
                         image.close();
                         return;
                     }
+                } else if (!hasAnyVideoReadyStream()) {
+                    image.close();
+                    return;
                 }
             }
 
@@ -121,6 +124,17 @@ public class WebRtcStreamHandler {
         synchronized (streamers) {
             WebRtcStreamer streamer = getStreamById(streamId);
             return streamer != null && streamer.isVideoReady();
+        }
+    }
+
+    public boolean hasAnyVideoReadyStream() {
+        synchronized (streamers) {
+            for (WebRtcStreamer streamer : streamers) {
+                if (streamer.isVideoReady()) {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 

@@ -14,6 +14,8 @@ public class CameraStreamManager {
     private static CameraStreamManager instance;
 
     private final List<CameraRawStream> streams = new ArrayList<>();
+    @Nullable
+    private String activeWebRtcFeedCameraId = null;
 
     private CameraStreamManager() {
     }
@@ -73,12 +75,17 @@ public class CameraStreamManager {
     public boolean addWebRtcFeed(
             String cameraId,
             int fps,
-            String streamId,
             boolean alsoDeliverToFlutter,
             @Nullable Size streamSize
     ) {
+        if (activeWebRtcFeedCameraId != null) {
+            return false;
+        }
+
         CameraRawStream stream = getOrCreateStream(cameraId, fps);
-        stream.setWebRtcStreamId(streamId);
+        stream.setWebRtcFeedEnabled(true);
+        activeWebRtcFeedCameraId = cameraId;
+
         if (streamSize != null) {
             stream.setWebRtcStreamSize(streamSize.getWidth(), streamSize.getHeight());
         } else {
@@ -93,17 +100,23 @@ public class CameraStreamManager {
     public void removeWebRtcFeed(String cameraId) {
         CameraRawStream stream = getCameraStream(cameraId);
         if (stream != null) {
-            stream.setWebRtcStreamId(null);
+            stream.clearWebRtcFeed();
             stream.clearWebRtcStreamSize();
             if (!stream.isDeliverToFlutter()) {
                 streams.remove(stream);
             }
+        }
+        if (cameraId.equals(activeWebRtcFeedCameraId)) {
+            activeWebRtcFeedCameraId = null;
         }
     }
 
     public void dispose(String cameraId) {
         CameraRawStream item = getCameraStream(cameraId);
         if (item != null) {
+            if (item.isWebRtcFeedEnabled()) {
+                activeWebRtcFeedCameraId = null;
+            }
             streams.remove(item);
         }
     }

@@ -287,7 +287,6 @@ abstract class FlutterAnycamPlatform extends PlatformInterface {
   Future<bool> registerWebRtcCameraFeed({
     required String cameraId,
     required int fps,
-    required String streamId,
     bool alsoDeliverToFlutter = false,
     FlutterAnycamSize? streamSize,
   }) {

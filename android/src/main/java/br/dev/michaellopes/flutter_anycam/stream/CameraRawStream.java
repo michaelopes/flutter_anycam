@@ -21,7 +21,7 @@ public class CameraRawStream {
     protected final ImageMapperUtil imageAnalysisUtil = new ImageMapperUtil();
 
     private boolean deliverToFlutter = false;
-    private String webRtcStreamId = null;
+    private boolean webRtcFeedEnabled = false;
     private int webRtcStreamWidth = 0;
     private int webRtcStreamHeight = 0;
 
@@ -53,7 +53,7 @@ public class CameraRawStream {
                                 webRtcStreamHeight
                         )
                         .ifPresent(image -> WebRtcStreamHandler.getInstance()
-                                .pushFrame(image, webRtcStreamId));
+                                .pushFrame(image, null));
             }
         };
     }
@@ -70,8 +70,16 @@ public class CameraRawStream {
         this.deliverToFlutter = deliverToFlutter;
     }
 
-    public void setWebRtcStreamId(String webRtcStreamId) {
-        this.webRtcStreamId = webRtcStreamId;
+    public boolean isWebRtcFeedEnabled() {
+        return webRtcFeedEnabled;
+    }
+
+    public void setWebRtcFeedEnabled(boolean enabled) {
+        this.webRtcFeedEnabled = enabled;
+    }
+
+    public void clearWebRtcFeed() {
+        this.webRtcFeedEnabled = false;
     }
 
     public void setWebRtcStreamSize(int width, int height) {
@@ -85,14 +93,14 @@ public class CameraRawStream {
     }
 
     public boolean hasActiveSink() {
-        return deliverToFlutter || webRtcStreamId != null;
+        return deliverToFlutter || webRtcFeedEnabled;
     }
 
     public void sendFrame(ImageProxy image, Integer customRotationDegrees) {
         RawStreamImageRef ref = new RawStreamImageRef(image, customRotationDegrees);
 
-        if (webRtcStreamId != null
-                && WebRtcStreamHandler.getInstance().shouldPushVideoFrames(webRtcStreamId)) {
+        if (webRtcFeedEnabled
+                && WebRtcStreamHandler.getInstance().hasAnyVideoReadyStream()) {
             webRtcLimiter.onNewFrame(ref);
         }
 

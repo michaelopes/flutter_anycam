@@ -10,12 +10,13 @@ class FlutterAnycamWebRtcCameraFeed {
 
   static final I = FlutterAnycamWebRtcCameraFeed._internal();
 
-  /// Binds a camera feed directly to a WebRTC stream on the native layer,
-  /// avoiding Flutter bridge frame copies.
+  /// Binds a camera feed to all connected WebRTC peers on the native layer.
+  ///
+  /// Only one active attach is allowed at a time. Subsequent calls return
+  /// a no-op disposer until [disposeWebRtcCameraFeed] is called.
   Future<FlutterAnycamWebRtcCameraFeedDisposer> attach({
     required String cameraId,
     required int fps,
-    required String streamId,
     bool alsoDeliverToFlutter = false,
     FlutterAnycamSize? streamSize,
   }) async {
@@ -26,7 +27,6 @@ class FlutterAnycamWebRtcCameraFeed {
     final result = await FlutterAnycamPlatform.instance.registerWebRtcCameraFeed(
       cameraId: cameraId,
       fps: fps,
-      streamId: streamId,
       alsoDeliverToFlutter: alsoDeliverToFlutter,
       streamSize: streamSize,
     );
