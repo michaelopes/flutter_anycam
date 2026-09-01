@@ -1,5 +1,7 @@
 package br.dev.michaellopes.flutter_anycam.stream;
 
+import android.media.Image;
+
 import androidx.camera.core.ImageProxy;
 
 import java.util.Map;
@@ -106,6 +108,38 @@ public class CameraRawStream {
 
         if (deliverToFlutter) {
             flutterLimiter.onNewFrame(ref);
+        }
+    }
+
+    /**
+     * Camera2 {@link Image} variant. Plane bytes are copied synchronously because the
+     * Image is closed when the capture callback returns.
+     */
+    public void sendFrame(Image image, int rotationDegrees, Integer customRotationDegrees) {
+        if (webRtcFeedEnabled
+                && WebRtcStreamHandler.getInstance().hasAnyVideoReadyStream()
+                && webRtcLimiter.shouldProcessFrame()) {
+            WebRtcImageUtil.prepareWebRtcFrame(
+                            image,
+                            rotationDegrees,
+                            customRotationDegrees,
+                            webRtcStreamWidth,
+                            webRtcStreamHeight
+                    )
+                    .ifPresent(frame -> WebRtcStreamHandler.getInstance().pushFrame(frame, null));
+        }
+
+        if (deliverToFlutter && flutterLimiter.shouldProcessFrame()) {
+            Map<String, Object> data = imageAnalysisUtil.imageToI420Map(
+                    image,
+                    rotationDegrees,
+                    customRotationDegrees
+            );
+            executor.execute(() -> FlutterEventChannel.getInstance().send(
+                    -2,
+                    "onCameraRawFrame",
+                    data
+            ));
         }
     }
 }

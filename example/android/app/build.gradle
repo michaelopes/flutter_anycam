@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "br.dev.michaellopes.flutter_anycam_example"
-    compileSdk = 35
+        compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

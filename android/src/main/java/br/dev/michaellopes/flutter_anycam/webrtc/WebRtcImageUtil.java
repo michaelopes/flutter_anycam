@@ -76,6 +76,61 @@ public final class WebRtcImageUtil {
         return scaleI420(image, streamWidth, streamHeight);
     }
 
+    public static Optional<I420Image> fromImage(
+            Image image,
+            int rotationDegrees,
+            Integer customRotationDegrees
+    ) {
+        if (image == null) {
+            return Optional.empty();
+        }
+
+        Image.Plane[] planes = image.getPlanes();
+        if (planes.length < 3) {
+            return Optional.empty();
+        }
+
+        int rotation = customRotationDegrees != null ? customRotationDegrees : rotationDegrees;
+
+        Image.Plane yPlane = planes[0];
+        Image.Plane uPlane = planes[1];
+        Image.Plane vPlane = planes[2];
+
+        return Optional.of(new I420Image(
+                image.getWidth(),
+                image.getHeight(),
+                rotation,
+                copyToDirect(yPlane.getBuffer()),
+                yPlane.getRowStride(),
+                copyToDirect(uPlane.getBuffer()),
+                uPlane.getRowStride(),
+                copyToDirect(vPlane.getBuffer()),
+                vPlane.getRowStride(),
+                uPlane.getPixelStride(),
+                vPlane.getPixelStride()
+        ));
+    }
+
+    public static Optional<I420Image> prepareWebRtcFrame(
+            Image image,
+            int rotationDegrees,
+            Integer customRotationDegrees,
+            int streamWidth,
+            int streamHeight
+    ) {
+        Optional<I420Image> optional = fromImage(image, rotationDegrees, customRotationDegrees);
+        if (optional.isEmpty()) {
+            return optional;
+        }
+
+        I420Image frame = optional.get();
+        if (!shouldScale(streamWidth, streamHeight, frame.width, frame.height)) {
+            return optional;
+        }
+
+        return scaleI420(frame, streamWidth, streamHeight);
+    }
+
     public static I420Image ensureI420(I420Image src) {
         int expectedChromaStride = src.width / 2;
 

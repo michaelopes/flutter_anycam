@@ -58,27 +58,35 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
     @Override
     public void onAttachedToActivity(@NonNull ActivityPluginBinding binding) {
         CameraPermissionsUtil.getInstance().init(binding::addRequestPermissionsResultListener);
-        ContextUtil.init(binding.getActivity());
+        ContextUtil.setActivity(binding.getActivity());
         LivecycleUtil.init(binding.getLifecycle());
-
+        DeviceCameraUtils.getInstance().onActivityReady();
     }
 
     @Override
     public void onDetachedFromActivityForConfigChanges() {
+        // Keep EventChannel alive across config changes; only drop the old Activity.
+        ContextUtil.clearActivity();
     }
 
     @Override
     public void onReattachedToActivityForConfigChanges(@NonNull ActivityPluginBinding binding) {
+        CameraPermissionsUtil.getInstance().init(binding::addRequestPermissionsResultListener);
+        ContextUtil.setActivity(binding.getActivity());
+        LivecycleUtil.init(binding.getLifecycle());
+        DeviceCameraUtils.getInstance().onActivityReady();
     }
 
     @Override
     public void onDetachedFromActivity() {
-        FlutterEventChannel.getInstance().release();
+        ContextUtil.clearActivity();
+        // Do NOT release EventChannel here — engine may still be alive (cached FlutterEngine).
+        // Sink is released in onDetachedFromEngine.
     }
 
     @Override
     public void onAttachedToEngine(@NonNull FlutterPluginBinding flutterPluginBinding) {
-        ContextUtil.init(flutterPluginBinding.getApplicationContext());
+        ContextUtil.initApp(flutterPluginBinding.getApplicationContext());
         CameraUtil.getInstance().init(flutterPluginBinding.getApplicationContext());
 
         CameraViewFactory.getInstance().init(flutterPluginBinding.getTextureRegistry());
@@ -122,11 +130,13 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
             }
             case "requestPermission": {
                 CameraPermissionsUtil.getInstance().requestPermissions((String errCode, String errDesc) -> {
-                    if (errCode == null) {
-                        result.success(true);
-                    } else {
-                        result.success(false);
-                    }
+                    uiHandler.post(() -> {
+                        if (errCode == null) {
+                            result.success(true);
+                        } else {
+                            result.success(false);
+                        }
+                    });
                 });
                 break;
             }
@@ -699,9 +709,9 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
                 long timeMs = System.currentTimeMillis() - start;
                 Log.d("JpegConversion_PERF", "time=" + timeMs + "ms");
                 byte[] bs = ImageConverterUtil.nv21ToJpeg(pFinalBytes, pFinalWidth, pFinalHeight, quality, rotation);
-                result.success(bs);
+                uiHandler.post(() -> result.success(bs));
             } catch (final Exception e) {
-                new Handler(Looper.getMainLooper()).post(() -> result.error("Processing error", e.getMessage(), null));
+                uiHandler.post(() -> result.error("Processing error", e.getMessage(), null));
             } finally {
                 byteArrayPool.release(cropEntry.get());
                 byteArrayPool.release(resizeEntry.get());
@@ -709,10 +719,6 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
                 resizeEntry.set(null);
             }
         });
-
-//        new Thread(() -> {
-//
-        //       }).start();
     }
 
     @Override

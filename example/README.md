@@ -1,16 +1,29 @@
 # flutter_anycam_example
 
-Demonstrates how to use the flutter_anycam plugin.
+Scenario hub for manual QA of `flutter_anycam`, plus integration tests.
 
-## Getting Started
+## Run the app
 
-This project is a starting point for a Flutter application.
+```bash
+cd example
+flutter run
+```
 
-A few resources to get you started if this is your first Flutter project:
+Open each scenario from the hub. Android-only tiles are disabled on iOS.
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+## Widget tests (no device camera required)
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```bash
+cd example
+flutter test
+```
+
+## Integration tests (device or emulator)
+
+```bash
+cd example
+flutter test integration_test/ -d <deviceId>
+```
+
+`scenario_catalog_test.dart` checks hub tiles + navigation.  
+`camera_api_test.dart` calls `availableCameras()` and optionally mounts a preview when a camera exists.

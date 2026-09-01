@@ -15,8 +15,35 @@ import java.util.Map;
 import io.flutter.Log;
 
 public class ImageMapperUtil {
-    private byte[] bytesResizedBuffer;
-    private byte[] bytesBuffer;
+    /**
+     * Ping-pong NV21 buffers so an in-flight EventChannel encode on the main thread
+     * is not overwritten by the next analyze() on low-end devices (5fps still races
+     * under main-thread jank). Avoids per-frame {@code new byte[]} allocation.
+     */
+    private final byte[][] nv21Buffers = new byte[2][];
+    private final byte[][] nv21ResizedBuffers = new byte[2][];
+    private int nv21Slot = 0;
+    private int nv21ResizedSlot = 0;
+
+    private byte[] obtainNv21Buffer(int size) {
+        byte[] buf = nv21Buffers[nv21Slot];
+        if (buf == null || buf.length != size) {
+            buf = new byte[size];
+            nv21Buffers[nv21Slot] = buf;
+        }
+        nv21Slot = 1 - nv21Slot;
+        return buf;
+    }
+
+    private byte[] obtainNv21ResizedBuffer(int size) {
+        byte[] buf = nv21ResizedBuffers[nv21ResizedSlot];
+        if (buf == null || buf.length != size) {
+            buf = new byte[size];
+            nv21ResizedBuffers[nv21ResizedSlot] = buf;
+        }
+        nv21ResizedSlot = 1 - nv21ResizedSlot;
+        return buf;
+    }
 
     public Map<String, Object> imageProxyToNV21Map(ImageProxy imageProxy, Size resizeFrame, int filter, Integer customRotationDegrees) {
         return imageProxyToNV21Map(imageProxy, resizeFrame, filter, customRotationDegrees, null);
@@ -38,9 +65,7 @@ public class ImageMapperUtil {
             int pixelStride;
 
             int srcSize = width * height * 3 / 2;
-            if (bytesBuffer == null || srcSize != bytesBuffer.length) {
-                bytesBuffer = new byte[srcSize];
-            }
+            byte[] bytesBuffer = obtainNv21Buffer(srcSize);
             NativeUtil.yuv420ToNv21(image, bytesBuffer);
 
             byte[] finalBytes;
@@ -57,9 +82,7 @@ public class ImageMapperUtil {
                 }
 
                 int dstSize = targetWidth * targetHeight * 3 / 2;
-                if (bytesResizedBuffer == null || dstSize != bytesResizedBuffer.length) {
-                    bytesResizedBuffer = new byte[dstSize];
-                }
+                byte[] bytesResizedBuffer = obtainNv21ResizedBuffer(dstSize);
                 NativeUtil.resizeNv21(bytesBuffer, width, height, bytesResizedBuffer, targetWidth, targetHeight);
                 finalBytes = bytesResizedBuffer;
                 width = targetWidth;
@@ -104,20 +127,20 @@ public class ImageMapperUtil {
             int height = image.getHeight();
             int rowStride;
             int pixelStride;
+            final byte[] nv21Working;
 
             if (nv21 == null) {
                 int srcSize = width * height * 3 / 2;
-                if (bytesBuffer == null || srcSize != bytesBuffer.length) {
-                    bytesBuffer = new byte[srcSize];
-                }
+                byte[] bytesBuffer = obtainNv21Buffer(srcSize);
                 NativeUtil.yuv420ToNv21(image, bytesBuffer);
+                nv21Working = bytesBuffer;
             } else {
-                bytesBuffer = nv21;
+                nv21Working = nv21;
             }
 
             if(resizeFrame != null) {
                 long start = System.currentTimeMillis();
-                rawFrame = imageProxyToNV21Map(imageProxy, null, 0, customRotationDegrees, bytesBuffer);
+                rawFrame = imageProxyToNV21Map(imageProxy, null, 0, customRotationDegrees, nv21Working);
                 long inferenceMs = System.currentTimeMillis() - start;
                // Log.d("imageProxyToNV21Map_PERF", "inference=" + inferenceMs + "ms");
             }
@@ -137,10 +160,8 @@ public class ImageMapperUtil {
                 }
 
                 int dstSize = targetWidth * targetHeight * 3 / 2;
-                if (bytesResizedBuffer == null || dstSize != bytesResizedBuffer.length) {
-                    bytesResizedBuffer = new byte[dstSize];
-                }
-                NativeUtil.resizeNv21(bytesBuffer, width, height, bytesResizedBuffer, targetWidth, targetHeight);
+                byte[] bytesResizedBuffer = obtainNv21ResizedBuffer(dstSize);
+                NativeUtil.resizeNv21(nv21Working, width, height, bytesResizedBuffer, targetWidth, targetHeight);
                 finalBytes = bytesResizedBuffer;
                 width = targetWidth;
                 height = targetHeight;
@@ -150,7 +171,7 @@ public class ImageMapperUtil {
                 Image.Plane firstPlane = image.getPlanes()[0];
                 rowStride = firstPlane.getRowStride();
                 pixelStride = firstPlane.getPixelStride();
-                finalBytes = bytesBuffer;
+                finalBytes = nv21Working;
             }
 
 
@@ -201,6 +222,53 @@ public class ImageMapperUtil {
         }
     }
 
+    /**
+     * Camera2 {@link Image} → I420 plane map for raw stream. Copies plane bytes so the
+     * Image can be closed immediately after return.
+     */
+    public Map<String, Object> imageToI420Map(
+            Image image,
+            int rotationDegrees,
+            Integer customRotationDegrees
+    ) {
+        try {
+            if (image == null) return new HashMap<>();
+
+            Map<String, Object> adapter = new HashMap<>(6);
+            adapter.put("height", image.getHeight());
+            adapter.put("width", image.getWidth());
+            adapter.put("format", "YUV_420_888");
+            adapter.put(
+                    "rotation",
+                    customRotationDegrees != null ? customRotationDegrees : rotationDegrees
+            );
+            adapter.put("planes", imagePlanesAdapter(image));
+            return adapter;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private List<Map<String, Object>> imagePlanesAdapter(Image image) {
+        Image.Plane[] planes = image.getPlanes();
+        List<Map<String, Object>> planeData = new ArrayList<>(planes.length);
+
+        for (Image.Plane plane : planes) {
+            ByteBuffer buffer = plane.getBuffer();
+            buffer.rewind();
+            byte[] bytes = new byte[buffer.remaining()];
+            buffer.get(bytes);
+
+            Map<String, Object> planeMap = new HashMap<>(3);
+            planeMap.put("bytes", bytes);
+            planeMap.put("rowStride", plane.getRowStride());
+            planeMap.put("pixelStride", plane.getPixelStride());
+            planeData.add(planeMap);
+        }
+
+        return planeData;
+    }
+
     @SuppressLint({"RestrictedApi", "UnsafeOptInUsageError"})
     private Map<String, Object> imageProxyBaseAdapter(ImageProxy imageProxy) {
         Image image = imageProxy.getImage();
@@ -240,11 +308,9 @@ public class ImageMapperUtil {
 
     public Map<String, Object> usbFrameToNV21Map(ByteBuffer buffer, int width, int height, Size resizeFrame, int filter, Integer customRotationDegrees) {
         int srcSize = buffer.remaining();
-        if (bytesBuffer == null || srcSize != bytesBuffer.length) {
-            bytesBuffer = new byte[srcSize];
-        }
+        byte[] bytesBuffer = obtainNv21Buffer(srcSize);
         buffer.get(bytesBuffer);
-        return  usbFrameToNV21Map(bytesBuffer, width, height, resizeFrame, filter, customRotationDegrees);
+        return usbFrameToNV21Map(bytesBuffer, width, height, resizeFrame, filter, customRotationDegrees);
     }
 
     public Map<String, Object> usbFrameToNV21Map(byte[] nv21, int width, int height, Size resizeFrame, int filter, Integer customRotationDegrees) {
@@ -267,9 +333,7 @@ public class ImageMapperUtil {
                 targetHeight = resizeFrame.getHeight();
             }
             int dstSize = targetWidth * targetHeight * 3 / 2;
-            if (bytesResizedBuffer == null || dstSize != bytesResizedBuffer.length) {
-                bytesResizedBuffer = new byte[dstSize];
-            }
+            byte[] bytesResizedBuffer = obtainNv21ResizedBuffer(dstSize);
             NativeUtil.resizeNv21(nv21, width, height, bytesResizedBuffer, targetWidth, targetHeight);
             finalBytes = bytesResizedBuffer;
             width = targetWidth;

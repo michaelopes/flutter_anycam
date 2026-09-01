@@ -172,24 +172,26 @@ class FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
         onConnected: (data) {
           _disconnectDeboucer?.cancel();
           debugPrint("CM: onConnected");
-          if (mounted) {
-            Future.delayed(const Duration(milliseconds: 500), () {
-              setState(() {
-                _connectResult = (
-                  width: (data["width"] as num).toDouble(),
-                  height: (data["height"] as num).toDouble(),
-                  textureId: data["textureId"]
-                );
-                _viewState = _ViewState.connected;
-              });
+          void applyConnected() {
+            if (!mounted) return;
+            setState(() {
+              _connectResult = (
+                width: (data["width"] as num).toDouble(),
+                height: (data["height"] as num).toDouble(),
+                textureId: data["textureId"]
+              );
+              _viewState = _ViewState.connected;
             });
+          }
+
+          // One frame delay is enough for Texture readiness; avoid fixed 500ms on low-end.
+          if (mounted) {
+            WidgetsBinding.instance
+                .addPostFrameCallback((_) => applyConnected());
           } else {
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              Future.delayed(const Duration(milliseconds: 500), () {
-                setState(() {
-                  _viewState = _ViewState.connected;
-                });
-              });
+              WidgetsBinding.instance
+                  .addPostFrameCallback((_) => applyConnected());
             });
           }
           if (widget.enableDebug) {
@@ -197,6 +199,7 @@ class FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
             _mesureFrames = FlutterAnycamMesure(seconds: 1);
             _mesureFrames?.startCounting(
               callback: (counter) {
+                if (!mounted) return;
                 setState(() {
                   if (kDebugMode) {
                     print("FPS $viewId: $counter");
@@ -258,6 +261,25 @@ class FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
         _refresh();
         autoRetryTrigged = false;
       });
+    }
+  }
+
+  @override
+  void didUpdateWidget(FlutterAnycamWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final cameraChanged = oldWidget.camera.id != widget.camera.id ||
+        oldWidget.camera.lensFacing != widget.camera.lensFacing;
+    final pipelineChanged = oldWidget.fps != widget.fps ||
+        oldWidget.type != widget.type ||
+        oldWidget.previewEnabled != widget.previewEnabled ||
+        oldWidget.frameDeliveryEnabled != widget.frameDeliveryEnabled ||
+        oldWidget.filter != widget.filter ||
+        oldWidget.resizeFrame?.width != widget.resizeFrame?.width ||
+        oldWidget.resizeFrame?.height != widget.resizeFrame?.height ||
+        oldWidget.preferredSize.width != widget.preferredSize.width ||
+        oldWidget.preferredSize.height != widget.preferredSize.height;
+    if (cameraChanged || pipelineChanged) {
+      _refresh();
     }
   }
 

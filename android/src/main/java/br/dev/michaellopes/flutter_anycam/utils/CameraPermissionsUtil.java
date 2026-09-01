@@ -3,15 +3,22 @@ package br.dev.michaellopes.flutter_anycam.utils;
 import android.Manifest;
 import android.Manifest.permission;
 import android.app.Activity;
+import android.content.Context;
 import android.content.pm.PackageManager;
+
 import androidx.annotation.VisibleForTesting;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
+/**
+ * Runtime CAMERA permission only.
+ * USB device access must use {@code UsbManager.requestPermission} (handled in UsbCamera/USBMonitor),
+ * not {@code ActivityCompat.requestPermissions} — {@code USB_PERMISSION} is not a normal runtime permission.
+ */
 public final class CameraPermissionsUtil {
     private static CameraPermissionsUtil instance;
 
-  public interface PermissionsRegistry {
+    public interface PermissionsRegistry {
         @SuppressWarnings("deprecation")
         void addListener(
                 io.flutter.plugin.common.PluginRegistry.RequestPermissionsResultListener handler);
@@ -21,10 +28,6 @@ public final class CameraPermissionsUtil {
         void onResult(String errorCode, String errorDescription);
     }
 
-    /**
-     * Camera access permission errors handled when camera is created. See {@code MethodChannelCamera}
-     * in {@code camera/camera_platform_interface} for details.
-     */
     private static final String CAMERA_PERMISSIONS_REQUEST_ONGOING =
             "CameraPermissionsRequestOngoing";
 
@@ -32,38 +35,45 @@ public final class CameraPermissionsUtil {
             "Another request is ongoing and multiple requests cannot be handled at once.";
     private static final String CAMERA_ACCESS_DENIED = "CameraAccessDenied";
     private static final String CAMERA_ACCESS_DENIED_MESSAGE = "Camera access permission was denied.";
+    private static final String CAMERA_ACTIVITY_MISSING = "CameraActivityMissing";
+    private static final String CAMERA_ACTIVITY_MISSING_MESSAGE =
+            "No Activity attached; cannot request camera permission.";
 
     private static final int CAMERA_REQUEST_ID = 9796;
-    @VisibleForTesting boolean ongoing = false;
+    @VisibleForTesting
+    boolean ongoing = false;
     private PermissionsRegistry permissionsRegistry;
 
     CameraPermissionsUtil() {
     }
 
     public static CameraPermissionsUtil getInstance() {
-        if(instance == null) {
+        if (instance == null) {
             instance = new CameraPermissionsUtil();
         }
         return instance;
     }
 
-
-    public void init(
-                     PermissionsRegistry permissionsRegistry) {
+    public void init(PermissionsRegistry permissionsRegistry) {
         this.permissionsRegistry = permissionsRegistry;
     }
 
-    private Activity getActivity() {
-        return (Activity) ContextUtil.get();
-    }
-  public  void requestPermissions(
-            ResultCallback callback) {
+    public void requestPermissions(ResultCallback callback) {
         if (ongoing) {
             callback.onResult(
                     CAMERA_PERMISSIONS_REQUEST_ONGOING, CAMERA_PERMISSIONS_REQUEST_ONGOING_MESSAGE);
             return;
         }
+        Activity activity = ContextUtil.getActivity();
+        if (activity == null) {
+            callback.onResult(CAMERA_ACTIVITY_MISSING, CAMERA_ACTIVITY_MISSING_MESSAGE);
+            return;
+        }
         if (!hasCameraPermission()) {
+            if (permissionsRegistry == null) {
+                callback.onResult(CAMERA_ACTIVITY_MISSING, CAMERA_ACTIVITY_MISSING_MESSAGE);
+                return;
+            }
             permissionsRegistry.addListener(
                     new CameraRequestPermissionsListener(
                             (String errorCode, String errorDescription) -> {
@@ -72,22 +82,20 @@ public final class CameraPermissionsUtil {
                             }));
             ongoing = true;
             ActivityCompat.requestPermissions(
-                    getActivity(),
-                    new String[] { Manifest.permission.CAMERA, "android.permission.USB_PERMISSION"},
+                    activity,
+                    new String[]{Manifest.permission.CAMERA},
                     CAMERA_REQUEST_ID);
         } else {
-            // Permissions already exist. Call the callback with success.
             callback.onResult(null, null);
         }
     }
 
     public boolean hasCameraPermission() {
-        return ContextCompat.checkSelfPermission(getActivity(), permission.CAMERA)
-                == PackageManager.PERMISSION_GRANTED;
-    }
-
-    private boolean hasAudioPermission(Activity activity) {
-        return ContextCompat.checkSelfPermission(activity, permission.RECORD_AUDIO)
+        Context androidContext = ContextUtil.get();
+        if (androidContext == null) {
+            return false;
+        }
+        return ContextCompat.checkSelfPermission(androidContext, permission.CAMERA)
                 == PackageManager.PERMISSION_GRANTED;
     }
 
@@ -112,7 +120,7 @@ public final class CameraPermissionsUtil {
             }
 
             alreadyCalled = true;
-            if (grantResults[0] != PackageManager.PERMISSION_GRANTED) {
+            if (grantResults.length == 0 || grantResults[0] != PackageManager.PERMISSION_GRANTED) {
                 callback.onResult(CAMERA_ACCESS_DENIED, CAMERA_ACCESS_DENIED_MESSAGE);
             } else {
                 callback.onResult(null, null);

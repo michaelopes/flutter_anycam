@@ -131,4 +131,20 @@ public class CameraStreamManager {
             item.sendFrame(image, customRotationDegrees);
         }
     }
+
+    /**
+     * Camera2 path: {@link android.media.Image} is closed when the capture callback returns,
+     * so sinks must copy plane bytes synchronously inside this call.
+     */
+    public synchronized void sendFrame(
+            @NonNull String cameraId,
+            @NonNull android.media.Image image,
+            int rotationDegrees,
+            Integer customRotationDegrees
+    ) {
+        CameraRawStream item = getCameraStream(cameraId);
+        if (item != null && item.hasActiveSink()) {
+            item.sendFrame(image, rotationDegrees, customRotationDegrees);
+        }
+    }
 }

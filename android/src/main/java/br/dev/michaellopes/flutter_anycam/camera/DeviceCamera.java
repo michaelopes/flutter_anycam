@@ -54,6 +54,9 @@ public class DeviceCamera extends BaseCamera {
 
     private final ExecutorService cameraExecutor = Executors.newFixedThreadPool(3);
 
+    /** Reused for CameraX SurfaceRequest callbacks — avoids per-frame thread allocation. */
+    private final ExecutorService surfaceExecutor = Executors.newSingleThreadExecutor();
+
     private ImageAnalysis imageAnalysis;
 
     private Surface activeSurface;
@@ -63,6 +66,14 @@ public class DeviceCamera extends BaseCamera {
     private boolean usingCamera2 = false;
 
     private boolean resolutionStrategy = true;
+
+    /** FPS gate for Camera2 Image callbacks (buffer dies when callback returns). */
+    private final FrameRateLimiterUtil<Object> camera2DeliveryLimiter =
+            new FrameRateLimiterUtil<Object>(getFps()) {
+                @Override
+                protected void onFrameLimited(Object ignored) {
+                }
+            };
 
     FrameRateLimiterUtil<ImageProxy> limiter = new FrameRateLimiterUtil<ImageProxy>(getFps()) {
         @Override
@@ -188,16 +199,40 @@ public class DeviceCamera extends BaseCamera {
         if (disposed) return;
 
         int sensorOrientation = cameraInfo.getSensorRotationDegrees();
+
+        // Preview surface may not be attached yet when onCameraXBound fires (esp. concurrent /
+        // analysis-only fallback). Never NPE on getAttachedSurfaceResolution().
+        Size previewSize = null;
+        if (preview != null && previewEnabled) {
+            previewSize = preview.getAttachedSurfaceResolution();
+        }
+
+        Size analysisSize = null;
+        if (imageAnalysis != null) {
+            try {
+                androidx.camera.core.ResolutionInfo info = imageAnalysis.getResolutionInfo();
+                if (info != null) {
+                    analysisSize = info.getResolution();
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
         int width;
         int height;
-
-        if (preview != null && previewEnabled) {
-            Size ps = preview.getAttachedSurfaceResolution();
-            width = ps.getWidth();
-            height = ps.getHeight();
+        if (previewSize != null) {
+            width = previewSize.getWidth();
+            height = previewSize.getHeight();
+        } else if (analysisSize != null) {
+            width = analysisSize.getWidth();
+            height = analysisSize.getHeight();
+            Log.w("DeviceCamera", "Preview resolution null for " + getCameraId()
+                    + "; using analysis " + width + "x" + height);
         } else {
             width = preferredSize.getWidth();
             height = preferredSize.getHeight();
+            Log.w("DeviceCamera", "No attached resolution for " + getCameraId()
+                    + "; using preferredSize " + width + "x" + height);
         }
 
         if (sensorOrientation == 90 || sensorOrientation == 270) {
@@ -248,7 +283,7 @@ public class DeviceCamera extends BaseCamera {
 
                     @Override
                     public void onFailed(String message) {
-                        onFailed(message);
+                        DeviceCamera.this.onFailed(message);
                     }
                 }
         );
@@ -330,7 +365,7 @@ public class DeviceCamera extends BaseCamera {
             activeSurface = new Surface(texture.surfaceTexture());
             request.provideSurface(
                     activeSurface,
-                    Executors.newSingleThreadExecutor(),
+                    surfaceExecutor,
                     (result) -> {
                         int resultCode = result.getResultCode();
                         if (resultCode == SurfaceRequest.Result.RESULT_INVALID_SURFACE) {
@@ -357,6 +392,7 @@ public class DeviceCamera extends BaseCamera {
 
         cameraExecutor.shutdown();
         queueExecutor.shutdown();
+        surfaceExecutor.shutdown();
 
         try {
             if (!cameraExecutor.awaitTermination(2, TimeUnit.SECONDS)) {
@@ -365,10 +401,14 @@ public class DeviceCamera extends BaseCamera {
             if (!queueExecutor.awaitTermination(3, TimeUnit.SECONDS)) {
                 queueExecutor.shutdownNow();
             }
+            if (!surfaceExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
+                surfaceExecutor.shutdownNow();
+            }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             cameraExecutor.shutdownNow();
             queueExecutor.shutdownNow();
+            surfaceExecutor.shutdownNow();
         }
 
         if (activeSurface != null) {
@@ -450,6 +490,24 @@ public class DeviceCamera extends BaseCamera {
     private void analyzeCamera2Image(android.media.Image image) {
         try {
             if (disposed) return;
+
+            // Feed raw/WebRTC sinks while Image is still valid (closed by Camera2CameraSession after callback).
+            CameraStreamManager.getInstance().sendFrame(
+                    getCameraId(),
+                    image,
+                    getSensorOrientation(),
+                    getCustomRotationDegrees()
+            );
+
+            if (!frameDeliveryEnabled) {
+                return;
+            }
+
+            // Skip NV21 conversion when under FPS budget — biggest win on low-end multi-cam.
+            if (!camera2DeliveryLimiter.shouldProcessFrame()) {
+                return;
+            }
+
             Map<String, Object> frameMap = imageAnalysisUtil.imageToNV21Map(
                     image,
                     getSensorOrientation(),

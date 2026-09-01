@@ -18,12 +18,19 @@ class FlutterAnycamPermissionHandler {
       _inProgress = true;
       try {
         final res = await FlutterAnycamPlatform.instance.requestPermission();
-        for (var item in _listeners.values) {
+        final listeners = Map<int, PermissionCallback>.from(_listeners);
+        _listeners.clear();
+        for (final item in listeners.values) {
           item(res);
         }
-        FlutterAnycamPlatform.instance.broadcastPermissionGranted();
+        // Only start cameras when permission was actually granted.
+        if (res) {
+          await FlutterAnycamPlatform.instance.broadcastPermissionGranted();
+        }
       } catch (_) {
-        for (var item in _listeners.values) {
+        final listeners = Map<int, PermissionCallback>.from(_listeners);
+        _listeners.clear();
+        for (final item in listeners.values) {
           item(false);
         }
       } finally {

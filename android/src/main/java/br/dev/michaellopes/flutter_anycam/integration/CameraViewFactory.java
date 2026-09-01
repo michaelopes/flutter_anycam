@@ -19,7 +19,7 @@ public class CameraViewFactory {
 
     private ViewCameraSelector cameraSelector;
 
-    private List<BaseCamera> cameras = new ArrayList<>();
+    private final List<BaseCamera> cameras = new ArrayList<>();
 
     private static final CameraViewFactory instance = new CameraViewFactory();
 
@@ -31,7 +31,7 @@ public class CameraViewFactory {
         this.textureRegistry = textureRegistry;
     }
 
-    public void broadcastPermissionGranted() {
+    public synchronized void broadcastPermissionGranted() {
         for (BaseCamera camera : cameras) {
             if (!camera.isRtsp()) {
                 camera.run();
@@ -39,19 +39,25 @@ public class CameraViewFactory {
         }
     }
 
-
-    public void disposeAll() {
-        for (BaseCamera camera : cameras) {
-            camera.dispose();
-            cameras.remove(camera);
+    public synchronized void disposeAll() {
+        List<BaseCamera> snapshot = new ArrayList<>(cameras);
+        cameras.clear();
+        for (BaseCamera camera : snapshot) {
+            try {
+                camera.dispose();
+            } catch (Exception ignored) {
+            }
         }
     }
 
-
-    public BaseCamera getCameraById(String id) {
-        Object[] filter = cameras.stream().filter(item -> item.getCameraId().equals(cameraSelector.getId())).toArray();
-        if (filter.length >= 1) {
-            return (BaseCamera) filter[0];
+    public synchronized BaseCamera getCameraById(String id) {
+        if (id == null) {
+            return null;
+        }
+        for (BaseCamera camera : cameras) {
+            if (id.equals(camera.getCameraId())) {
+                return camera;
+            }
         }
         return null;
     }
@@ -61,31 +67,33 @@ public class CameraViewFactory {
             final int viewId = (int) args.get("viewId");
             Map<String, Object> map = (Map<String, Object>) args.get("cameraSelector");
             cameraSelector = ViewCameraSelector.fromMap(map);
-            Object[] filter = cameras.stream().filter(item -> item.getCameraId().equals(cameraSelector.getId())).toArray();
-            if (filter.length >= 1) {
-                BaseCamera camera = (BaseCamera) filter[0];
-                long textureId = camera.getTextureId();
-                camera.addBridge(new CameraBridge(viewId));
+            BaseCamera existing = getCameraByIdUnlocked(cameraSelector.getId());
+            if (existing != null) {
+                long textureId = existing.getTextureId();
+                existing.addBridge(new CameraBridge(viewId));
                 return textureId;
             } else {
                 BaseCamera camera = createCamera(args);
                 camera.addBridge(new CameraBridge(viewId));
                 camera.run();
-
                 cameras.add(camera);
                 return camera.getTextureId();
             }
-
         }
         return null;
     }
 
-    public void disposeView(HashMap<String, Object> args) {
+    public synchronized void disposeView(HashMap<String, Object> args) {
         if (args.get("viewId") != null) {
             final int viewId = (int) args.get("viewId");
-            Object[] filter = cameras.stream().filter(item -> item.containsBridgeByViewId(viewId)).toArray();
-            if (filter.length >= 1) {
-                BaseCamera camera = (BaseCamera) filter[0];
+            BaseCamera camera = null;
+            for (BaseCamera item : cameras) {
+                if (item.containsBridgeByViewId(viewId)) {
+                    camera = item;
+                    break;
+                }
+            }
+            if (camera != null) {
                 final CameraBridge bridge = camera.getBridgeByViewId(viewId);
                 camera.removeBridge(bridge);
                 if (!camera.existsBridge()) {
@@ -96,21 +104,27 @@ public class CameraViewFactory {
         }
     }
 
-    private BaseCamera createCamera(Map<String, Object> args) {
-        synchronized (instance) {
-            TextureRegistry.SurfaceTextureEntry texture = textureRegistry.createSurfaceTexture();
-
-            switch (cameraSelector.getLensFacing()) {
-                case "usb":
-                    return new UsbCamera(texture, args);
-                case "rtsp":
-                    return new RTSPCamera(texture, args);
-                case "back":
-                case "front":
-                default:
-                    return new DeviceCamera(texture, args);
+    private BaseCamera getCameraByIdUnlocked(String id) {
+        for (BaseCamera camera : cameras) {
+            if (camera.getCameraId().equals(id)) {
+                return camera;
             }
         }
+        return null;
     }
 
+    private BaseCamera createCamera(Map<String, Object> args) {
+        TextureRegistry.SurfaceTextureEntry texture = textureRegistry.createSurfaceTexture();
+
+        switch (cameraSelector.getLensFacing()) {
+            case "usb":
+                return new UsbCamera(texture, args);
+            case "rtsp":
+                return new RTSPCamera(texture, args);
+            case "back":
+            case "front":
+            default:
+                return new DeviceCamera(texture, args);
+        }
+    }
 }

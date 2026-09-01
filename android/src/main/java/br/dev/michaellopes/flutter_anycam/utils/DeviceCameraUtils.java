@@ -52,6 +52,8 @@ public class DeviceCameraUtils {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private Runnable pendingLifecycleUpdate;
     private static final long LIFECYCLE_DEBOUNCE_MS = 500;
+    private int activityWaitRetries = 0;
+    private static final int MAX_ACTIVITY_WAIT_RETRIES = 20;
 
     public interface BindCallback {
         void onCameraXBound(Camera2CameraInfoImpl cameraInfo);
@@ -114,12 +116,24 @@ public class DeviceCameraUtils {
         return binds.size();
     }
 
+    /** Called when Activity becomes available again (attach / config change). */
+    public synchronized void onActivityReady() {
+        if (!binds.isEmpty()) {
+            activityWaitRetries = 0;
+            scheduleLifecycleUpdate();
+        }
+    }
+
     private void scheduleLifecycleUpdate() {
         if (pendingLifecycleUpdate != null) {
             mainHandler.removeCallbacks(pendingLifecycleUpdate);
         }
         pendingLifecycleUpdate = this::performLifecycleUpdate;
-        mainHandler.postDelayed(pendingLifecycleUpdate, LIFECYCLE_DEBOUNCE_MS);
+        // First cold bind: no debounce (faster preview on low-end).
+        // Rebinds / multi-cam: debounce to coalesce rapid create/dispose from Dart lifecycle.
+        boolean coldSingleBind = binds.size() == 1 && cameras.isEmpty();
+        long delay = coldSingleBind ? 0L : LIFECYCLE_DEBOUNCE_MS;
+        mainHandler.postDelayed(pendingLifecycleUpdate, delay);
     }
 
 
@@ -236,7 +250,26 @@ public class DeviceCameraUtils {
             cameras.clear();
             cameraProvider.unbindAll();
             if (!binds.isEmpty()) {
-                LifecycleOwner lifecycleOwner = (LifecycleOwner) ContextUtil.get();
+                LifecycleOwner lifecycleOwner = ContextUtil.getLifecycleOwner();
+                if (lifecycleOwner == null) {
+                    // Activity often attaches slightly after engine; keep callbacks and retry.
+                    if (activityWaitRetries++ < MAX_ACTIVITY_WAIT_RETRIES) {
+                        Log.w("DeviceCameraUtils", "LifecycleOwner missing; retry "
+                                + activityWaitRetries + "/" + MAX_ACTIVITY_WAIT_RETRIES);
+                        mainHandler.postDelayed(this::scheduleLifecycleUpdate, 100);
+                    } else {
+                        activityWaitRetries = 0;
+                        Log.e("DeviceCameraUtils", "No LifecycleOwner after retries; failing binds");
+                        for (CameraRef bind : new ArrayList<>(binds)) {
+                            notifyBindFailed(bind.getCameraId(), "Activity not attached");
+                        }
+                        // Drop orphan refs so a later onActivityReady() cannot rebind
+                        // without the callbacks that were already notified as failed.
+                        binds.clear();
+                    }
+                    return;
+                }
+                activityWaitRetries = 0;
                 try {
                     if (binds.size() == 1) {
                         bindSingleCamera(cameraProvider, lifecycleOwner, binds.get(0));
@@ -247,21 +280,29 @@ public class DeviceCameraUtils {
                         notifyUseCamera2Direct();
                     } else {
                         bindConcurrentCameras(cameraProvider, lifecycleOwner);
-                        for (CameraRef bind : binds) {
-                            notifyCameraXBound(bind);
+                        if (cameras.size() < binds.size()) {
+                            Log.w("DeviceCameraUtils", "Concurrent bind opened "
+                                    + cameras.size() + "/" + binds.size()
+                                    + " cameras — falling back to Camera2");
+                            cameraProvider.unbindAll();
+                            cameras.clear();
+                            notifyUseCamera2Direct();
+                        } else {
+                            for (CameraRef bind : binds) {
+                                notifyCameraXBound(bind);
+                            }
                         }
                     }
                 } catch (Exception e) {
-                    Log.e("DeviceCameraUtils", "Failed to bind cameras, retrying analysis-only", e);
+                    // Analysis-only drops Preview → black Texture + null resolution races.
+                    // Dual preview must use Camera2 when CameraX concurrent fails.
+                    Log.e("DeviceCameraUtils", "Concurrent CameraX failed — using Camera2 direct", e);
                     try {
-                        bindConcurrentCamerasAnalysisOnly(cameraProvider, lifecycleOwner);
-                        for (CameraRef bind : binds) {
-                            notifyCameraXBound(bind);
-                        }
-                    } catch (Exception e2) {
-                        Log.e("DeviceCameraUtils", "Analysis-only concurrent failed, trying Camera2", e2);
-                        notifyUseCamera2Direct();
+                        cameraProvider.unbindAll();
+                    } catch (Exception ignored) {
                     }
+                    cameras.clear();
+                    notifyUseCamera2Direct();
                 }
             }
         }

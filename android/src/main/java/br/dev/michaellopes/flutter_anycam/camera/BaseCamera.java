@@ -110,7 +110,8 @@ public abstract class BaseCamera {
         for (CameraBridge bridge: bridges) {
             bridge.onConnected(data);
         }
-        lastAction = new BaseCamera.ActionCall( "onConnected", data);
+        // Defensive copy: EventChannel no longer clears maps, but bridges must not mutate lastAction.
+        lastAction = new BaseCamera.ActionCall("onConnected", new HashMap<>(data));
     }
 
     public void onDisconnected() {
