@@ -33,6 +33,8 @@ public abstract class BaseCamera {
 
     private ActionCall lastAction = null;
     protected int filter = 0;
+    protected String type = "standard";
+    protected boolean frameDeliveryEnabled = true;
 
     public BaseCamera(TextureRegistry.SurfaceTextureEntry texture, Map<String, Object> params) {
         this.texture = texture;
@@ -57,7 +59,22 @@ public abstract class BaseCamera {
             }
         }
 
+        if (params.get("type") != null) {
+            final String tp = (String) params.get("type");
+            if(tp != null) {
+                type = tp;
+            }
+        }
+
+        if (params.get("frameDeliveryEnabled") != null) {
+            frameDeliveryEnabled = (Boolean) params.get("frameDeliveryEnabled");
+        }
+
         this.params = params;
+    }
+
+    public boolean isStandard() {
+        return  type.equals("standard");
     }
 
     public String getCameraId() {
@@ -93,7 +110,8 @@ public abstract class BaseCamera {
         for (CameraBridge bridge: bridges) {
             bridge.onConnected(data);
         }
-        lastAction = new BaseCamera.ActionCall( "onConnected", data);
+        // Defensive copy: EventChannel no longer clears maps, but bridges must not mutate lastAction.
+        lastAction = new BaseCamera.ActionCall("onConnected", new HashMap<>(data));
     }
 
     public void onDisconnected() {
@@ -182,6 +200,9 @@ public abstract class BaseCamera {
 
 
     public void setZoom(float zoom) {}
+
+
+    public void setExposureCompensation(int value) {}
 
     @CallSuper
     public void dispose() {

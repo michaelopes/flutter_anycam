@@ -32,6 +32,8 @@ class BaseCamera: NSObject, FlutterTexture {
     var preferredSize : FpSize?;
     var resizeFrame : FpSize?;
     var filter : Int = 0;
+    /// Quando `type` do createView é `tf`, os frames são registados nativamente para TFLite (espelha Android).
+    let isTfMode: Bool;
     
     func copyPixelBuffer() -> Unmanaged<CVPixelBuffer>? {
         guard let buffer = latestPixelBuffer else { return nil }
@@ -57,6 +59,7 @@ class BaseCamera: NSObject, FlutterTexture {
         }
         
         filter = params["filter"] as? Int ?? 0;
+        isTfMode = (params["type"] as? String) == "tf"
     }
     
     func getCameraId() -> String? {

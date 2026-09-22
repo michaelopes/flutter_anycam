@@ -409,6 +409,30 @@ extension DeviceCamera: AVCaptureVideoDataOutputSampleBufferDelegate {
         if let raw = rawImageBuffer {
             imageBuffer["rawFrame"] = raw
         }
+
+        if isTfMode {
+            var rawBytes: Data?
+            var rw: Int?
+            var rh: Int?
+            if let raw = rawImageBuffer,
+               let rawTyped = raw["bytes"] as? FlutterStandardTypedData {
+                rawBytes = rawTyped.data
+                rw = raw["width"] as? Int
+                rh = raw["height"] as? Int
+            }
+            let tfMeta = TfFrameHandler.shared.registerCameraFrame(
+                processedBGRA: imageData,
+                width: width,
+                height: height,
+                rawBGRA: rawBytes,
+                rawWidth: rw,
+                rawHeight: rh,
+                filter: filter
+            )
+            for (k, v) in tfMeta {
+                imageBuffer[k] = v
+            }
+        }
         
         onVideoFrameReceived(imageData: imageBuffer)
     }

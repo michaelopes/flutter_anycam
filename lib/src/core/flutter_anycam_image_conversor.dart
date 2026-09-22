@@ -1,0 +1,67 @@
+import 'dart:io';
+import 'dart:typed_data';
+
+import '../channel/flutter_anycam_platform_interface.dart';
+import 'flutter_anycam_crop.dart';
+import 'flutter_anycam_filter.dart';
+import 'flutter_anycam_frame.dart';
+
+class FlutterAnycamFrameConversor {
+  Future<Uint8List?> convertToJpeg({
+    required FlutterAnycamFrame frame,
+    FlutterAnycamFilter filter = FlutterAnycamFilter.none,
+    FlutterAnycamCrop? crop,
+    int quality = 100,
+  }) {
+    return Platform.isIOS
+        ? _bgra888ToJpeg(
+            frame: frame,
+            quality: quality,
+            crop: crop,
+            filter: filter,
+          )
+        : _n21ToJpeg(
+            frame: frame,
+            quality: quality,
+            crop: crop,
+            filter: filter,
+          );
+  }
+
+  Future<Uint8List?> _n21ToJpeg({
+    required FlutterAnycamFrame frame,
+    FlutterAnycamFilter filter = FlutterAnycamFilter.none,
+    FlutterAnycamCrop? crop,
+    int quality = 100,
+  }) async {
+    final nv21Bytes = frame.bytes;
+    final width = frame.width;
+    final height = frame.height;
+
+    return FlutterAnycamPlatform.instance.convertNv21ToJpeg(
+        bytes: nv21Bytes,
+        width: width,
+        height: height,
+        quality: quality,
+        rotation: frame.rotation,
+        crop: crop,
+        filter: filter);
+  }
+
+  Future<Uint8List?> _bgra888ToJpeg({
+    required FlutterAnycamFrame frame,
+    FlutterAnycamFilter filter = FlutterAnycamFilter.none,
+    FlutterAnycamCrop? crop,
+    int quality = 100,
+  }) async {
+    return FlutterAnycamPlatform.instance.convertBGRA8888ToJpeg(
+      bytes: frame.bytes,
+      width: frame.width,
+      height: frame.height,
+      quality: quality,
+      rotation: 0,
+      crop: crop,
+      filter: filter,
+    );
+  }
+}
