@@ -12,8 +12,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import io.flutter.Log;
-
 public class ImageMapperUtil {
     /**
      * Ping-pong NV21 buffers so an in-flight EventChannel encode on the main thread
@@ -59,21 +57,40 @@ public class ImageMapperUtil {
         try {
             if (image == null) return new HashMap<>();
 
-            int width = image.getWidth();
-            int height = image.getHeight();
+            int srcWidth = image.getWidth();
+            int srcHeight = image.getHeight();
+            int width = srcWidth;
+            int height = srcHeight;
             int rowStride;
             int pixelStride;
 
-            int srcSize = width * height * 3 / 2;
+            int srcSize = srcWidth * srcHeight * 3 / 2;
             byte[] bytesBuffer = obtainNv21Buffer(srcSize);
             NativeUtil.yuv420ToNv21(image, bytesBuffer);
+
+            int sensorOrientation = customRotationDegrees != null
+                    ? customRotationDegrees
+                    : rotationDegrees;
+
+            Map<String, Object> rawFrame = null;
+            if (resizeFrame != null) {
+                // Same contract as imageProxyToNV21Map / usbFrameToNV21Map.
+                rawFrame = new HashMap<>();
+                rawFrame.put("width", srcWidth);
+                rawFrame.put("height", srcHeight);
+                rawFrame.put("format", "NV21");
+                rawFrame.put("bytes", bytesBuffer);
+                rawFrame.put("rotation", sensorOrientation);
+                rawFrame.put("rowStride", srcWidth);
+                rawFrame.put("pixelStride", 1);
+            }
 
             byte[] finalBytes;
             if (resizeFrame != null) {
                 int targetWidth;
                 int targetHeight;
                 if (resizeFrame.getHeight() == -1 && resizeFrame.getWidth() == -1) {
-                    int minSize = Math.min(width, height);
+                    int minSize = Math.min(srcWidth, srcHeight);
                     targetWidth = minSize;
                     targetHeight = minSize;
                 } else {
@@ -83,7 +100,7 @@ public class ImageMapperUtil {
 
                 int dstSize = targetWidth * targetHeight * 3 / 2;
                 byte[] bytesResizedBuffer = obtainNv21ResizedBuffer(dstSize);
-                NativeUtil.resizeNv21(bytesBuffer, width, height, bytesResizedBuffer, targetWidth, targetHeight);
+                NativeUtil.resizeNv21(bytesBuffer, srcWidth, srcHeight, bytesResizedBuffer, targetWidth, targetHeight);
                 finalBytes = bytesResizedBuffer;
                 width = targetWidth;
                 height = targetHeight;
@@ -97,10 +114,6 @@ public class ImageMapperUtil {
             }
 
             Map<String, Object> result = new HashMap<>();
-            int sensorOrientation = customRotationDegrees != null
-                    ? customRotationDegrees
-                    : rotationDegrees;
-
             result.put("height", height);
             result.put("width", width);
             result.put("format", "NV21");
@@ -109,6 +122,9 @@ public class ImageMapperUtil {
             result.put("rotation", sensorOrientation);
             result.put("rowStride", rowStride);
             result.put("pixelStride", pixelStride);
+            if (rawFrame != null) {
+                result.put("rawFrame", rawFrame);
+            }
             return result;
         } catch (Exception e) {
             throw new RuntimeException(e);
@@ -401,64 +417,6 @@ public class ImageMapperUtil {
 
         return image;
     }
-
-
-    public Map<String, Object> rtspFrameToNV21Map(byte[] nv21Bytes, int width, int height, int filter, Integer customRotationDegrees) {
-        Map<String, Object> image = new HashMap<>();
-        image.put("width", width);
-        image.put("height", height);
-        if (customRotationDegrees != null) {
-            image.put("rotation", customRotationDegrees);
-        } else {
-            image.put("rotation", 0);
-        }
-
-
-        NativeUtil.applyFilter(nv21Bytes, width, height, filter);
-
-        image.put("bytes", nv21Bytes);
-        image.put("format", "NV21");
-        image.put("rowStride", width);
-        image.put("pixelStride", 1);
-        return image;
-    }
-
-
-    public Map<String, Object> rtspFrameToFlutterResult(byte[] yv12Bytes, int width, int height, Integer customRotationDegrees) {
-
-        byte[] nv21Bytes = ImageConverterUtil.i420ToNv21(yv12Bytes, width, height);
-        ImageConverterUtil.FrameImageProxy imageProxy = ImageConverterUtil.convertNV21ToFrameImageProxy(nv21Bytes, width, height);
-        List<Map<String, Object>> planes = new ArrayList<>();
-        for (ImageConverterUtil.FramePlane item :
-                imageProxy.getPlanes()) {
-            Map<String, Object> plane = new HashMap<>();
-
-            ByteBuffer pBuffer = item.getBuffer();
-            byte[] bytes = new byte[pBuffer.remaining()];
-            pBuffer.get(bytes);
-
-            plane.put("bytes", bytes);
-            plane.put("rowStride", item.getRowStride());
-            plane.put("pixelStride", item.getPixelStride());
-            planes.add(plane);
-        }
-
-        Map<String, Object> image = new HashMap<>();
-        image.put("width", width);
-        image.put("height", height);
-        if (customRotationDegrees != null) {
-            image.put("rotation", customRotationDegrees);
-        } else {
-            image.put("rotation", 0);
-        }
-        image.put("isPortrait", height > width);
-        image.put("bytes", nv21Bytes);
-        image.put("planes", planes);
-        image.put("format", "YUV_420_888");
-
-        return image;
-    }
-
 
 
 }

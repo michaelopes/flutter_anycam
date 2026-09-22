@@ -235,17 +235,23 @@ List<Scenario> buildScenarioCatalog() {
     Scenario(
       id: 'rtsp',
       title: 'RTSP',
-      subtitle: 'Network stream (Android)',
+      subtitle: 'Manual lab: rtsp://192.168.1.21:8554 (Android)',
       platforms: const {ScenarioPlatform.android},
       androidOnlyReason: 'RTSP is Android-only',
       checklist: const [
-        'Connect with valid URL/credentials',
-        'Frames arrive; Disconnect stops session',
+        'URL prefilled with rtsp://192.168.1.21:8554 (or tap Lab chip)',
+        'Connect → preview + analysisFps updates',
+        'Raise Target FPS (30/60), note max= peak; thumb off for true max',
+        'Analysis thumb colors match preview when enabled',
+        'Disconnect stops session',
       ],
       builder: (_) => const RtspPage(
         checklist: [
-          'Connect with valid URL/credentials',
-          'Frames arrive; Disconnect stops session',
+          'URL prefilled with rtsp://192.168.1.21:8554 (or tap Lab chip)',
+          'Connect → preview + analysisFps updates',
+          'Raise Target FPS (30/60), note max= peak; thumb off for true max',
+          'Analysis thumb colors match preview when enabled',
+          'Disconnect stops session',
         ],
       ),
     ),

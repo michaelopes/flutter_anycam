@@ -6,6 +6,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.camera.core.ImageProxy;
 
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -20,7 +21,7 @@ public class CameraStreamManager {
     private CameraStreamManager() {
     }
 
-    public static CameraStreamManager getInstance() {
+    public static synchronized CameraStreamManager getInstance() {
         if (instance == null) {
             instance = new CameraStreamManager();
         }
@@ -66,13 +67,25 @@ public class CameraStreamManager {
         return new Size(w, h);
     }
 
-    public boolean add(String cameraId, int fps) {
+    public synchronized boolean add(String cameraId, int fps) {
         CameraRawStream stream = getOrCreateStream(cameraId, fps);
         stream.setDeliverToFlutter(true);
         return true;
     }
 
-    public boolean addWebRtcFeed(
+    /** True when raw Flutter and/or WebRTC sinks are registered for this camera. */
+    public synchronized boolean hasActiveSink(String cameraId) {
+        CameraRawStream item = getCameraStream(cameraId);
+        return item != null && item.hasActiveSink();
+    }
+
+    /** True when a registered sink would accept a frame now (does not consume its FPS slot). */
+    public synchronized boolean isFrameDue(String cameraId) {
+        CameraRawStream item = getCameraStream(cameraId);
+        return item != null && item.isFrameDue();
+    }
+
+    public synchronized boolean addWebRtcFeed(
             String cameraId,
             int fps,
             boolean alsoDeliverToFlutter,
@@ -97,7 +110,7 @@ public class CameraStreamManager {
         return true;
     }
 
-    public void removeWebRtcFeed(String cameraId) {
+    public synchronized void removeWebRtcFeed(String cameraId) {
         CameraRawStream stream = getCameraStream(cameraId);
         if (stream != null) {
             stream.clearWebRtcFeed();
@@ -111,7 +124,7 @@ public class CameraStreamManager {
         }
     }
 
-    public void dispose(String cameraId) {
+    public synchronized void dispose(String cameraId) {
         CameraRawStream item = getCameraStream(cameraId);
         if (item != null) {
             if (item.isWebRtcFeedEnabled()) {
@@ -145,6 +158,24 @@ public class CameraStreamManager {
         CameraRawStream item = getCameraStream(cameraId);
         if (item != null && item.hasActiveSink()) {
             item.sendFrame(image, rotationDegrees, customRotationDegrees);
+        }
+    }
+
+    /**
+     * Tightly packed NV21 path (RTSP GPU readback). Sinks copy what they need synchronously,
+     * so the caller may reuse {@code nv21} after this returns.
+     */
+    public synchronized void sendNv21Frame(
+            @NonNull String cameraId,
+            @NonNull ByteBuffer nv21,
+            int width,
+            int height,
+            int rotationDegrees,
+            Integer customRotationDegrees
+    ) {
+        CameraRawStream item = getCameraStream(cameraId);
+        if (item != null && item.hasActiveSink()) {
+            item.sendNv21Frame(nv21, width, height, rotationDegrees, customRotationDegrees);
         }
     }
 }

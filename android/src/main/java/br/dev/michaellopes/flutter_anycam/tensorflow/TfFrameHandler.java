@@ -94,7 +94,9 @@ public class TfFrameHandler {
 
         Nv21Buffer srcNv21Buffer = Nv21Buffer.Factory.wrap(byteBufferPoolItem.buffer, srcWidth, srcHeight);
         if (rotation > 0) {
-            Nv21Buffer nv21RotateBuffer = Nv21Buffer.Factory.allocate(srcHeight, srcWidth);
+            Nv21Buffer nv21RotateBuffer = rotation == 180
+                    ? Nv21Buffer.Factory.allocate(srcWidth, srcHeight)
+                    : Nv21Buffer.Factory.allocate(srcHeight, srcWidth);
             srcNv21Buffer.rotate(nv21RotateBuffer, rotateMode);
             srcNv21Buffer.close();
             byteBufferPoolItem.release();
@@ -130,7 +132,21 @@ public class TfFrameHandler {
 
     }
 
-    public Map<String, Object> addFrame(byte[] nv21, int width, int height, int filter, Integer customRotationDegrees) {
+    /**
+     * Camera2 / RTSP {@link Image} path — mirrors {@link #addFrame(ImageProxy, Size, int, Integer)}.
+     * {@code resizeFrame} is accepted for API parity with DeviceCamera but is not applied here
+     * (same as the ImageProxy overload); inference does its own sizing.
+     */
+    public Map<String, Object> addFrame(
+            Image image,
+            Size resizeFrame,
+            int filter,
+            Integer customRotationDegrees
+    ) {
+        if (image == null) return null;
+
+        int srcWidth = image.getWidth();
+        int srcHeight = image.getHeight();
         int rotation = customRotationDegrees != null ? customRotationDegrees : 0;
 
         RotateMode rotateMode;
@@ -149,13 +165,21 @@ public class TfFrameHandler {
                 break;
         }
 
-        ByteBufferPoolUtil.PoolItem byteBufferPoolItem = byteBuffer.acquire(nv21.length);
-        byteBufferPoolItem.buffer.put(nv21);
+        int srcSize = srcWidth * srcHeight * 3 / 2;
+        ByteArrayPoolUtil.PoolItem poolItem = bytePool.acquire(srcSize);
+        NativeUtil.yuv420ToNv21(image, poolItem.data);
+
+        ByteBufferPoolUtil.PoolItem byteBufferPoolItem = byteBuffer.acquire(poolItem.data.length);
+        byteBufferPoolItem.buffer.put(poolItem.data);
         byteBufferPoolItem.buffer.flip();
 
-        Nv21Buffer srcNv21Buffer = Nv21Buffer.Factory.wrap(byteBufferPoolItem.buffer, width, height);
+        bytePool.release(poolItem);
+
+        Nv21Buffer srcNv21Buffer = Nv21Buffer.Factory.wrap(byteBufferPoolItem.buffer, srcWidth, srcHeight);
         if (rotation > 0) {
-            Nv21Buffer nv21RotateBuffer = Nv21Buffer.Factory.allocate(height, width);
+            Nv21Buffer nv21RotateBuffer = rotation == 180
+                    ? Nv21Buffer.Factory.allocate(srcWidth, srcHeight)
+                    : Nv21Buffer.Factory.allocate(srcHeight, srcWidth);
             srcNv21Buffer.rotate(nv21RotateBuffer, rotateMode);
             srcNv21Buffer.close();
             byteBufferPoolItem.release();
@@ -181,6 +205,117 @@ public class TfFrameHandler {
             if (rotation == 0) {
                 byteBufferPoolItem.release();
             }
+            return null;
+        }
+    }
+
+    public Map<String, Object> addFrame(byte[] nv21, int width, int height, int filter, Integer customRotationDegrees) {
+        int rotation = customRotationDegrees != null ? customRotationDegrees : 0;
+
+        RotateMode rotateMode;
+        switch (rotation) {
+            case 90:
+                rotateMode = RotateMode.ROTATE_90;
+                break;
+            case 180:
+                rotateMode = RotateMode.ROTATE_180;
+                break;
+            case 270:
+                rotateMode = RotateMode.ROTATE_270;
+                break;
+            default:
+                rotateMode = RotateMode.ROTATE_0;
+                break;
+        }
+
+        ByteBufferPoolUtil.PoolItem byteBufferPoolItem = byteBuffer.acquire(nv21.length);
+        byteBufferPoolItem.buffer.put(nv21);
+        byteBufferPoolItem.buffer.flip();
+
+        Nv21Buffer srcNv21Buffer = Nv21Buffer.Factory.wrap(byteBufferPoolItem.buffer, width, height);
+        if (rotation > 0) {
+            Nv21Buffer nv21RotateBuffer = rotation == 180
+                    ? Nv21Buffer.Factory.allocate(width, height)
+                    : Nv21Buffer.Factory.allocate(height, width);
+            srcNv21Buffer.rotate(nv21RotateBuffer, rotateMode);
+            srcNv21Buffer.close();
+            byteBufferPoolItem.release();
+            srcNv21Buffer = nv21RotateBuffer;
+
+            if (rotation == 270) {
+                Nv21Buffer mirrored = Nv21Buffer.Factory.allocate(srcNv21Buffer.getWidth(), srcNv21Buffer.getHeight());
+                srcNv21Buffer.mirrorTo(mirrored);
+                srcNv21Buffer.close();
+                srcNv21Buffer = mirrored;
+            }
+        }
+
+        try {
+            final Map<String, Object> result = addFrame(srcNv21Buffer, filter);
+            srcNv21Buffer.close();
+            if (rotation == 0) {
+                byteBufferPoolItem.release();
+            }
+            return result;
+        } catch (Exception e) {
+            srcNv21Buffer.close();
+            if (rotation == 0) {
+                byteBufferPoolItem.release();
+            }
+            return null;
+        }
+    }
+
+    /**
+     * GPU readback path: {@code argb} holds libyuv ARGB (bytes B,G,R,A), tightly packed and
+     * top-down. It is copied before returning, so the caller may reuse it afterwards.
+     */
+    public Map<String, Object> addFrameArgb(ByteBuffer argb, int width, int height, int filter, Integer customRotationDegrees) {
+        final int rotation = customRotationDegrees != null ? customRotationDegrees : 0;
+        try {
+            return asyncRun((result) -> {
+                ByteBuffer src = argb.duplicate();
+                src.rewind();
+                ArgbBuffer srcBuffer = ArgbBuffer.Factory.wrap(src, width, height);
+                ArgbBuffer frameBuffer;
+                try {
+                    switch (rotation) {
+                        case 90:
+                        case 270:
+                            frameBuffer = ArgbBuffer.Factory.allocate(height, width);
+                            srcBuffer.rotate(frameBuffer, rotation == 90 ? RotateMode.ROTATE_90 : RotateMode.ROTATE_270);
+                            break;
+                        case 180:
+                            frameBuffer = ArgbBuffer.Factory.allocate(width, height);
+                            srcBuffer.rotate(frameBuffer, RotateMode.ROTATE_180);
+                            break;
+                        default:
+                            frameBuffer = ArgbBuffer.Factory.allocate(width, height);
+                            srcBuffer.convertTo(frameBuffer);
+                            break;
+                    }
+                } finally {
+                    srcBuffer.close();
+                }
+
+                if (rotation == 270) {
+                    ArgbBuffer mirrored = ArgbBuffer.Factory.allocate(frameBuffer.getWidth(), frameBuffer.getHeight());
+                    frameBuffer.mirrorTo(mirrored);
+                    frameBuffer.close();
+                    frameBuffer = mirrored;
+                }
+
+                if (filter > 0) {
+                    frameBuffer.drawGray(0, 0, frameBuffer.getWidth(), frameBuffer.getHeight());
+                }
+
+                TfFrame frame = new TfFrame(frameBuffer.getWidth(), frameBuffer.getHeight(), frameBuffer);
+                synchronized (lock) {
+                    frames.add(frame);
+                    result.complete(frame.toMap());
+                }
+            });
+        } catch (Exception e) {
             return null;
         }
     }

@@ -4,6 +4,10 @@ import android.media.Image;
 
 import androidx.camera.core.ImageProxy;
 
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -11,6 +15,7 @@ import java.util.concurrent.Executors;
 import br.dev.michaellopes.flutter_anycam.integration.FlutterEventChannel;
 import br.dev.michaellopes.flutter_anycam.utils.FrameRateLimiterUtil;
 import br.dev.michaellopes.flutter_anycam.utils.ImageMapperUtil;
+import br.dev.michaellopes.flutter_anycam.webrtc.I420Image;
 import br.dev.michaellopes.flutter_anycam.webrtc.WebRtcImageUtil;
 import br.dev.michaellopes.flutter_anycam.webrtc.WebRtcStreamHandler;
 
@@ -98,6 +103,14 @@ public class CameraRawStream {
         return deliverToFlutter || webRtcFeedEnabled;
     }
 
+    /** Whether a sink would accept a frame now, without consuming its FPS slot. */
+    public boolean isFrameDue() {
+        return (webRtcFeedEnabled
+                && WebRtcStreamHandler.getInstance().hasAnyVideoReadyStream()
+                && webRtcLimiter.isFrameDue())
+                || (deliverToFlutter && flutterLimiter.isFrameDue());
+    }
+
     public void sendFrame(ImageProxy image, Integer customRotationDegrees) {
         RawStreamImageRef ref = new RawStreamImageRef(image, customRotationDegrees);
 
@@ -141,5 +154,72 @@ public class CameraRawStream {
                     data
             ));
         }
+    }
+
+    /**
+     * Tightly packed NV21 variant (RTSP GPU readback). Converted once to I420 and copied,
+     * so {@code nv21} may be reused by the caller after return.
+     */
+    public void sendNv21Frame(
+            ByteBuffer nv21,
+            int width,
+            int height,
+            int rotationDegrees,
+            Integer customRotationDegrees
+    ) {
+        boolean webRtcDue = webRtcFeedEnabled
+                && WebRtcStreamHandler.getInstance().hasAnyVideoReadyStream()
+                && webRtcLimiter.shouldProcessFrame();
+        boolean flutterDue = deliverToFlutter && flutterLimiter.shouldProcessFrame();
+        if (!webRtcDue && !flutterDue) {
+            return;
+        }
+
+        int rotation = customRotationDegrees != null ? customRotationDegrees : rotationDegrees;
+        I420Image i420 = WebRtcImageUtil.fromNv21(nv21, width, height, rotation);
+
+        if (flutterDue) {
+            Map<String, Object> data = i420ToFlutterMap(i420);
+            executor.execute(() -> FlutterEventChannel.getInstance().send(
+                    -2,
+                    "onCameraRawFrame",
+                    data
+            ));
+        }
+
+        if (webRtcDue) {
+            WebRtcImageUtil.scaleI420(i420, webRtcStreamWidth, webRtcStreamHeight)
+                    .ifPresent(frame -> WebRtcStreamHandler.getInstance().pushFrame(frame, null));
+        } else {
+            i420.close();
+        }
+    }
+
+    private static Map<String, Object> i420ToFlutterMap(I420Image image) {
+        List<Map<String, Object>> planes = new ArrayList<>(3);
+        planes.add(planeMap(image.dataY, image.strideY, 1));
+        planes.add(planeMap(image.dataU, image.strideU, image.pixelStrideU));
+        planes.add(planeMap(image.dataV, image.strideV, image.pixelStrideV));
+
+        Map<String, Object> data = new HashMap<>(6);
+        data.put("width", image.width);
+        data.put("height", image.height);
+        data.put("format", "YUV_420_888");
+        data.put("rotation", image.rotation);
+        data.put("planes", planes);
+        return data;
+    }
+
+    private static Map<String, Object> planeMap(ByteBuffer buffer, int rowStride, int pixelStride) {
+        ByteBuffer src = buffer.duplicate();
+        src.rewind();
+        byte[] bytes = new byte[src.remaining()];
+        src.get(bytes);
+
+        Map<String, Object> plane = new HashMap<>(3);
+        plane.put("bytes", bytes);
+        plane.put("rowStride", rowStride);
+        plane.put("pixelStride", pixelStride);
+        return plane;
     }
 }

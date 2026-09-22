@@ -11,6 +11,7 @@ import java.util.Optional;
 
 import io.github.crow_misia.libyuv.FilterMode;
 import io.github.crow_misia.libyuv.I420Buffer;
+import io.github.crow_misia.libyuv.Nv21Buffer;
 import io.github.crow_misia.libyuv.PlanePrimitive;
 
 public final class WebRtcImageUtil {
@@ -129,6 +130,39 @@ public final class WebRtcImageUtil {
         }
 
         return scaleI420(frame, streamWidth, streamHeight);
+    }
+
+    /**
+     * Tightly packed NV21 (Y then interleaved VU, stride = width) → planar I420 in freshly
+     * allocated direct buffers. {@code nv21} is only read.
+     */
+    public static I420Image fromNv21(ByteBuffer nv21, int width, int height, int rotation) {
+        I420Buffer dst = I420Buffer.Factory.allocate(width, height);
+        try {
+            ByteBuffer src = nv21.duplicate();
+            src.rewind();
+            Nv21Buffer srcBuf = Nv21Buffer.Factory.wrap(src, width, height);
+            try {
+                srcBuf.convertTo(dst);
+            } finally {
+                srcBuf.close();
+            }
+            return new I420Image(
+                    width,
+                    height,
+                    rotation,
+                    copyToDirect(dst.getPlaneY().getBuffer()),
+                    dst.getPlaneY().getRowStride(),
+                    copyToDirect(dst.getPlaneU().getBuffer()),
+                    dst.getPlaneU().getRowStride(),
+                    copyToDirect(dst.getPlaneV().getBuffer()),
+                    dst.getPlaneV().getRowStride(),
+                    1,
+                    1
+            );
+        } finally {
+            dst.close();
+        }
     }
 
     public static I420Image ensureI420(I420Image src) {
