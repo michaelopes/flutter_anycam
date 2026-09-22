@@ -57,16 +57,16 @@ List<Scenario> buildScenarioCatalog() {
     Scenario(
       id: 'dual',
       title: 'Dual camera',
-      subtitle: 'Back + front together (Camera2 fallback)',
+      subtitle: 'Two cams by id (back+front or ids ≥100)',
       checklist: const [
-        'Both previews visible',
+        'Both previews visible (back+front OR two distinct ids)',
         'Both receive frames',
         'No StackOverflow / onFailed crash on non-concurrent devices',
       ],
       builder: (cameras) => DualCameraPage(
         cameras: cameras,
         checklist: const [
-          'Both previews visible',
+          'Both previews visible (back+front OR two distinct ids)',
           'Both receive frames',
           'No StackOverflow / onFailed crash on non-concurrent devices',
         ],
@@ -75,15 +75,15 @@ List<Scenario> buildScenarioCatalog() {
     Scenario(
       id: 'switch',
       title: 'Switch camera',
-      subtitle: 'didUpdateWidget recreate',
+      subtitle: 'didUpdateWidget between two ids',
       checklist: const [
-        'Tapping Switch changes lens without leaving page',
+        'Tapping Switch changes camera id without leaving page',
         'Frames resume after switch',
       ],
       builder: (cameras) => SwitchCameraPage(
         cameras: cameras,
         checklist: const [
-          'Tapping Switch changes lens without leaving page',
+          'Tapping Switch changes camera id without leaving page',
           'Frames resume after switch',
         ],
       ),

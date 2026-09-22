@@ -28,6 +28,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import br.dev.michaellopes.flutter_anycam.model.TfInferenceInput;
 import br.dev.michaellopes.flutter_anycam.model.TfInferenceOutput;
@@ -157,7 +158,7 @@ public class TfModelHandler {
             while (iterator.hasNext()) {
                 QueueItem pending = iterator.next();
                 iterator.remove();
-                pending.callback.error("TfLite engine detached");
+                pending.tryError("TfLite engine detached");
             }
             for (InferenceResult it : new ArrayList<>(results)) {
                 it.close();
@@ -176,7 +177,7 @@ public class TfModelHandler {
             QueueItem pending = iterator.next();
             if (pending.input.modelKey.equals(modelKey)) {
                 iterator.remove();
-                pending.callback.error("TfLite model disposed");
+                pending.tryError("TfLite model disposed");
             }
         }
     }
@@ -185,15 +186,10 @@ public class TfModelHandler {
         processing = false;
         queue.clear();
         if (queueExecutor != null) {
-            queueExecutor.shutdown();
-            try {
-                if (!queueExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
-                    queueExecutor.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                queueExecutor.shutdownNow();
-            }
+            // Do not awaitTermination here: disposeAllModels runs on the platform
+            // thread during engine detach. A long wait deadlocks with processOutput
+            // (worker blocked on future.get() waiting for Dart on the main thread).
+            queueExecutor.shutdownNow();
             queueExecutor = null;
         }
     }
@@ -227,8 +223,13 @@ public class TfModelHandler {
     }
 
     public synchronized void runInference(TfInferenceInput input, InferenceCallback callback) {
-        boolean added = queue.offer(new QueueItem(input, callback));
-        if (added && !processing) {
+        QueueItem item = new QueueItem(input, callback);
+        boolean added = queue.offer(item);
+        if (!added) {
+            item.tryError("TfLite inference queue is full");
+            return;
+        }
+        if (!processing) {
             startProcessingWorker();
         }
     }
@@ -323,7 +324,6 @@ public class TfModelHandler {
     private void processQueueItem(QueueItem queueItem) {
         long start = System.currentTimeMillis();
         TfInferenceInput input = queueItem.input;
-        InferenceCallback callback = queueItem.callback;
 
         String modelKey = input.modelKey;
         Map<Integer, Object> rawOutputs = null;
@@ -334,7 +334,7 @@ public class TfModelHandler {
             synchronized (modelLock) {
                 ModelItem item = getModelByKey(modelKey);
                 if (item == null || item.isClosed()) {
-                    callback.error("TfLite model is not loaded");
+                    queueItem.tryError("TfLite model is not loaded");
                     return;
                 }
 
@@ -360,7 +360,7 @@ public class TfModelHandler {
 
                 if (item.isClosed()) {
                     targetFrame.close();
-                    callback.success(new ArrayList<>());
+                    queueItem.trySuccess(new ArrayList<>());
                     return;
                 }
 
@@ -406,7 +406,7 @@ public class TfModelHandler {
                     if (targetFrame != null) {
                         targetFrame.close();
                     }
-                    callback.success(new ArrayList<>());
+                    queueItem.trySuccess(new ArrayList<>());
                     return;
                 }
 
@@ -423,7 +423,7 @@ public class TfModelHandler {
                 targetFrame.close();
             }
 
-            callback.success(response);
+            queueItem.trySuccess(response);
             long inferenceMs = System.currentTimeMillis() - start;
             Log.d("TFLite_PERF", "inference=" + inferenceMs + "ms | queue=" + queue.size());
         } catch (Exception e) {
@@ -431,7 +431,7 @@ public class TfModelHandler {
             if (targetFrame != null) {
                 targetFrame.close();
             }
-            callback.error(e.getMessage());
+            queueItem.tryError(e.getMessage());
         } finally {
             if (inputItem != null) {
                 inputItem.release();
@@ -593,9 +593,27 @@ public class TfModelHandler {
 
         public final InferenceCallback callback;
 
+        private final AtomicBoolean completed = new AtomicBoolean(false);
+
         private QueueItem(final TfInferenceInput input, InferenceCallback callback) {
             this.input = input;
             this.callback = callback;
+        }
+
+        boolean trySuccess(List<Map<String, Object>> data) {
+            if (!completed.compareAndSet(false, true)) {
+                return false;
+            }
+            callback.success(data);
+            return true;
+        }
+
+        boolean tryError(String e) {
+            if (!completed.compareAndSet(false, true)) {
+                return false;
+            }
+            callback.error(e);
+            return true;
         }
     }
 

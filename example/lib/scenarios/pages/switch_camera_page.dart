@@ -19,23 +19,29 @@ class SwitchCameraPage extends StatefulWidget {
 }
 
 class _SwitchCameraPageState extends State<SwitchCameraPage> {
-  late FlutterAnycamCameraSelector? _selected;
+  FlutterAnycamCameraSelector? _selected;
+  FlutterAnycamCameraSelector? _other;
   int _frames = 0;
   int _switchCount = 0;
 
   @override
   void initState() {
     super.initState();
-    _selected = firstOfFacing(widget.cameras, FlutterAnycamLensFacing.back) ??
-        (widget.cameras.isNotEmpty ? widget.cameras.first : null);
+    final pair = pickDualCameras(widget.cameras);
+    if (pair != null) {
+      _selected = pair.primary;
+      _other = pair.secondary;
+    } else if (widget.cameras.isNotEmpty) {
+      _selected = widget.cameras.first;
+    }
   }
 
   void _toggle() {
-    final back = firstOfFacing(widget.cameras, FlutterAnycamLensFacing.back);
-    final front = firstOfFacing(widget.cameras, FlutterAnycamLensFacing.front);
-    if (back == null || front == null) return;
+    if (_selected == null || _other == null) return;
     setState(() {
-      _selected = _selected?.id == back.id ? front : back;
+      final tmp = _selected;
+      _selected = _other;
+      _other = tmp;
       _switchCount++;
       _frames = 0;
     });
@@ -43,6 +49,7 @@ class _SwitchCameraPageState extends State<SwitchCameraPage> {
 
   @override
   Widget build(BuildContext context) {
+    final canSwitch = _selected != null && _other != null;
     return ScenarioScaffold(
       title: 'Switch camera',
       checklist: widget.checklist,
@@ -50,11 +57,12 @@ class _SwitchCameraPageState extends State<SwitchCameraPage> {
         'switches=$_switchCount',
         'frames=$_frames',
         'camera=${_selected?.id ?? "-"} (${_selected?.lensFacing.name})',
+        'other=${_other?.id ?? "-"} (${_other?.lensFacing.name ?? "-"})',
       ],
       actions: [
         IconButton(
           key: const Key('switch_camera_btn'),
-          onPressed: _toggle,
+          onPressed: canSwitch ? _toggle : null,
           icon: const Icon(Icons.cameraswitch),
           tooltip: 'Switch',
         ),
@@ -71,9 +79,13 @@ class _SwitchCameraPageState extends State<SwitchCameraPage> {
           padding: const EdgeInsets.all(8),
           child: FilledButton.icon(
             key: const Key('switch_camera_bottom'),
-            onPressed: _toggle,
+            onPressed: canSwitch ? _toggle : null,
             icon: const Icon(Icons.cameraswitch),
-            label: const Text('Switch front/back (didUpdateWidget)'),
+            label: Text(
+              canSwitch
+                  ? 'Switch id ${_selected!.id} ↔ ${_other!.id}'
+                  : 'Need 2 cameras to switch',
+            ),
           ),
         ),
       ),

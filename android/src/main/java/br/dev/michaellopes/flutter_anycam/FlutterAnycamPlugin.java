@@ -14,6 +14,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import br.dev.michaellopes.flutter_anycam.camera.BaseCamera;
@@ -365,19 +366,22 @@ public class FlutterAnycamPlugin implements FlutterPlugin, MethodCallHandler, Ac
                     });
                     return future.get();
                 });
+                final AtomicBoolean replied = new AtomicBoolean(false);
                 TfModelHandler.getInstance().runInference(input, new TfModelHandler.InferenceCallback() {
                     @Override
                     public void success(List<Map<String, Object>> data) {
-                        uiHandler.post(() -> {
-                            result.success(data);
-                        });
+                        if (!replied.compareAndSet(false, true)) {
+                            return;
+                        }
+                        uiHandler.post(() -> result.success(data));
                     }
 
                     @Override
                     public void error(String e) {
-                        uiHandler.post(() -> {
-                            result.error("TfModelHandlerError", e, null);
-                        });
+                        if (!replied.compareAndSet(false, true)) {
+                            return;
+                        }
+                        uiHandler.post(() -> result.error("TfModelHandlerError", e, null));
                     }
                 });
                 break;
