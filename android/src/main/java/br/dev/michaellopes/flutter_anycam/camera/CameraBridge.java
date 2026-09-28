@@ -31,7 +31,7 @@ public class CameraBridge {
         }});
     }
 
-    public void  onVideoFrameReceived(Map<String, Object> imageData) {
-        FlutterEventChannel.getInstance().send(viewId, "onVideoFrameReceived", imageData);
+    public void onVideoFrameReceived(Map<String, Object> imageData, FlutterEventChannel.DeliveryListener listener) {
+        FlutterEventChannel.getInstance().send(viewId, "onVideoFrameReceived", imageData, listener);
     }
 }

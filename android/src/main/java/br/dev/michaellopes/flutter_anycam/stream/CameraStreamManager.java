@@ -15,6 +15,7 @@ public class CameraStreamManager {
     private static CameraStreamManager instance;
 
     private final List<CameraRawStream> streams = new ArrayList<>();
+    private final List<SinkChangeListener> sinkListeners = new ArrayList<>();
     @Nullable
     private String activeWebRtcFeedCameraId = null;
 
@@ -26,6 +27,35 @@ public class CameraStreamManager {
             instance = new CameraStreamManager();
         }
         return instance;
+    }
+
+    /**
+     * Notified when raw Flutter / WebRTC sink registration changes for a camera.
+     * Used by USB to enable/disable the expensive NV21 frame callback dynamically.
+     */
+    public interface SinkChangeListener {
+        void onSinkChanged(String cameraId);
+    }
+
+    public synchronized void addSinkChangeListener(SinkChangeListener listener) {
+        if (listener != null && !sinkListeners.contains(listener)) {
+            sinkListeners.add(listener);
+        }
+    }
+
+    public synchronized void removeSinkChangeListener(SinkChangeListener listener) {
+        sinkListeners.remove(listener);
+    }
+
+    private void notifySinkChanged(String cameraId) {
+        // Snapshot under lock; callers already hold the monitor via synchronized methods.
+        List<SinkChangeListener> copy = new ArrayList<>(sinkListeners);
+        for (SinkChangeListener listener : copy) {
+            try {
+                listener.onSinkChanged(cameraId);
+            } catch (Throwable ignored) {
+            }
+        }
     }
 
     private CameraRawStream getCameraStream(String cameraId) {
@@ -70,6 +100,7 @@ public class CameraStreamManager {
     public synchronized boolean add(String cameraId, int fps) {
         CameraRawStream stream = getOrCreateStream(cameraId, fps);
         stream.setDeliverToFlutter(true);
+        notifySinkChanged(cameraId);
         return true;
     }
 
@@ -80,8 +111,8 @@ public class CameraStreamManager {
     }
 
     /** True when a registered sink would accept a frame now (does not consume its FPS slot). */
-    public synchronized boolean isFrameDue(String cameraId) {
-        CameraRawStream item = getCameraStream(cameraId);
+    public boolean isFrameDue(String cameraId) {
+        CameraRawStream item = activeStream(cameraId);
         return item != null && item.isFrameDue();
     }
 
@@ -107,6 +138,7 @@ public class CameraStreamManager {
         if (alsoDeliverToFlutter) {
             stream.setDeliverToFlutter(true);
         }
+        notifySinkChanged(cameraId);
         return true;
     }
 
@@ -122,6 +154,7 @@ public class CameraStreamManager {
         if (cameraId.equals(activeWebRtcFeedCameraId)) {
             activeWebRtcFeedCameraId = null;
         }
+        notifySinkChanged(cameraId);
     }
 
     public synchronized void dispose(String cameraId) {
@@ -131,16 +164,29 @@ public class CameraStreamManager {
                 activeWebRtcFeedCameraId = null;
             }
             streams.remove(item);
+            notifySinkChanged(cameraId);
         }
     }
 
-    public synchronized void sendFrame(
+    /**
+     * Frame paths only look the stream up under the lock; conversion runs on the caller's
+     * thread without it, so one camera's conversion never stalls another camera's capture
+     * thread or the main thread registering sinks. A stream removed meanwhile finishes at
+     * most the frame it already started.
+     */
+    @Nullable
+    private synchronized CameraRawStream activeStream(String cameraId) {
+        CameraRawStream item = getCameraStream(cameraId);
+        return item != null && item.hasActiveSink() ? item : null;
+    }
+
+    public void sendFrame(
             @NonNull String cameraId,
             @NonNull ImageProxy image,
             Integer customRotationDegrees
     ) {
-        CameraRawStream item = getCameraStream(cameraId);
-        if (item != null && item.hasActiveSink()) {
+        CameraRawStream item = activeStream(cameraId);
+        if (item != null) {
             item.sendFrame(image, customRotationDegrees);
         }
     }
@@ -149,23 +195,23 @@ public class CameraStreamManager {
      * Camera2 path: {@link android.media.Image} is closed when the capture callback returns,
      * so sinks must copy plane bytes synchronously inside this call.
      */
-    public synchronized void sendFrame(
+    public void sendFrame(
             @NonNull String cameraId,
             @NonNull android.media.Image image,
             int rotationDegrees,
             Integer customRotationDegrees
     ) {
-        CameraRawStream item = getCameraStream(cameraId);
-        if (item != null && item.hasActiveSink()) {
+        CameraRawStream item = activeStream(cameraId);
+        if (item != null) {
             item.sendFrame(image, rotationDegrees, customRotationDegrees);
         }
     }
 
     /**
-     * Tightly packed NV21 path (RTSP GPU readback). Sinks copy what they need synchronously,
-     * so the caller may reuse {@code nv21} after this returns.
+     * Tightly packed NV21 path (RTSP GPU readback, USB). Sinks copy what they need
+     * synchronously, so the caller may reuse {@code nv21} after this returns.
      */
-    public synchronized void sendNv21Frame(
+    public void sendNv21Frame(
             @NonNull String cameraId,
             @NonNull ByteBuffer nv21,
             int width,
@@ -173,8 +219,8 @@ public class CameraStreamManager {
             int rotationDegrees,
             Integer customRotationDegrees
     ) {
-        CameraRawStream item = getCameraStream(cameraId);
-        if (item != null && item.hasActiveSink()) {
+        CameraRawStream item = activeStream(cameraId);
+        if (item != null) {
             item.sendNv21Frame(nv21, width, height, rotationDegrees, customRotationDegrees);
         }
     }

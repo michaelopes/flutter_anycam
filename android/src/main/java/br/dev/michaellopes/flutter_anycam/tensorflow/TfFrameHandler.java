@@ -210,6 +210,43 @@ public class TfFrameHandler {
     }
 
     public Map<String, Object> addFrame(byte[] nv21, int width, int height, int filter, Integer customRotationDegrees) {
+        ByteBufferPoolUtil.PoolItem byteBufferPoolItem = byteBuffer.acquire(nv21.length);
+        byteBufferPoolItem.buffer.put(nv21);
+        byteBufferPoolItem.buffer.flip();
+        return addFrameNv21Buffer(
+                byteBufferPoolItem.buffer, width, height, filter, customRotationDegrees, byteBufferPoolItem
+        );
+    }
+
+    /**
+     * USB / pooled NV21 path — avoids a per-frame {@code byte[]} allocation.
+     * A direct {@code nv21} is wrapped as-is: conversion completes before this returns, so
+     * the caller may reuse it afterwards. Heap buffers are copied into an internal pool
+     * buffer first. Rotation 180° keeps {@code width x height}.
+     */
+    public Map<String, Object> addFrame(ByteBuffer nv21, int width, int height, int filter, Integer customRotationDegrees) {
+        ByteBuffer src = nv21.duplicate();
+        src.rewind();
+        if (src.isDirect()) {
+            return addFrameNv21Buffer(src, width, height, filter, customRotationDegrees, null);
+        }
+        int size = src.remaining();
+        ByteBufferPoolUtil.PoolItem byteBufferPoolItem = byteBuffer.acquire(size);
+        byteBufferPoolItem.buffer.put(src);
+        byteBufferPoolItem.buffer.flip();
+        return addFrameNv21Buffer(
+                byteBufferPoolItem.buffer, width, height, filter, customRotationDegrees, byteBufferPoolItem
+        );
+    }
+
+    private Map<String, Object> addFrameNv21Buffer(
+            ByteBuffer pooledNv21,
+            int width,
+            int height,
+            int filter,
+            Integer customRotationDegrees,
+            ByteBufferPoolUtil.PoolItem byteBufferPoolItem
+    ) {
         int rotation = customRotationDegrees != null ? customRotationDegrees : 0;
 
         RotateMode rotateMode;
@@ -228,41 +265,40 @@ public class TfFrameHandler {
                 break;
         }
 
-        ByteBufferPoolUtil.PoolItem byteBufferPoolItem = byteBuffer.acquire(nv21.length);
-        byteBufferPoolItem.buffer.put(nv21);
-        byteBufferPoolItem.buffer.flip();
-
-        Nv21Buffer srcNv21Buffer = Nv21Buffer.Factory.wrap(byteBufferPoolItem.buffer, width, height);
-        if (rotation > 0) {
-            Nv21Buffer nv21RotateBuffer = rotation == 180
-                    ? Nv21Buffer.Factory.allocate(width, height)
-                    : Nv21Buffer.Factory.allocate(height, width);
-            srcNv21Buffer.rotate(nv21RotateBuffer, rotateMode);
-            srcNv21Buffer.close();
-            byteBufferPoolItem.release();
-            srcNv21Buffer = nv21RotateBuffer;
-
-            if (rotation == 270) {
-                Nv21Buffer mirrored = Nv21Buffer.Factory.allocate(srcNv21Buffer.getWidth(), srcNv21Buffer.getHeight());
-                srcNv21Buffer.mirrorTo(mirrored);
-                srcNv21Buffer.close();
-                srcNv21Buffer = mirrored;
-            }
-        }
-
+        // `current` is the only buffer this method still owns; each one is closed exactly once.
+        Nv21Buffer current = Nv21Buffer.Factory.wrap(pooledNv21, width, height);
         try {
-            final Map<String, Object> result = addFrame(srcNv21Buffer, filter);
-            srcNv21Buffer.close();
-            if (rotation == 0) {
-                byteBufferPoolItem.release();
+            if (rotation > 0) {
+                Nv21Buffer rotated = rotation == 180
+                        ? Nv21Buffer.Factory.allocate(width, height)
+                        : Nv21Buffer.Factory.allocate(height, width);
+                Nv21Buffer previous = current;
+                current = rotated;
+                try {
+                    previous.rotate(rotated, rotateMode);
+                } finally {
+                    previous.close();
+                }
+
+                if (rotation == 270) {
+                    Nv21Buffer mirrored = Nv21Buffer.Factory.allocate(current.getWidth(), current.getHeight());
+                    previous = current;
+                    current = mirrored;
+                    try {
+                        previous.mirrorTo(mirrored);
+                    } finally {
+                        previous.close();
+                    }
+                }
             }
-            return result;
+            return addFrame(current, filter);
         } catch (Exception e) {
-            srcNv21Buffer.close();
-            if (rotation == 0) {
+            return null;
+        } finally {
+            current.close();
+            if (byteBufferPoolItem != null) {
                 byteBufferPoolItem.release();
             }
-            return null;
         }
     }
 
@@ -737,18 +773,36 @@ public class TfFrameHandler {
         }
     }
 
+    /**
+     * Waits uninterruptibly: callers close the buffers the task reads as soon as this returns,
+     * so returning early on interrupt (camera {@code shutdownNow} on dispose) would free
+     * native memory the TF thread is still converting. Tasks are short; the interrupt flag is
+     * restored afterwards.
+     */
     private <T> T asyncRun(AsyncRun<T> runner) throws ExecutionException, InterruptedException {
         CompletableFuture<T> future = new CompletableFuture<>();
         executor.execute(() -> {
             try {
                 runner.run(future);
-            } catch (Exception e) {
-                if (!future.isCompletedExceptionally()) {
-                    future.completeExceptionally(e);
-                }
+            } catch (Throwable t) {
+                // Also Errors (e.g. OOM): an uncompleted future would block the caller forever.
+                future.completeExceptionally(t);
             }
         });
-        return future.get();
+        boolean interrupted = false;
+        try {
+            while (true) {
+                try {
+                    return future.get();
+                } catch (InterruptedException e) {
+                    interrupted = true;
+                }
+            }
+        } finally {
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 
     public class TfFrame {

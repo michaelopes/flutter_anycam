@@ -4,6 +4,7 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.usb.UsbDevice;
+import android.hardware.usb.UsbManager;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -23,7 +24,6 @@ import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.core.content.ContextCompat;
 
 import com.google.common.util.concurrent.ListenableFuture;
-import com.serenegiant.usb.USBMonitor;
 
 
 @SuppressLint("RestrictedApi")
@@ -42,7 +42,11 @@ public class CameraUtil {
 
     private ProcessCameraProvider provider;
 
+    /** CameraX cameras, enumerated once per init. */
     private final List<CameraItem> cameras = new ArrayList<>();
+
+    /** Re-enumerated on every {@link #availableCameras} call: USB devices come and go. */
+    private final List<CameraItem> usbCameras = new ArrayList<>();
 
     private final List<CamerasCallback> pendingCallbacks = new ArrayList<>();
 
@@ -79,11 +83,44 @@ public class CameraUtil {
     }
 
     private List<Map<String, Object>> buildCameraList() {
+        refreshUsbCameras();
         List<Map<String, Object>> list = new ArrayList<>();
         for (CameraItem item : cameras) {
             list.add(item.cameraMap);
         }
+        for (CameraItem item : usbCameras) {
+            list.add(item.cameraMap);
+        }
         return list;
+    }
+
+    private void refreshUsbCameras() {
+        usbCameras.clear();
+        Context context = ContextUtil.get();
+        UsbManager usbManager = context != null
+                ? (UsbManager) context.getSystemService(Context.USB_SERVICE)
+                : null;
+        if (usbManager == null) {
+            return;
+        }
+        List<UsbDevice> devices = new ArrayList<>();
+        List<UsbCameraId.Device> identities = new ArrayList<>();
+        for (UsbDevice device : usbManager.getDeviceList().values()) {
+            if (isUsbCamera(device)) {
+                devices.add(device);
+                identities.add(UsbCameraId.of(device));
+            }
+        }
+        List<String> ids = UsbCameraId.assign(identities);
+        for (int i = 0; i < devices.size(); i++) {
+            UsbDevice device = devices.get(i);
+            Map<String, Object> cameraInfo = new HashMap<>();
+            cameraInfo.put("id", ids.get(i));
+            cameraInfo.put("name", device.getDeviceName());
+            cameraInfo.put("lensFacing", "usb");
+            cameraInfo.put("sensorOrientation", 0);
+            usbCameras.add(new CameraItem(null, cameraInfo));
+        }
     }
 
     private void flushPendingCallbacks() {
@@ -123,6 +160,7 @@ public class CameraUtil {
             }
             pendingCallbacks.clear();
             cameras.clear();
+            usbCameras.clear();
             provider = null;
             cameraProviderFuture = null;
             initStarted = false;
@@ -134,11 +172,15 @@ public class CameraUtil {
     }
 
     public CameraItem getCameraById(String id) {
-        Object[] filter = cameras.stream().filter(item -> item.getId().equals(id)).toArray();
-        if (filter.length >= 1) {
-            return (CameraItem) filter[0];
+        synchronized (instance) {
+            for (CameraItem item : cameras) {
+                if (item.getId().equals(id)) return item;
+            }
+            for (CameraItem item : usbCameras) {
+                if (item.getId().equals(id)) return item;
+            }
+            return null;
         }
-        return null;
     }
 
     public void init(Context context) {
@@ -229,46 +271,6 @@ public class CameraUtil {
                         }
 
                         cameras.add(new CameraItem(camera2CameraInfo, cameraMap));
-                    }
-
-
-                    USBMonitor mUSBMonitor = new USBMonitor(context, new USBMonitor.OnDeviceConnectListener() {
-                        @Override
-                        public void onAttach(UsbDevice device) {
-                        }
-
-                        @Override
-                        public void onDetach(UsbDevice device) {
-                        }
-
-                        @Override
-                        public void onDeviceOpen(UsbDevice device, USBMonitor.UsbControlBlock ctrlBlock, boolean createNew) {
-                        }
-
-                        @Override
-                        public void onDeviceClose(UsbDevice device, USBMonitor.UsbControlBlock ctrlBlock) {
-                        }
-
-                        @Override
-                        public void onCancel(UsbDevice device) {
-                        }
-                    });
-
-                    List<UsbDevice> deviceList = mUSBMonitor.getDeviceList();
-                    for (UsbDevice device : deviceList) {
-                        Log.d("USB", "Device: " + device.getDeviceName());
-                        if (isUsbCamera(device)) {
-                            Map<String, Object> cameraInfo = new HashMap<>();
-                            cameraInfo.put("id", String.valueOf(device.getDeviceId()));
-                            cameraInfo.put("name", device.getDeviceName());
-                            cameraInfo.put("lensFacing", "usb");
-                            cameraInfo.put("sensorOrientation", 0);
-                            cameras.add(new CameraItem(null, cameraInfo));
-                        }
-                    }
-                    if (mUSBMonitor.isRegistered()) {
-                        mUSBMonitor.unregister();
-                        mUSBMonitor = null;
                     }
 
                     this.provider = provider;

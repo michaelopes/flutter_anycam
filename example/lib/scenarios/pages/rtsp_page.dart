@@ -3,6 +3,8 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_anycam/flutter_anycam.dart';
 
+import '../lab_config.dart';
+import '../widgets/analysis_frame_thumb.dart';
 import '../widgets/scenario_scaffold.dart';
 
 class RtspPage extends StatefulWidget {
@@ -18,10 +20,9 @@ class RtspPage extends StatefulWidget {
 }
 
 class _RtspPageState extends State<RtspPage> {
-  static const _labUrl = 'rtsp://192.168.1.21:8554';
-  static const _fpsPresets = [5, 15, 30, 60];
+  static const _fpsPresets = kLabFpsPresets;
 
-  final _url = TextEditingController(text: _labUrl);
+  final _url = TextEditingController(text: kLabRtspUrl);
   final _user = TextEditingController();
   final _pass = TextEditingController();
   final _analysisMesure = FlutterAnycamMesure(seconds: 1);
@@ -69,7 +70,7 @@ class _RtspPageState extends State<RtspPage> {
 
   void _useLabPreset() {
     setState(() {
-      _url.text = _labUrl;
+      _url.text = kLabRtspUrl;
       _user.clear();
       _pass.clear();
       _status = 'lab preset loaded — tap Connect';
@@ -280,58 +281,12 @@ class _RtspPageState extends State<RtspPage> {
                         Positioned(
                           top: 12,
                           right: 12,
-                          child: _AnalysisFrameThumb(jpeg: _analysisJpeg),
+                          child: AnalysisFrameThumb(jpeg: _analysisJpeg),
                         ),
                     ],
                   ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _AnalysisFrameThumb extends StatelessWidget {
-  const _AnalysisFrameThumb({required this.jpeg});
-
-  final Uint8List? jpeg;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.black.withValues(alpha: 0.75),
-      child: Padding(
-        padding: const EdgeInsets.all(6),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Analysis frame',
-              style: TextStyle(color: Colors.white, fontSize: 11),
-            ),
-            const SizedBox(height: 4),
-            Container(
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.white, width: 2),
-              ),
-              width: 160,
-              height: 120,
-              child: jpeg == null
-                  ? const Center(
-                      child: Text(
-                        'waiting…',
-                        style: TextStyle(color: Colors.white70, fontSize: 11),
-                      ),
-                    )
-                  : Image.memory(
-                      jpeg!,
-                      fit: BoxFit.contain,
-                      gaplessPlayback: true,
-                    ),
-            ),
-          ],
-        ),
       ),
     );
   }

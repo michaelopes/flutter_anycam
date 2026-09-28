@@ -8,14 +8,23 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import br.dev.michaellopes.flutter_anycam.camera.Camera2CameraSession;
 import br.dev.michaellopes.flutter_anycam.integration.FlutterEventChannel;
 import br.dev.michaellopes.flutter_anycam.tensorflow.TfFrameHandler;
 import br.dev.michaellopes.flutter_anycam.utils.CameraRotationUtil;
+import br.dev.michaellopes.flutter_anycam.utils.FrameDeliveryGate;
 import br.dev.michaellopes.flutter_anycam.utils.FrameRateLimiterUtil;
 import br.dev.michaellopes.flutter_anycam.utils.NativeUtil;
 
+/**
+ * Headless Camera2 → TF frame stream. The FPS and in-flight decisions are made on the
+ * capture thread before copying, so frames beyond {@code fps} cost nothing, at most one frame
+ * is converting and at most one TF frame waits for Dart. A TF frame that reaches no listener
+ * is closed here, since Dart would never close it.
+ */
 public class HeadlessTfCameraSession {
 
     public static final int EVENT_VIEW_ID = -3;
@@ -31,7 +40,13 @@ public class HeadlessTfCameraSession {
 
     private Camera2CameraSession camera2Session;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
-    private final FrameRateLimiterUtil<Map<String, Object>> limiter;
+    private final FrameRateLimiterUtil<Object> limiter;
+    private final FrameDeliveryGate delivery = new FrameDeliveryGate();
+    private final AtomicBoolean converting = new AtomicBoolean(false);
+    private volatile boolean disposed = false;
+
+    /** Reused: only touched while {@link #converting} is held. */
+    private byte[] nv21Scratch;
 
     public HeadlessTfCameraSession(
             String cameraId,
@@ -47,22 +62,9 @@ public class HeadlessTfCameraSession {
         this.filter = filter;
         this.selectorSensorOrientation = selectorSensorOrientation;
         this.forceSensorOrientation = forceSensorOrientation;
-        this.limiter = new FrameRateLimiterUtil<Map<String, Object>>(fps) {
+        this.limiter = new FrameRateLimiterUtil<Object>(Math.max(1, fps)) {
             @Override
-            protected void onFrameLimited(Map<String, Object> data) {
-                FlutterEventChannel.getInstance().send(
-                        EVENT_VIEW_ID,
-                        "onTfCameraStreamFrame",
-                        data
-                );
-            }
-
-            @Override
-            protected void onFrameSkipped(Map<String, Object> data) {
-                Object frameId = data.get("id");
-                if (frameId instanceof String) {
-                    TfFrameHandler.getInstance().closeFrame((String) frameId);
-                }
+            protected void onFrameLimited(Object ignored) {
             }
         };
     }
@@ -107,45 +109,88 @@ public class HeadlessTfCameraSession {
         camera2Session.start();
     }
 
+    /** Camera2 capture thread; {@code image} is closed when this returns. */
     private void processFrame(Image image) {
+        if (disposed || converting.get() || !delivery.isIdle()) return;
+        if (!limiter.shouldProcessFrame()) return;
+        if (!converting.compareAndSet(false, true)) return;
+
         final int width;
         final int height;
         final byte[] nv21;
         try {
             width = image.getWidth();
             height = image.getHeight();
-            nv21 = new byte[width * height * 3 / 2];
+            int size = width * height * 3 / 2;
+            if (nv21Scratch == null || nv21Scratch.length != size) {
+                nv21Scratch = new byte[size];
+            }
+            nv21 = nv21Scratch;
             NativeUtil.yuv420ToNv21(image, nv21);
         } catch (Exception e) {
+            converting.set(false);
             Log.e(TAG, "processFrame copy failed cameraId=" + cameraId, e);
             return;
         }
 
-        executor.execute(() -> {
-            try {
-                final int rotation = CameraRotationUtil.resolveFrameRotation(
-                        cameraId,
-                        forceSensorOrientation,
-                        selectorSensorOrientation
-                );
-                Map<String, Object> tfMap = TfFrameHandler.getInstance().addFrame(
-                        nv21,
-                        width,
-                        height,
-                        filter,
-                        rotation
-                );
-                if (tfMap != null) {
-                    tfMap.put("cameraId", cameraId);
-                    limiter.onNewFrame(tfMap);
+        try {
+            executor.execute(() -> {
+                try {
+                    convertAndSend(nv21, width, height);
+                } finally {
+                    converting.set(false);
                 }
-            } catch (Exception e) {
-                Log.e(TAG, "processFrame failed cameraId=" + cameraId, e);
+            });
+        } catch (RejectedExecutionException e) {
+            converting.set(false);
+        }
+    }
+
+    private void convertAndSend(byte[] nv21, int width, int height) {
+        try {
+            if (disposed) return;
+            final int rotation = CameraRotationUtil.resolveFrameRotation(
+                    cameraId,
+                    forceSensorOrientation,
+                    selectorSensorOrientation
+            );
+            Map<String, Object> tfMap = TfFrameHandler.getInstance().addFrame(
+                    nv21,
+                    width,
+                    height,
+                    filter,
+                    rotation
+            );
+            if (tfMap == null) return;
+
+            Object id = tfMap.get("id");
+            Runnable closeFrame = id instanceof String
+                    ? () -> TfFrameHandler.getInstance().closeFrame((String) id)
+                    : null;
+            if (disposed) {
+                if (closeFrame != null) closeFrame.run();
+                return;
             }
-        });
+
+            tfMap.put("cameraId", cameraId);
+            FrameDeliveryGate.Delivery d = delivery.tryBegin(1, closeFrame);
+            if (d == null) {
+                if (closeFrame != null) closeFrame.run();
+                return;
+            }
+            FlutterEventChannel.getInstance().send(
+                    EVENT_VIEW_ID,
+                    "onTfCameraStreamFrame",
+                    tfMap,
+                    d::complete
+            );
+        } catch (Exception e) {
+            Log.e(TAG, "processFrame failed cameraId=" + cameraId, e);
+        }
     }
 
     public void dispose() {
+        disposed = true;
         if (camera2Session != null) {
             camera2Session.dispose();
             camera2Session = null;

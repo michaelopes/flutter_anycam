@@ -72,7 +72,7 @@ public class RTSPCamera extends BaseCamera {
     private final boolean previewEnabled;
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicBoolean disposed = new AtomicBoolean(false);
-    private final RtspEventGate events = new RtspEventGate();
+    private final CameraEventGate events = new CameraEventGate();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService analysisExecutor = Executors.newSingleThreadExecutor(r -> new Thread(r, "RtspAnalysis"));
 
@@ -224,7 +224,7 @@ public class RTSPCamera extends BaseCamera {
         @Override
         public boolean wantsFrame() {
             if (disposed.get()) return false;
-            return (frameDeliveryEnabled && deliveryLimiter.isFrameDue())
+            return (canDeliverFrame() && deliveryLimiter.isFrameDue())
                     || CameraStreamManager.getInstance().isFrameDue(getCameraId());
         }
 
@@ -249,7 +249,7 @@ public class RTSPCamera extends BaseCamera {
             final String cameraId = getCameraId();
             final CameraStreamManager streams = CameraStreamManager.getInstance();
 
-            boolean deliver = frameDeliveryEnabled && deliveryLimiter.shouldProcessFrame();
+            boolean deliver = canDeliverFrame() && deliveryLimiter.shouldProcessFrame();
             boolean streamDue = streams.isFrameDue(cameraId);
             boolean standard = isStandard();
 
@@ -341,7 +341,7 @@ public class RTSPCamera extends BaseCamera {
             Integer customRotation = getCustomRotationDegrees();
             CameraStreamManager.getInstance().sendFrame(getCameraId(), image, 0, customRotation);
 
-            if (!frameDeliveryEnabled || !deliveryLimiter.shouldProcessFrame()) return;
+            if (!canDeliverFrame() || !deliveryLimiter.shouldProcessFrame()) return;
 
             Map<String, Object> frameMap = isStandard()
                     ? imageAnalysisUtil.imageToNV21Map(image, 0, resizeFrame, filter, customRotation)

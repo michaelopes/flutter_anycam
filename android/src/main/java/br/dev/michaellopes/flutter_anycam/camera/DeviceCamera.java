@@ -143,7 +143,7 @@ public class DeviceCamera extends BaseCamera {
                     CameraStreamManager.getInstance().sendFrame(
                             getCameraId(), imageProxy, getCustomRotationDegrees()
                     );
-                    if (frameDeliveryEnabled) {
+                    if (canDeliverFrame()) {
                         limiter.onNewFrame(imageProxy);
                     } else {
                         imageProxy.close();
@@ -463,7 +463,8 @@ public class DeviceCamera extends BaseCamera {
 
     public void analyze(@NonNull ImageProxy image) {
         try {
-            if (disposed) {
+            // Frames queued before the previous delivery started must not overwrite its buffers.
+            if (disposed || !canDeliverFrame()) {
                 return;
             }
             Map<String, Object> frameMap;
@@ -499,7 +500,7 @@ public class DeviceCamera extends BaseCamera {
                     getCustomRotationDegrees()
             );
 
-            if (!frameDeliveryEnabled) {
+            if (!canDeliverFrame()) {
                 return;
             }
 

@@ -10,6 +10,8 @@ import 'pages/single_preview_page.dart';
 import 'pages/switch_camera_page.dart';
 import 'pages/tf_headless_page.dart';
 import 'pages/tf_widget_page.dart';
+import 'pages/triple_camera_page.dart';
+import 'pages/triple_tf_page.dart';
 import 'pages/usb_page.dart';
 import 'pages/webrtc_feed_page.dart';
 import 'scenario.dart';
@@ -217,18 +219,24 @@ List<Scenario> buildScenarioCatalog() {
     Scenario(
       id: 'usb',
       title: 'USB camera',
-      subtitle: 'UVC via USBMonitor',
+      subtitle: 'Manual lab: UVC Connect / FPS / analysis thumb (Android)',
       platforms: const {ScenarioPlatform.android},
       androidOnlyReason: 'USB UVC is Android-only in this plugin',
       checklist: const [
-        'USB device appears in availableCameras',
-        'Preview and frames work after USB permission',
+        'Plug UVC → Refresh USB → device appears',
+        'Connect → preview + analysisFps updates',
+        'Raise Target FPS (30/60), note max= peak; thumb off for true max',
+        'Analysis thumb colors match preview when enabled',
+        'Disconnect stops session',
       ],
       builder: (cameras) => UsbPage(
         cameras: cameras,
         checklist: const [
-          'USB device appears in availableCameras',
-          'Preview and frames work after USB permission',
+          'Plug UVC → Refresh USB → device appears',
+          'Connect → preview + analysisFps updates',
+          'Raise Target FPS (30/60), note max= peak; thumb off for true max',
+          'Analysis thumb colors match preview when enabled',
+          'Disconnect stops session',
         ],
       ),
     ),
@@ -252,6 +260,54 @@ List<Scenario> buildScenarioCatalog() {
           'Raise Target FPS (30/60), note max= peak; thumb off for true max',
           'Analysis thumb colors match preview when enabled',
           'Disconnect stops session',
+        ],
+      ),
+    ),
+    Scenario(
+      id: 'triple',
+      title: 'Triple cameras',
+      subtitle: 'USB + RTSP + rear preview together (Android)',
+      platforms: const {ScenarioPlatform.android},
+      androidOnlyReason: 'USB and RTSP are Android-only',
+      checklist: const [
+        'Refresh cams until USB + rear ids are listed',
+        'Lab RTSP URL prefilled (192.168.1.21:8554)',
+        'Open 3 cameras → three stacked previews',
+        'Each lane fps/frames increment independently',
+        'Close tears down all three sessions',
+      ],
+      builder: (cameras) => TripleCameraPage(
+        cameras: cameras,
+        checklist: const [
+          'Refresh cams until USB + rear ids are listed',
+          'Lab RTSP URL prefilled (192.168.1.21:8554)',
+          'Open 3 cameras → three stacked previews',
+          'Each lane fps/frames increment independently',
+          'Close tears down all three sessions',
+        ],
+      ),
+    ),
+    Scenario(
+      id: 'triple_tf',
+      title: 'Triple TF analysis',
+      subtitle: 'vehicle_detection.tflite on USB + RTSP + rear',
+      platforms: const {ScenarioPlatform.android},
+      androidOnlyReason: 'USB, RTSP and native TF are Android-only',
+      checklist: const [
+        'Open 3 cameras with USB + lab RTSP + rear',
+        'Each lane inferences increment (3 model sessions)',
+        'Crop JPEG may appear per lane when a vehicle is detected',
+        'Status shows inf/det/fps/ms for USB, RTSP and back',
+        'Close disposes all TF sessions',
+      ],
+      builder: (cameras) => TripleTfPage(
+        cameras: cameras,
+        checklist: const [
+          'Open 3 cameras with USB + lab RTSP + rear',
+          'Each lane inferences increment (3 model sessions)',
+          'Crop JPEG may appear per lane when a vehicle is detected',
+          'Status shows inf/det/fps/ms for USB, RTSP and back',
+          'Close disposes all TF sessions',
         ],
       ),
     ),

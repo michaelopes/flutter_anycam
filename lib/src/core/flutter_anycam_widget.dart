@@ -216,7 +216,8 @@ class FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
             setState(() {
               _viewState = _ViewState.unauthorized;
             });
-            if (widget.camera.lensFacing != FlutterAnycamLensFacing.rtsp) {
+            if (widget.camera.lensFacing != FlutterAnycamLensFacing.rtsp &&
+                widget.camera.lensFacing != FlutterAnycamLensFacing.usb) {
               FlutterAnycamPermissionHandler.I.requestPermission(
                 viewId: viewId,
               );
@@ -368,7 +369,8 @@ class FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
             TextButton(
               onPressed: () {
                 if (_viewState == _ViewState.unauthorized &&
-                    widget.camera.lensFacing != FlutterAnycamLensFacing.rtsp) {
+                    widget.camera.lensFacing != FlutterAnycamLensFacing.rtsp &&
+                    widget.camera.lensFacing != FlutterAnycamLensFacing.usb) {
                   FlutterAnycamPermissionHandler.I.requestPermission(
                     viewId: viewId,
                     onResult: (result) {

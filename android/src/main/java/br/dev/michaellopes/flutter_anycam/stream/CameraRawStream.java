@@ -9,58 +9,49 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.Optional;
 
 import br.dev.michaellopes.flutter_anycam.integration.FlutterEventChannel;
+import br.dev.michaellopes.flutter_anycam.utils.FrameDeliveryGate;
 import br.dev.michaellopes.flutter_anycam.utils.FrameRateLimiterUtil;
 import br.dev.michaellopes.flutter_anycam.utils.ImageMapperUtil;
 import br.dev.michaellopes.flutter_anycam.webrtc.I420Image;
 import br.dev.michaellopes.flutter_anycam.webrtc.WebRtcImageUtil;
 import br.dev.michaellopes.flutter_anycam.webrtc.WebRtcStreamHandler;
 
+/**
+ * Raw Flutter / WebRTC sinks for one camera. Called from camera analysis threads outside the
+ * {@link CameraStreamManager} lock; configuration flags are written from the main thread.
+ *
+ * <p>Each sink keeps at most one converted frame in flight ({@link FrameDeliveryGate}), and
+ * readiness is checked before any conversion, so a slow main thread or encoder can neither
+ * grow a queue nor make producers convert frames that will be dropped.</p>
+ */
 public class CameraRawStream {
     private final String cameraId;
-    private final FrameRateLimiterUtil<RawStreamImageRef> flutterLimiter;
-    private final FrameRateLimiterUtil<RawStreamImageRef> webRtcLimiter;
-    private final ExecutorService executor;
+    private final FrameRateLimiterUtil<Object> flutterLimiter;
+    private final FrameRateLimiterUtil<Object> webRtcLimiter;
+    private final FrameDeliveryGate flutterDelivery = new FrameDeliveryGate();
+    private final FrameDeliveryGate webRtcDelivery = new FrameDeliveryGate();
 
     protected final ImageMapperUtil imageAnalysisUtil = new ImageMapperUtil();
 
-    private boolean deliverToFlutter = false;
-    private boolean webRtcFeedEnabled = false;
-    private int webRtcStreamWidth = 0;
-    private int webRtcStreamHeight = 0;
+    private volatile boolean deliverToFlutter = false;
+    private volatile boolean webRtcFeedEnabled = false;
+    private volatile int webRtcStreamWidth = 0;
+    private volatile int webRtcStreamHeight = 0;
 
     public CameraRawStream(String cameraId, int fps) {
         this.cameraId = cameraId;
-
-        executor = Executors.newSingleThreadExecutor();
-        this.flutterLimiter = new FrameRateLimiterUtil<RawStreamImageRef>(fps) {
+        int safeFps = Math.max(1, fps);
+        this.flutterLimiter = new FrameRateLimiterUtil<Object>(safeFps) {
             @Override
-            protected void onFrameLimited(RawStreamImageRef ref) {
-                Map<String, Object> data = imageAnalysisUtil.imageProxyToI420Map(
-                        ref.image,
-                        ref.customRotationDegrees
-                );
-                executor.execute(() -> FlutterEventChannel.getInstance().send(
-                        -2,
-                        "onCameraRawFrame",
-                        data
-                ));
+            protected void onFrameLimited(Object ignored) {
             }
         };
-        this.webRtcLimiter = new FrameRateLimiterUtil<RawStreamImageRef>(fps) {
+        this.webRtcLimiter = new FrameRateLimiterUtil<Object>(safeFps) {
             @Override
-            protected void onFrameLimited(RawStreamImageRef ref) {
-                WebRtcImageUtil.prepareWebRtcFrame(
-                                ref.image,
-                                ref.customRotationDegrees,
-                                webRtcStreamWidth,
-                                webRtcStreamHeight
-                        )
-                        .ifPresent(image -> WebRtcStreamHandler.getInstance()
-                                .pushFrame(image, null));
+            protected void onFrameLimited(Object ignored) {
             }
         };
     }
@@ -105,22 +96,33 @@ public class CameraRawStream {
 
     /** Whether a sink would accept a frame now, without consuming its FPS slot. */
     public boolean isFrameDue() {
-        return (webRtcFeedEnabled
-                && WebRtcStreamHandler.getInstance().hasAnyVideoReadyStream()
-                && webRtcLimiter.isFrameDue())
-                || (deliverToFlutter && flutterLimiter.isFrameDue());
+        return (webRtcReady() && webRtcLimiter.isFrameDue())
+                || (flutterReady() && flutterLimiter.isFrameDue());
     }
 
-    public void sendFrame(ImageProxy image, Integer customRotationDegrees) {
-        RawStreamImageRef ref = new RawStreamImageRef(image, customRotationDegrees);
+    private boolean webRtcReady() {
+        return webRtcFeedEnabled
+                && webRtcDelivery.isIdle()
+                && WebRtcStreamHandler.getInstance().hasAnyVideoReadyStream();
+    }
 
-        if (webRtcFeedEnabled
-                && WebRtcStreamHandler.getInstance().hasAnyVideoReadyStream()) {
-            webRtcLimiter.onNewFrame(ref);
+    private boolean flutterReady() {
+        return deliverToFlutter && flutterDelivery.isIdle();
+    }
+
+    /** CameraX path; {@code image} is only read synchronously. */
+    public void sendFrame(ImageProxy image, Integer customRotationDegrees) {
+        if (webRtcReady() && webRtcLimiter.shouldProcessFrame()) {
+            pushWebRtc(WebRtcImageUtil.prepareWebRtcFrame(
+                    image,
+                    customRotationDegrees,
+                    webRtcStreamWidth,
+                    webRtcStreamHeight
+            ));
         }
 
-        if (deliverToFlutter) {
-            flutterLimiter.onNewFrame(ref);
+        if (flutterReady() && flutterLimiter.shouldProcessFrame()) {
+            sendToFlutter(imageAnalysisUtil.imageProxyToI420Map(image, customRotationDegrees));
         }
     }
 
@@ -129,35 +131,23 @@ public class CameraRawStream {
      * Image is closed when the capture callback returns.
      */
     public void sendFrame(Image image, int rotationDegrees, Integer customRotationDegrees) {
-        if (webRtcFeedEnabled
-                && WebRtcStreamHandler.getInstance().hasAnyVideoReadyStream()
-                && webRtcLimiter.shouldProcessFrame()) {
-            WebRtcImageUtil.prepareWebRtcFrame(
-                            image,
-                            rotationDegrees,
-                            customRotationDegrees,
-                            webRtcStreamWidth,
-                            webRtcStreamHeight
-                    )
-                    .ifPresent(frame -> WebRtcStreamHandler.getInstance().pushFrame(frame, null));
-        }
-
-        if (deliverToFlutter && flutterLimiter.shouldProcessFrame()) {
-            Map<String, Object> data = imageAnalysisUtil.imageToI420Map(
+        if (webRtcReady() && webRtcLimiter.shouldProcessFrame()) {
+            pushWebRtc(WebRtcImageUtil.prepareWebRtcFrame(
                     image,
                     rotationDegrees,
-                    customRotationDegrees
-            );
-            executor.execute(() -> FlutterEventChannel.getInstance().send(
-                    -2,
-                    "onCameraRawFrame",
-                    data
+                    customRotationDegrees,
+                    webRtcStreamWidth,
+                    webRtcStreamHeight
             ));
+        }
+
+        if (flutterReady() && flutterLimiter.shouldProcessFrame()) {
+            sendToFlutter(imageAnalysisUtil.imageToI420Map(image, rotationDegrees, customRotationDegrees));
         }
     }
 
     /**
-     * Tightly packed NV21 variant (RTSP GPU readback). Converted once to I420 and copied,
+     * Tightly packed NV21 variant (RTSP GPU readback, USB). Converted once to I420 and copied,
      * so {@code nv21} may be reused by the caller after return.
      */
     public void sendNv21Frame(
@@ -167,10 +157,8 @@ public class CameraRawStream {
             int rotationDegrees,
             Integer customRotationDegrees
     ) {
-        boolean webRtcDue = webRtcFeedEnabled
-                && WebRtcStreamHandler.getInstance().hasAnyVideoReadyStream()
-                && webRtcLimiter.shouldProcessFrame();
-        boolean flutterDue = deliverToFlutter && flutterLimiter.shouldProcessFrame();
+        boolean webRtcDue = webRtcReady() && webRtcLimiter.shouldProcessFrame();
+        boolean flutterDue = flutterReady() && flutterLimiter.shouldProcessFrame();
         if (!webRtcDue && !flutterDue) {
             return;
         }
@@ -179,20 +167,35 @@ public class CameraRawStream {
         I420Image i420 = WebRtcImageUtil.fromNv21(nv21, width, height, rotation);
 
         if (flutterDue) {
-            Map<String, Object> data = i420ToFlutterMap(i420);
-            executor.execute(() -> FlutterEventChannel.getInstance().send(
-                    -2,
-                    "onCameraRawFrame",
-                    data
-            ));
+            sendToFlutter(i420ToFlutterMap(i420));
         }
 
         if (webRtcDue) {
-            WebRtcImageUtil.scaleI420(i420, webRtcStreamWidth, webRtcStreamHeight)
-                    .ifPresent(frame -> WebRtcStreamHandler.getInstance().pushFrame(frame, null));
+            pushWebRtc(WebRtcImageUtil.scaleI420(i420, webRtcStreamWidth, webRtcStreamHeight));
         } else {
             i420.close();
         }
+    }
+
+    private void sendToFlutter(Map<String, Object> data) {
+        FrameDeliveryGate.Delivery delivery = flutterDelivery.tryBegin(1, null);
+        if (delivery == null) {
+            return;
+        }
+        FlutterEventChannel.getInstance().send(-2, "onCameraRawFrame", data, delivery::complete);
+    }
+
+    private void pushWebRtc(Optional<I420Image> frame) {
+        if (!frame.isPresent()) {
+            return;
+        }
+        I420Image image = frame.get();
+        FrameDeliveryGate.Delivery delivery = webRtcDelivery.tryBegin(1, null);
+        if (delivery == null) {
+            image.close();
+            return;
+        }
+        WebRtcStreamHandler.getInstance().pushFrame(image, null, () -> delivery.complete(true));
     }
 
     private static Map<String, Object> i420ToFlutterMap(I420Image image) {

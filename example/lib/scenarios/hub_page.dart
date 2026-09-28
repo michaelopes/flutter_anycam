@@ -5,7 +5,7 @@ import 'catalog.dart';
 import 'scenario.dart';
 import 'widgets/camera_selector_tile.dart';
 
-class ScenarioHubPage extends StatelessWidget {
+class ScenarioHubPage extends StatefulWidget {
   const ScenarioHubPage({
     super.key,
     required this.cameras,
@@ -14,29 +14,66 @@ class ScenarioHubPage extends StatelessWidget {
   final List<FlutterAnycamCameraSelector> cameras;
 
   @override
+  State<ScenarioHubPage> createState() => _ScenarioHubPageState();
+}
+
+class _ScenarioHubPageState extends State<ScenarioHubPage> {
+  late List<FlutterAnycamCameraSelector> _cameras = widget.cameras;
+  bool _refreshing = false;
+
+  Future<void> _refreshCameras() async {
+    setState(() => _refreshing = true);
+    try {
+      final cameras = await FlutterAnycam.availableCameras();
+      if (!mounted) return;
+      setState(() => _cameras = cameras);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('availableCameras failed: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _refreshing = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final scenarios = buildScenarioCatalog();
     return Scaffold(
       appBar: AppBar(
         title: const Text('flutter_anycam scenarios'),
+        actions: [
+          IconButton(
+            tooltip: 'Refresh cameras',
+            onPressed: _refreshing ? null : _refreshCameras,
+            icon: _refreshing
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh),
+          ),
+        ],
       ),
       body: ListView(
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: Text(
-              'Cameras (${cameras.length})',
+              'Cameras (${_cameras.length})',
               style: Theme.of(context).textTheme.titleMedium,
             ),
           ),
-          if (cameras.isEmpty)
+          if (_cameras.isEmpty)
             const ListTile(
               leading: Icon(Icons.warning_amber),
               title: Text('No cameras returned by availableCameras()'),
               subtitle: Text('Some scenarios will show empty states'),
             )
           else
-            ...cameras.map(
+            ..._cameras.map(
               (c) => CameraSelectorTile(camera: c),
             ),
           const Divider(),
@@ -50,7 +87,7 @@ class ScenarioHubPage extends StatelessWidget {
           for (final scenario in scenarios)
             _ScenarioTile(
               scenario: scenario,
-              cameras: cameras,
+              cameras: _cameras,
             ),
         ],
       ),
