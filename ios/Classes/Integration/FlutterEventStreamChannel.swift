@@ -9,7 +9,8 @@ import Flutter
 
 class FlutterEventStreamChannel: NSObject, FlutterStreamHandler  {
     
-    var eventSink: FlutterEventSink?
+    /// Main thread only.
+    private var eventSink: FlutterEventSink?
     static let shared = FlutterEventStreamChannel();
     
     private override init() {}
@@ -24,19 +25,27 @@ class FlutterEventStreamChannel: NSObject, FlutterStreamHandler  {
         return nil
     }
     
-    
-    func send(_ viewId: Int,_ method: String,_ data: [String : Any?] ) -> Void {
+    func send(_ viewId: Int, _ method: String, _ data: [String: Any?]) {
+        send(viewId, method, data, completion: nil)
+    }
+
+    /// `completion` runs exactly once on the main thread; `delivered` is false when no
+    /// listener received the event (its payload, e.g. a native TF frame, is then orphaned).
+    func send(_ viewId: Int, _ method: String, _ data: [String: Any?], completion: ((Bool) -> Void)?) {
         let result = [
             "viewId" : viewId,
             "method" : method,
             "data": data
         ] as [String : Any]
         
-        
         DispatchQueue.main.async {
-            self.eventSink?(result)
+            guard let sink = self.eventSink else {
+                completion?(false)
+                return
+            }
+            sink(result)
+            completion?(true)
         }
     }
     
 }
-

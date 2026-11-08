@@ -1,39 +1,16 @@
 package br.dev.michaellopes.flutter_anycam.utils;
 
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
-import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.ImageFormat;
-import android.graphics.Matrix;
 import android.graphics.Rect;
-import android.graphics.RectF;
 import android.graphics.YuvImage;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
-import java.util.concurrent.TimeUnit;
-
-import io.flutter.Log;
 
 public class ImageConverterUtil {
     private static final String TAG = "CameraFrameProcessor";
 
-    static final ByteArrayPoolUtil byteArrayPool = new ByteArrayPoolUtil(
-            new ByteArrayPoolUtil.Config()
-                    .maxIdle(4)
-                    .idleTimeout(30, TimeUnit.SECONDS)
-    );
-
-    private static final class PooledOutputStream extends ByteArrayOutputStream {
-        PooledOutputStream(byte[] buffer) {
-            this.buf   = buffer;
-            this.count = 0;
-        }
-
-        /** Acesso direto ao backing array (sem cópia). */
-        byte[] buf() { return buf; }
-    }
+    static final ByteArrayPoolUtil byteArrayPool = new ByteArrayPoolUtil(4, 30);
 
     public static byte[] yv12ToNv21(byte[] yv12Bytes, int width, int height) {
         int frameSize = width * height;
@@ -181,30 +158,22 @@ public class ImageConverterUtil {
     public static byte[] nv21ToJpeg(byte[] nv21Bytes, int width, int height,
                                     int quality, int rotation) {
 
-        byte[] rotated;
-        int    rotatedWidth;
-        int    rotatedHeight;
-
-        if (rotation == 0) {
-            rotated        = nv21Bytes;
-            rotatedWidth   = width;
-            rotatedHeight  = height;
-        } else {
-            boolean swap  = (rotation == 90 || rotation == 270);
-            rotatedWidth  = swap ? height : width;
-            rotatedHeight = swap ? width  : height;
-
-            ByteArrayPoolUtil.Entry rotatedEntry = byteArrayPool.acquire(nv21Bytes.length);
-            rotated = rotatedEntry.data;
-
-            YuvUtil.rotateNV21(nv21Bytes, rotated, width, height, rotation);
-
-            byte[] result = compressToJpeg(rotated, rotatedWidth, rotatedHeight, quality);
-            byteArrayPool.release(rotatedEntry);
-            return result;
+        rotation = ((rotation % 360) + 360) % 360;
+        if (rotation != 90 && rotation != 180 && rotation != 270) {
+            return compressToJpeg(nv21Bytes, width, height, quality);
         }
 
-        return compressToJpeg(rotated, rotatedWidth, rotatedHeight, quality);
+        boolean swap = (rotation == 90 || rotation == 270);
+        int rotatedWidth = swap ? height : width;
+        int rotatedHeight = swap ? width : height;
+
+        ByteArrayPoolUtil.PoolItem rotatedEntry = byteArrayPool.acquire(width * height * 3 / 2);
+        try {
+            NativeUtil.rotateNV21(nv21Bytes, rotatedEntry.data, width, height, rotation);
+            return compressToJpeg(rotatedEntry.data, rotatedWidth, rotatedHeight, quality);
+        } finally {
+            byteArrayPool.release(rotatedEntry);
+        }
     }
 
 
@@ -216,8 +185,8 @@ public class ImageConverterUtil {
     }
 
 
+    /** Releases pooled memory; the converter keeps working if the plugin is attached again. */
     public static void shutdown() {
-        byteArrayPool.shutdown();
         byteArrayPool.clear();
     }
 

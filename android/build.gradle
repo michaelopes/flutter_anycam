@@ -56,6 +56,8 @@ android {
     }
 
     testOptions {
+        // android.util.Log & co. are stubs on the JVM; logging must not fail logic tests.
+        unitTests.returnDefaultValues = true
         unitTests.all {
             testLogging {
                events "passed", "skipped", "failed", "standardOut", "standardError"
@@ -92,6 +94,14 @@ dependencies {
     implementation "com.google.guava:guava:31.1-android"
     implementation 'com.herohan:UVCAndroid:1.0.10'
     implementation 'com.github.alexeyvasilyev:rtsp-client-android:5.6.3'
+    implementation "io.github.crow-misia.libyuv:libyuv-android:0.43.2"
+
+    def tflite_version = "2.17.0"
+    implementation("org.tensorflow:tensorflow-lite:${tflite_version}")
+    implementation("org.tensorflow:tensorflow-lite-gpu:${tflite_version}")
+    implementation("org.tensorflow:tensorflow-lite-gpu-api:${tflite_version}")
+
+    implementation 'io.github.webrtc-sdk:android:125.6422.06'
 
     //implementation "com.github.michaelopes:RTSP-Client-Android:5.1.1"
    //implementation "com.github.am3n:rtsp-client-android:5.1.0"

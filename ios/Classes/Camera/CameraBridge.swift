@@ -8,6 +8,7 @@
 class CameraBridge {
     let viewId: Int;
     
+    private let lock = NSLock()
     private var isConnectedCalled = false;
     
     init(viewId: Int) {
@@ -15,7 +16,9 @@ class CameraBridge {
     }
     
     func onConnected(data: [String: Any?]) -> Void {
+        lock.lock()
         isConnectedCalled = true;
+        lock.unlock()
         FlutterEventStreamChannel.shared.send(self.viewId, "onConnected", data);
     }
     
@@ -33,9 +36,14 @@ class CameraBridge {
         ])
     }
     
-    func onVideoFrameReceived(imageData: [String: Any]) -> Void {
-        if(isConnectedCalled) {
-            FlutterEventStreamChannel.shared.send(self.viewId, "onVideoFrameReceived", imageData)
-        }
+    /// Returns false when the frame was not sent (the bridge is not connected yet);
+    /// otherwise `completion` reports the delivery on the main thread.
+    func onVideoFrameReceived(imageData: [String: Any], completion: @escaping (Bool) -> Void) -> Bool {
+        lock.lock()
+        let connected = isConnectedCalled
+        lock.unlock()
+        guard connected else { return false }
+        FlutterEventStreamChannel.shared.send(self.viewId, "onVideoFrameReceived", imageData, completion: completion)
+        return true
     }
 }

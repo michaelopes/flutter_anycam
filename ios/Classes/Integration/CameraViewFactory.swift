@@ -6,12 +6,12 @@
 //
 import Flutter
 
+/// Main thread only (method-channel handlers).
 class CameraViewFactory {
     
     
     static let shared = CameraViewFactory();
     
-    private var cameraSelector: ViewCameraSelector?
     private var textureRegistry: FlutterTextureRegistry?
     
     private var cameras : [BaseCamera] = []
@@ -29,39 +29,29 @@ class CameraViewFactory {
     }
     
     func getCameraById(id: String) -> BaseCamera? {
-        let filter = cameras.filter { $0.getCameraId() == cameraSelector?.id }
-        if let existingCamera = filter.first {
-            return existingCamera;
-        }
-        return nil;
+        return cameras.first { $0.getCameraId() == id }
     }
     
     func createView(args: [String: Any?]) -> Int64? {
         
-        guard let cameraSelectorMap = args["cameraSelector"] as? [String: Any],
-              let viewId = args["viewId"] as? Int else {
+        guard let registry = textureRegistry,
+              let cameraSelectorMap = args["cameraSelector"] as? [String: Any],
+              let viewId = args["viewId"] as? Int,
+              let cameraSelector = ViewCameraSelector.fromMap(cameraSelectorMap) else {
             return nil
         }
         
-        cameraSelector = ViewCameraSelector.fromMap(cameraSelectorMap)
-        
-        let filter = cameras.filter { $0.getCameraId() == cameraSelector?.id }
-        
-        if let existingCamera = filter.first {
-            let textureId = existingCamera.textureId
+        if let existingCamera = cameras.first(where: { $0.getCameraId() == cameraSelector.id }) {
             existingCamera.addBridge(CameraBridge(viewId: viewId))
-            return textureId
-        } else {
-            let camera = createCamera(args: args)
-            camera.addBridge(CameraBridge(viewId: viewId))
-            
-            let textureId = textureRegistry!.register(camera)
-            
-            camera.run(textureId: textureId);
-            
-            cameras.append(camera)
-            return camera.textureId
+            return existingCamera.textureId
         }
+
+        let camera = createCamera(args: args)
+        camera.addBridge(CameraBridge(viewId: viewId))
+        let textureId = registry.register(camera)
+        cameras.append(camera)
+        camera.run(textureId: textureId);
+        return textureId
     }
     
     func disposeView(args: [String: Any?]) {
@@ -73,18 +63,29 @@ class CameraViewFactory {
             }
 
             if !camera.existsBridge() {
+                cameras.removeAll { $0 === camera }
                 camera.dispose()
-                textureRegistry!.unregisterTexture(camera.textureId!)
-                if let index = cameras.firstIndex(where: { $0 === camera }) {
-                    cameras.remove(at: index)
+                if let id = camera.textureId {
+                    textureRegistry?.unregisterTexture(id)
                 }
+            }
+        }
+    }
+
+    func disposeAll() {
+        let all = cameras
+        cameras.removeAll()
+        for camera in all {
+            camera.dispose()
+            if let id = camera.textureId {
+                textureRegistry?.unregisterTexture(id)
             }
         }
     }
     
     func createCamera(args: [String: Any?]) -> BaseCamera {
-        return DeviceCamera(params: args, frameAvailableCallback: { textureId in
-            self.textureRegistry!.textureFrameAvailable(textureId)
+        return DeviceCamera(params: args, frameAvailableCallback: { [weak self] textureId in
+            self?.textureRegistry?.textureFrameAvailable(textureId)
         })
     }
     

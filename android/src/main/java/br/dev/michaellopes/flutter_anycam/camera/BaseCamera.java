@@ -9,9 +9,12 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import br.dev.michaellopes.flutter_anycam.model.ViewCameraSelector;
+import br.dev.michaellopes.flutter_anycam.tensorflow.TfFrameHandler;
 import br.dev.michaellopes.flutter_anycam.utils.CameraPermissionsUtil;
+import br.dev.michaellopes.flutter_anycam.utils.FrameDeliveryGate;
 import br.dev.michaellopes.flutter_anycam.utils.ImageMapperUtil;
 import io.flutter.view.TextureRegistry;
 
@@ -29,10 +32,15 @@ public abstract class BaseCamera {
 
     protected final ImageMapperUtil imageAnalysisUtil = new ImageMapperUtil();
 
-    private final List<CameraBridge> bridges = new ArrayList<>();
+    /** Mutated on the main thread, iterated from analysis threads. */
+    private final List<CameraBridge> bridges = new CopyOnWriteArrayList<>();
+
+    private final FrameDeliveryGate frameDelivery = new FrameDeliveryGate();
 
     private ActionCall lastAction = null;
     protected int filter = 0;
+    protected String type = "standard";
+    protected boolean frameDeliveryEnabled = true;
 
     public BaseCamera(TextureRegistry.SurfaceTextureEntry texture, Map<String, Object> params) {
         this.texture = texture;
@@ -57,7 +65,22 @@ public abstract class BaseCamera {
             }
         }
 
+        if (params.get("type") != null) {
+            final String tp = (String) params.get("type");
+            if(tp != null) {
+                type = tp;
+            }
+        }
+
+        if (params.get("frameDeliveryEnabled") != null) {
+            frameDeliveryEnabled = (Boolean) params.get("frameDeliveryEnabled");
+        }
+
         this.params = params;
+    }
+
+    public boolean isStandard() {
+        return  type.equals("standard");
     }
 
     public String getCameraId() {
@@ -93,7 +116,8 @@ public abstract class BaseCamera {
         for (CameraBridge bridge: bridges) {
             bridge.onConnected(data);
         }
-        lastAction = new BaseCamera.ActionCall( "onConnected", data);
+        // Defensive copy: EventChannel no longer clears maps, but bridges must not mutate lastAction.
+        lastAction = new BaseCamera.ActionCall("onConnected", new HashMap<>(data));
     }
 
     public void onDisconnected() {
@@ -118,10 +142,47 @@ public abstract class BaseCamera {
         lastAction = new BaseCamera.ActionCall( "onFailed", message);
     }
 
+    /**
+     * True when a new widget frame may be built now. Check before any conversion: the previous
+     * frame still references reusable NV21 buffers (or a TF frame) until Flutter encodes it.
+     */
+    protected boolean canDeliverFrame() {
+        return frameDeliveryEnabled && frameDelivery.isIdle() && !bridges.isEmpty();
+    }
+
+    /**
+     * Fans the frame out to every bridge with at most one frame in flight per camera. A TF
+     * frame that reaches no Dart listener is closed here, since Dart would never close it.
+     * <p>
+     * A TF frame has a single owner, so it goes only to the most recently attached view (the
+     * top route when two screens share a camera); otherwise one view's close() would free the
+     * frame the other is still running inference on.
+     */
     public void  onVideoFrameReceived(Map<String, Object> imageData) {
-        for (CameraBridge bridge: bridges) {
-            bridge.onVideoFrameReceived(imageData);
+        final Runnable onNoneDelivered = tfFrameCloser(imageData);
+        final List<CameraBridge> targets = new ArrayList<>(bridges);
+        if (onNoneDelivered != null && targets.size() > 1) {
+            CameraBridge latest = targets.get(targets.size() - 1);
+            targets.clear();
+            targets.add(latest);
         }
+        final FrameDeliveryGate.Delivery delivery = frameDelivery.tryBegin(targets.size(), onNoneDelivered);
+        if (delivery == null) {
+            if (!targets.isEmpty() && onNoneDelivered != null) onNoneDelivered.run();
+            return;
+        }
+        for (CameraBridge bridge: targets) {
+            bridge.onVideoFrameReceived(imageData, delivery::complete);
+        }
+    }
+
+    private static Runnable tfFrameCloser(Map<String, Object> imageData) {
+        Object id = imageData != null ? imageData.get("id") : null;
+        if (!(id instanceof String) || imageData.containsKey("bytes") || imageData.containsKey("planes")) {
+            return null;
+        }
+        final String frameId = (String) id;
+        return () -> TfFrameHandler.getInstance().closeFrame(frameId);
     }
 
     public boolean existsBridge() {
@@ -158,9 +219,11 @@ public abstract class BaseCamera {
         }
     }
 
+    /** Always >= 1: {@code FrameRateLimiterUtil} rejects non-positive rates. */
     protected int getFps() {
-        if (params.get("fps") != null) {
-            return (int) params.get("fps");
+        Object fps = params.get("fps");
+        if (fps instanceof Number) {
+            return Math.max(1, ((Number) fps).intValue());
         }
         return 5;
     }
@@ -169,12 +232,18 @@ public abstract class BaseCamera {
         if (cameraSelector.getCameraSelectorRTSP() != null) {
             init();
             isInitialed = true;
-        } else if (CameraPermissionsUtil.getInstance().hasCameraPermission() && !isInitialed) {
+        } else if ("usb".equals(cameraSelector.getLensFacing())) {
+            // USB access is UsbManager.requestPermission, not the CAMERA runtime permission.
+            if (!isInitialed) {
+                init();
+                isInitialed = true;
+            }
+        } else if (!CameraPermissionsUtil.getInstance().hasCameraPermission()) {
+            onUnauthorized();
+            isInitialed = false;
+        } else if (!isInitialed) {
             init();
             isInitialed = true;
-        } else {
-           onUnauthorized();
-            isInitialed = false;
         }
     }
 
@@ -183,10 +252,23 @@ public abstract class BaseCamera {
 
     public void setZoom(float zoom) {}
 
+
+    public void setExposureCompensation(int value) {}
+
+    /** Stops event fan-out right away when the native teardown completes asynchronously. */
+    protected void clearBridges() {
+        bridges.clear();
+    }
+
     @CallSuper
     public void dispose() {
         bridges.clear();
-        texture.release();
+        try {
+            texture.release();
+        } catch (Exception e) {
+            // The engine may already be detached when teardown completes asynchronously.
+            android.util.Log.w("BaseCamera", "texture release failed: " + e.getMessage());
+        }
     }
 
    static class ActionCall {
