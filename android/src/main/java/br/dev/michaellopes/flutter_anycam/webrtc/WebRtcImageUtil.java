@@ -166,13 +166,14 @@ public final class WebRtcImageUtil {
     }
 
     public static I420Image ensureI420(I420Image src) {
-        int expectedChromaStride = src.width / 2;
+        int chromaWidth = (src.width + 1) / 2;
 
+        // Planar chroma with row padding is still valid I420 for JavaI420Buffer.
         boolean alreadyI420 =
                 src.pixelStrideU == 1
                         && src.pixelStrideV == 1
-                        && src.strideU == expectedChromaStride
-                        && src.strideV == expectedChromaStride;
+                        && src.strideU >= chromaWidth
+                        && src.strideV >= chromaWidth;
 
         if (alreadyI420) {
             return src;

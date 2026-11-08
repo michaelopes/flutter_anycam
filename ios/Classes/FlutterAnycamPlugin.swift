@@ -3,8 +3,9 @@ import UIKit
 import AVFoundation
 
 public class FlutterAnycamPlugin: NSObject, FlutterPlugin {
-    
-    
+
+    /// Pixel / TFLite work: never on main, so the UI and Flutter's raster pipeline keep going.
+    private let workQueue = DispatchQueue(label: "br.dev.michaellopes.flutter_anycam.work", qos: .userInitiated, attributes: .concurrent)
     
     public static func register(with registrar: FlutterPluginRegistrar) {
         CameraViewFactory.shared.load(textureRegistry: registrar.textures());
@@ -21,131 +22,115 @@ public class FlutterAnycamPlugin: NSObject, FlutterPlugin {
         eventChannel.setStreamHandler(FlutterEventStreamChannel.shared)
         
         registrar.addMethodCallDelegate(instance, channel: channel)
+        registrar.publish(instance)
     }
-    
+
+    public func detachFromEngine(for registrar: FlutterPluginRegistrar) {
+        CameraViewFactory.shared.disposeAll()
+        TfModelHandler.shared.disposeAll()
+        TfFrameHandler.shared.closeAll()
+    }
+
+    private func background(_ result: @escaping FlutterResult, _ work: @escaping () -> Any?) {
+        workQueue.async {
+            let value = work()
+            DispatchQueue.main.async { result(value) }
+        }
+    }
+
+    private static func roi(_ data: [String: Any]) -> (Double, Double, Double, Double) {
+        var r = (-1.0, -1.0, -1.0, -1.0)
+        if let roi = data["roi"] as? [String: Any] {
+            if let v = roi["xMin"] as? NSNumber { r.0 = v.doubleValue }
+            if let v = roi["yMin"] as? NSNumber { r.1 = v.doubleValue }
+            if let v = roi["xMax"] as? NSNumber { r.2 = v.doubleValue }
+            if let v = roi["yMax"] as? NSNumber { r.3 = v.doubleValue }
+        }
+        return r
+    }
     
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         switch call.method {
         case "createView":
-            let data =  call.arguments as? [String: Any?];
-            let id = CameraViewFactory.shared.createView(args: data!)
-            DispatchQueue.main.async {
-                result(id)
+            guard let data = call.arguments as? [String: Any?],
+                  let id = CameraViewFactory.shared.createView(args: data) else {
+                result(FlutterError(code: "createView", message: "Invalid camera arguments", details: nil))
+                return
             }
-            break;
+            result(id)
         case "disposeView":
-            let data =  call.arguments as? [String: Any?];
-            CameraViewFactory.shared.disposeView(args: data!)
-            DispatchQueue.main.async {
-                result(true)
+            if let data = call.arguments as? [String: Any?] {
+                CameraViewFactory.shared.disposeView(args: data)
             }
-            break;
+            result(true)
         case "availableCameras":
-            
-            let cameras =  CameraUtil.availableCameras()
-            DispatchQueue.main.async {
-                result(cameras)
-            }
-            break;
+            background(result) { CameraUtil.availableCameras() }
         case "broadcastPermissionGranted":
             CameraViewFactory.shared.broadcastPermissionGranted()
             result(true);
-            break;
         case "requestPermission":
             let status = AVCaptureDevice.authorizationStatus(for: .video)
             switch status {
             case .authorized:
-                DispatchQueue.main.async {
-                    result(true)
-                }
-                break;
+                result(true)
             case .notDetermined:
                 AVCaptureDevice.requestAccess(for: .video) { granted in
-                    DispatchQueue.main.async {
-                        if granted {
-                            DispatchQueue.main.async {
-                                result(true)
-                            }
-                        } else {
-                            DispatchQueue.main.async {
-                                result(false)
-                            }
-                        }
-                    }
+                    DispatchQueue.main.async { result(granted) }
                 }
-                break;
             default:
-                DispatchQueue.main.async {
-                    result(false)
-                }
+                result(false)
             }
-            break;
         case "setFlash":
-            let data =  call.arguments as? [String: Any?];
-            let value = data?["value"] as? Bool
-            AVCaptureUtil.shared.setFlash(value!)
+            let data = call.arguments as? [String: Any?]
+            AVCaptureUtil.shared.setFlash((data?["value"] as? Bool) ?? false)
             result(true)
-            break;
-            
         case "setZoom":
-            let data =  call.arguments as? [String: Any?];
-            let value = data?["zoom"] as? Double
-            let cameraId = data?["cameraId"] as? String
-            let camera =  CameraViewFactory.shared.getCameraById(id: cameraId!);
-            if(camera != nil) {
-                camera?.setZoom(zoom: Float(value ?? 1.0));
+            let data = call.arguments as? [String: Any?]
+            if let cameraId = data?["cameraId"] as? String,
+               let camera = CameraViewFactory.shared.getCameraById(id: cameraId) {
+                let value = (data?["zoom"] as? NSNumber)?.floatValue ?? 1.0
+                camera.setZoom(zoom: value)
             }
             result(true)
-            break;
+        case "setExposureCompensation":
+            let data = call.arguments as? [String: Any?]
+            if let cameraId = data?["cameraId"] as? String,
+               let camera = CameraViewFactory.shared.getCameraById(id: cameraId) {
+                camera.setExposureCompensation(value: (data?["value"] as? NSNumber)?.intValue ?? 0)
+            }
+            result(true)
         case "convertBGRA8888ToJpeg":
-            
-            let data =  call.arguments as? [String: Any?];
-            if(data == nil) {
-                DispatchQueue.main.async {
-                    result(nil)
-                }
-                return;
+            guard let data = call.arguments as? [String: Any?],
+                  let bytes = data["bytes"] as? FlutterStandardTypedData,
+                  let width = data["width"] as? Int,
+                  let height = data["height"] as? Int else {
+                result(nil)
+                return
             }
-            
-            let bytes = data?["bytes"] as? FlutterStandardTypedData
-            let width = data?["width"] as? Int
-            let height = data?["height"] as? Int
-            let quality = data?["quality"] as? Int
-            let rotation = data?["rotation"] as? Int
-            let filter = data?["filter"] as? Int ?? 0
-            let crop = data?["crop"] as? [String: Any]
-            
-            if(bytes == nil || width == nil || height == nil || quality == nil || rotation == nil) {
-                DispatchQueue.main.async {
-                    result(nil)
-                }
-                return;
+            let quality = min(max((data["quality"] as? Int) ?? 100, 0), 100)
+            let filter = data["filter"] as? Int ?? 0
+            let crop = data["crop"] as? [String: Any]
+            background(result) {
+                let jpeg = ImageConverterUtil.convertBGRA8888ToJPEG(
+                    bgraData: bytes.data,
+                    width: width,
+                    height: height,
+                    quality: CGFloat(quality) / 100.0,
+                    filter: filter,
+                    crop: crop
+                )
+                return jpeg.map { FlutterStandardTypedData(bytes: $0) }
             }
-            
-            let bgraData = bytes!.data
-            let res = ImageConverterUtil.convertBGRA8888ToJPEG(bgraData: bgraData,
-                                                               width: width!,
-                                                               height: height!,
-                                                               quality: quality == 0 ? 0 : CGFloat(quality! / 100),
-                                                               filter: filter,
-                                                               crop: crop
-                                                               
-            )
-            
-            DispatchQueue.main.async {
-                result(res)
-            }
-            break;
         case "loadTfModel":
             guard let data = call.arguments as? [String: Any],
                   let assetPath = data["assetPath"] as? String,
-                  let key = data["key"] as? String,
-                  let delegate = data["delegate"] as? String else {
+                  let key = data["key"] as? String else {
                 result(FlutterError(code: "bad_args", message: "loadTfModel", details: nil))
                 return
             }
+            let delegate = data["delegate"] as? String ?? "cpu"
             let threads = (data["threads"] as? NSNumber)?.intValue ?? 1
-            DispatchQueue.global(qos: .userInitiated).async {
+            workQueue.async {
                 do {
                     try TfModelHandler.shared.loadModel(assetPath: assetPath, key: key, delegate: delegate, threads: threads)
                     DispatchQueue.main.async { result(true) }
@@ -155,22 +140,21 @@ public class FlutterAnycamPlugin: NSObject, FlutterPlugin {
                     }
                 }
             }
-            break
         case "runTfInference":
             guard let args = call.arguments as? [String: Any] else {
                 result(FlutterError(code: "bad_args", message: "runTfInference", details: nil))
                 return
             }
             TfModelHandler.shared.runInference(arguments: args, result: result)
-            break
         case "disposeTfModel":
             guard let data = call.arguments as? [String: Any], let key = data["key"] as? String else {
                 result(false)
                 return
             }
-            TfModelHandler.shared.disposeModel(key: key)
-            result(true)
-            break
+            background(result) {
+                TfModelHandler.shared.disposeModel(key: key)
+                return true
+            }
         case "closeTfFrame":
             guard let data = call.arguments as? [String: Any], let id = data["id"] as? String else {
                 result(false)
@@ -178,34 +162,29 @@ public class FlutterAnycamPlugin: NSObject, FlutterPlugin {
             }
             TfFrameHandler.shared.closeFrame(id)
             result(true)
-            break
         case "getTfFrameJpeg":
             guard let data = call.arguments as? [String: Any], let id = data["id"] as? String else {
                 result(nil)
                 return
             }
-            if let bytes = TfFrameHandler.shared.getFrameJpeg(frameId: id) {
-                result(["bytes": FlutterStandardTypedData(bytes: bytes)])
-            } else {
-                result(nil)
+            background(result) {
+                guard let bytes = TfFrameHandler.shared.getFrameJpeg(frameId: id) else { return nil }
+                return ["bytes": FlutterStandardTypedData(bytes: bytes)]
             }
-            break
         case "registerTfFrameFromJpeg":
             guard let data = call.arguments as? [String: Any],
                   let typed = data["jpegBytes"] as? FlutterStandardTypedData else {
                 result(nil)
                 return
             }
-            result(TfFrameHandler.shared.registerFrameFromJpeg(typed.data))
-            break
+            background(result) { TfFrameHandler.shared.registerFrameFromJpeg(typed.data) }
         case "registerTfFrameCopy":
             guard let data = call.arguments as? [String: Any],
                   let frameId = data["frameId"] as? String else {
                 result(nil)
                 return
             }
-            result(TfFrameHandler.shared.registerFrameCopy(frameId))
-            break
+            background(result) { TfFrameHandler.shared.registerFrameCopy(frameId) }
         case "registerTfFrameCrop":
             guard let data = call.arguments as? [String: Any],
                   let frameId = data["frameId"] as? String,
@@ -222,7 +201,7 @@ public class FlutterAnycamPlugin: NSObject, FlutterPlugin {
                 resizeWidth = (resizeTo["width"] as? NSNumber)?.intValue
                 resizeHeight = (resizeTo["height"] as? NSNumber)?.intValue
             }
-            result(
+            background(result) {
                 TfFrameHandler.shared.registerFrameCrop(
                     frameId,
                     x: x.intValue,
@@ -232,59 +211,31 @@ public class FlutterAnycamPlugin: NSObject, FlutterPlugin {
                     resizeWidth: resizeWidth,
                     resizeHeight: resizeHeight
                 )
-            )
-            break
+            }
         case "getTfFrameBlurScore":
             guard let data = call.arguments as? [String: Any], let id = data["id"] as? String else {
                 result(nil)
                 return
             }
             let sampleStep = (data["sampleStep"] as? NSNumber)?.intValue ?? 2
-            var xMin = -1.0
-            var yMin = -1.0
-            var xMax = -1.0
-            var yMax = -1.0
-            if let roi = data["roi"] as? [String: Any] {
-                if let v = roi["xMin"] as? NSNumber { xMin = v.doubleValue }
-                if let v = roi["yMin"] as? NSNumber { yMin = v.doubleValue }
-                if let v = roi["xMax"] as? NSNumber { xMax = v.doubleValue }
-                if let v = roi["yMax"] as? NSNumber { yMax = v.doubleValue }
+            let r = Self.roi(data)
+            background(result) {
+                TfFrameHandler.shared.computeBlurScore(
+                    frameId: id, xMin: r.0, yMin: r.1, xMax: r.2, yMax: r.3, sampleStep: sampleStep
+                )
             }
-            let score = TfFrameHandler.shared.computeBlurScore(
-                frameId: id,
-                xMin: xMin,
-                yMin: yMin,
-                xMax: xMax,
-                yMax: yMax,
-                sampleStep: sampleStep
-            )
-            result(score)
-            break
         case "getTfFrameIlluminationScore":
             guard let data = call.arguments as? [String: Any], let id = data["id"] as? String else {
                 result(nil)
                 return
             }
             let sampleStep = (data["sampleStep"] as? NSNumber)?.intValue ?? 2
-            var xMin = -1.0
-            var yMin = -1.0
-            var xMax = -1.0
-            var yMax = -1.0
-            if let roi = data["roi"] as? [String: Any] {
-                if let v = roi["xMin"] as? NSNumber { xMin = v.doubleValue }
-                if let v = roi["yMin"] as? NSNumber { yMin = v.doubleValue }
-                if let v = roi["xMax"] as? NSNumber { xMax = v.doubleValue }
-                if let v = roi["yMax"] as? NSNumber { yMax = v.doubleValue }
+            let r = Self.roi(data)
+            background(result) {
+                TfFrameHandler.shared.computeIlluminationScore(
+                    frameId: id, xMin: r.0, yMin: r.1, xMax: r.2, yMax: r.3, sampleStep: sampleStep
+                )
             }
-            result(TfFrameHandler.shared.computeIlluminationScore(
-                frameId: id,
-                xMin: xMin,
-                yMin: yMin,
-                xMax: xMax,
-                yMax: yMax,
-                sampleStep: sampleStep
-            ))
-            break
         case "closeTfInferenceResult":
             guard let data = call.arguments as? [String: Any], let id = data["id"] as? String else {
                 result(false)
@@ -292,43 +243,40 @@ public class FlutterAnycamPlugin: NSObject, FlutterPlugin {
             }
             TfModelHandler.shared.closeInferenceResult(id: id)
             result(true)
-            break
         case "getInferenceResultScaledCroppedFrame":
             guard let d = call.arguments as? [String: Any], let id = d["id"] as? String else {
                 result(nil)
                 return
             }
-            result(TfModelHandler.shared.getScaledCroppedFrameMap(inferenceId: id))
-            break
+            background(result) { TfModelHandler.shared.getScaledCroppedFrameMap(inferenceId: id) }
         case "getInferenceResultCroppedFrame":
             guard let d = call.arguments as? [String: Any], let id = d["id"] as? String else {
                 result(nil)
                 return
             }
-            result(TfModelHandler.shared.getCroppedFrameMap(inferenceId: id))
-            break
+            background(result) { TfModelHandler.shared.getCroppedFrameMap(inferenceId: id) }
         case "getInferenceResultInferenceFrame":
             guard let data = call.arguments as? [String: Any], let id = data["id"] as? String else {
                 result(nil)
                 return
             }
-            if let m = TfModelHandler.shared.frameMapForInference(id: id, kind: TfModelHandler.FrameKind.inference) {
-                result(m)
-            } else {
-                result(nil)
-            }
-            break
+            result(TfModelHandler.shared.frameMapForInference(id: id, kind: TfModelHandler.FrameKind.inference))
         case "getInferenceResultRawFrame":
             guard let data = call.arguments as? [String: Any], let id = data["id"] as? String else {
                 result(nil)
                 return
             }
-            if let m = TfModelHandler.shared.frameMapForInference(id: id, kind: TfModelHandler.FrameKind.raw) {
-                result(m)
-            } else {
-                result(nil)
-            }
-            break
+            result(TfModelHandler.shared.frameMapForInference(id: id, kind: TfModelHandler.FrameKind.raw))
+
+        // Android-only features: answer like "not available" instead of throwing
+        // MissingPluginException into app code.
+        case "registerRawStream", "registerTfCameraStream", "registerWebRtcCameraFeed":
+            result(false)
+        case "disposeRawStream", "disposeTfCameraStream", "disposeWebRtcCameraFeed", "stopWebRtcStream":
+            result(true)
+        case "newWebRtcStream", "createWebRtcAnswer", "addWebRtcCandidate",
+             "pushWebRtcFrame", "sendWebRtcDataMessage", "convertNv21ToJpeg":
+            result(FlutterError(code: "unsupported", message: "\(call.method) is not available on iOS", details: nil))
         default:
             result(FlutterMethodNotImplemented)
         }

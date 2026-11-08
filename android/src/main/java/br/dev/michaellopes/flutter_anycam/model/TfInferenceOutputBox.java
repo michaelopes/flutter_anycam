@@ -34,12 +34,10 @@ public class TfInferenceOutputBox {
         box.xMax &= ~1;
         box.yMax &= ~1;
 
-       Double cropPadPercent = ((Double) map.get("cropPadPercent"));
-       if(cropPadPercent != null) {
-           box.cropPadPercent =  cropPadPercent;  
-       } else {
-           box.cropPadPercent = 0;
-       }
+        Object cropPadPercent = map.get("cropPadPercent");
+        box.cropPadPercent = cropPadPercent instanceof Number
+                ? ((Number) cropPadPercent).doubleValue()
+                : 0;
 
 
         int srcWidth = ((Number) map.get("srcWidth")).intValue();

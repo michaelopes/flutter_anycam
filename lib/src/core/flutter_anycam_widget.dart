@@ -22,6 +22,9 @@ import 'flutter_anycam_filter.dart';
 
 const kDefaultFrameChangePercent = 6.0;
 
+/// Fallback ratio while neither the parent nor the native preview defines one.
+const double _kFallbackAspectRatio = 4 / 3;
+
 typedef ConnectResult = ({int textureId, double width, double height});
 
 class FlutterAnycamWidget extends StatefulWidget {
@@ -44,6 +47,8 @@ class FlutterAnycamWidget extends StatefulWidget {
     this.previewRotation,
     this.previewEnabled = true,
     this.frameDeliveryEnabled = true,
+    this.autoRetryDelay = const Duration(seconds: 60),
+    this.disconnectDebounce = const Duration(seconds: 2),
   });
 
   final FlutterAnycamSize preferredSize;
@@ -64,6 +69,12 @@ class FlutterAnycamWidget extends StatefulWidget {
   final bool previewEnabled;
   final bool frameDeliveryEnabled;
 
+  /// Wait before [autoRetry] recreates a failed or disconnected camera.
+  final Duration autoRetryDelay;
+
+  /// A "disconnected" shorter than this (USB replug, RTSP hiccup) is not shown.
+  final Duration disconnectDebounce;
+
   @override
   State<FlutterAnycamWidget> createState() => FlutterAnycamWidgetState();
 }
@@ -80,8 +91,20 @@ class FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
 
   final _factory = FlutterAnycamViewFactory();
 
-  _Debouncer? _disconnectDeboucer;
-  bool autoRetryTrigged = false;
+  Timer? _disconnectTimer;
+  Timer? _retryTimer;
+  Timer? _recreateTimer;
+
+  bool _disposed = false;
+
+  /// Bumped on every (re)creation and on dispose. Deferred work tagged with an
+  /// older value is dropped, so a disposed or refreshed widget never creates a
+  /// native camera nobody will dispose.
+  int _generation = 0;
+
+  /// True while the previous native camera is being disposed. Lifecycle events
+  /// it emitted before its disposal must not overwrite the new camera's state.
+  bool _awaitingDispose = false;
 
   bool _isInactive = false;
 
@@ -99,25 +122,46 @@ class FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
 
   @override
   void initState() {
-    WidgetsBinding.instance.addObserver(this);
-    _createView();
-    _onPlatformViewCreated();
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _onPlatformViewCreated();
+    _createNativeView(_generation);
   }
 
-  Future<void> _createView() async {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _factory.createView(
-        viewId: viewId,
-        camera: widget.camera,
-        preferredSize: widget.preferredSize,
-        resizeFrame: widget.resizeFrame,
-        filter: widget.filter.code,
-        fps: widget.fps,
-        type: widget.type,
-        previewEnabled: widget.previewEnabled,
-        frameDeliveryEnabled: widget.frameDeliveryEnabled,
-      );
+  bool _isCurrent(int generation) => !_disposed && generation == _generation;
+
+  void _createNativeView(int generation) {
+    if (!_isCurrent(generation)) return;
+    _factory
+        .createView(
+      viewId: viewId,
+      camera: widget.camera,
+      preferredSize: widget.preferredSize,
+      resizeFrame: widget.resizeFrame,
+      filter: widget.filter.code,
+      fps: widget.fps,
+      type: widget.type,
+      previewEnabled: widget.previewEnabled,
+      frameDeliveryEnabled: widget.frameDeliveryEnabled,
+    )
+        .then((textureId) {
+      if (textureId == null && _isCurrent(generation)) {
+        _setViewState(_ViewState.failure);
+        _autoRetry();
+      }
+    }, onError: (Object error) {
+      debugPrint("FlutterAnycam createView failed: $error");
+      if (_isCurrent(generation)) {
+        _setViewState(_ViewState.failure);
+        _autoRetry();
+      }
+    });
+  }
+
+  void _setViewState(_ViewState state) {
+    if (!mounted || _viewState == state) return;
+    setState(() {
+      _viewState = state;
     });
   }
 
@@ -128,12 +172,32 @@ class FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
     Size nativePreviewSize
   }) getSceneData() {
     final internalBox =
-        _internalBoxKey.currentContext!.findRenderObject() as RenderBox;
-    final extenalBox =
-        _externalBoxKey.currentContext!.findRenderObject() as RenderBox;
+        _internalBoxKey.currentContext?.findRenderObject() as RenderBox?;
+    final externalBox =
+        _externalBoxKey.currentContext?.findRenderObject() as RenderBox?;
+
+    final nativePreviewSize = Size(
+      _connectResult?.width ?? -1,
+      _connectResult?.height ?? -1,
+    );
+
+    if (internalBox == null ||
+        externalBox == null ||
+        !internalBox.hasSize ||
+        !externalBox.hasSize ||
+        externalBox.size.isEmpty) {
+      return (
+        scaleX: 1,
+        scaleY: 1,
+        flutterPreviewSize: externalBox?.hasSize == true
+            ? externalBox!.size
+            : Size.zero,
+        nativePreviewSize: nativePreviewSize,
+      );
+    }
 
     final internalBoxSize = internalBox.size;
-    final externalBoxSize = extenalBox.size;
+    final externalBoxSize = externalBox.size;
 
     final scaleX = internalBoxSize.width / externalBoxSize.width;
     final scaleY = internalBoxSize.height / externalBoxSize.height;
@@ -142,10 +206,7 @@ class FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
       scaleX: widget.previewScale > 0 ? scaleX * widget.previewScale : scaleX,
       scaleY: widget.previewScale > 0 ? scaleY * widget.previewScale : scaleY,
       flutterPreviewSize: externalBoxSize,
-      nativePreviewSize: Size(
-        _connectResult?.width ?? -1,
-        _connectResult?.height ?? -1,
-      )
+      nativePreviewSize: nativePreviewSize,
     );
   }
 
@@ -153,99 +214,77 @@ class FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
     return widget.viewId ?? hashCode;
   }
 
+  void _cancelTimers() {
+    _disconnectTimer?.cancel();
+    _disconnectTimer = null;
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    _recreateTimer?.cancel();
+    _recreateTimer = null;
+  }
+
   @override
   void dispose() {
+    _disposed = true;
+    _generation++;
+    _cancelTimers();
+    _mesureFrames?.stopCounting();
     WidgetsBinding.instance.removeObserver(this);
     _listenerDisposer?.call();
-    _factory.disposeView(viewId);
+    _listenerDisposer = null;
+    _factory.disposeView(viewId).catchError((_) => false);
     super.dispose();
   }
 
   void _onPlatformViewCreated() {
-    if (_listenerDisposer != null) {
-      _listenerDisposer?.call();
-    }
+    _listenerDisposer?.call();
 
     _listenerDisposer = FlutterAnycamPlatform.instance.addStreamListener(
       FlutterAnycamStreamListener(
         viewId: viewId,
-        onConnected: (data) {
-          _disconnectDeboucer?.cancel();
-          debugPrint("CM: onConnected");
-          void applyConnected() {
-            if (!mounted) return;
-            setState(() {
-              _connectResult = (
-                width: (data["width"] as num).toDouble(),
-                height: (data["height"] as num).toDouble(),
-                textureId: data["textureId"]
-              );
-              _viewState = _ViewState.connected;
-            });
-          }
-
-          // One frame delay is enough for Texture readiness; avoid fixed 500ms on low-end.
-          if (mounted) {
-            WidgetsBinding.instance
-                .addPostFrameCallback((_) => applyConnected());
-          } else {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              WidgetsBinding.instance
-                  .addPostFrameCallback((_) => applyConnected());
-            });
-          }
-          if (widget.enableDebug) {
-            _mesureFrames?.stopCounting();
-            _mesureFrames = FlutterAnycamMesure(seconds: 1);
-            _mesureFrames?.startCounting(
-              callback: (counter) {
-                if (!mounted) return;
-                setState(() {
-                  if (kDebugMode) {
-                    print("FPS $viewId: $counter");
-                  }
-                  _framesPerSecond = counter;
-                });
-              },
+        onConnected: _handleConnected,
+        onUnauthorized: (data) {
+          if (_disposed || _awaitingDispose) return;
+          debugPrint("CM: onUnauthorized");
+          if (_viewState == _ViewState.unauthorized) return;
+          _setViewState(_ViewState.unauthorized);
+          if (_needsRuntimePermission) {
+            FlutterAnycamPermissionHandler.I.requestPermission(
+              viewId: viewId,
             );
           }
         },
-        onUnauthorized: (data) async {
-          debugPrint("CM: onUnauthorized");
-          if (_viewState != _ViewState.unauthorized) {
-            setState(() {
-              _viewState = _ViewState.unauthorized;
-            });
-            if (widget.camera.lensFacing != FlutterAnycamLensFacing.rtsp &&
-                widget.camera.lensFacing != FlutterAnycamLensFacing.usb) {
-              FlutterAnycamPermissionHandler.I.requestPermission(
-                viewId: viewId,
-              );
-            }
-          }
-        },
         onDisconnected: (data) {
+          if (_disposed || _awaitingDispose) return;
           debugPrint("CM: onDisconnected");
-
-          _disconnectDeboucer = _Debouncer(milliseconds: 2000);
-          _disconnectDeboucer?.call(() {
-            setState(() {
-              _viewState = _ViewState.disconnected;
-            });
+          _disconnectTimer?.cancel();
+          _disconnectTimer = Timer(widget.disconnectDebounce, () {
+            _disconnectTimer = null;
+            if (!mounted) return;
+            _setViewState(_ViewState.disconnected);
             _autoRetry();
           });
         },
         onFailed: (data) {
-          debugPrint("CM: onFailed");
-          setState(() {
-            _viewState = _ViewState.failure;
-            _autoRetry();
-          });
+          if (_disposed || _awaitingDispose) return;
+          debugPrint("CM: onFailed ${data["message"] ?? ""}");
+          _disconnectTimer?.cancel();
+          _disconnectTimer = null;
+          _setViewState(_ViewState.failure);
+          _autoRetry();
         },
         onVideoFrameReceived: (data) {
           _mesureFrames?.count();
           if (widget.onRawVideoFrameReceived != null) {
             widget.onRawVideoFrameReceived!(data);
+          } else if (widget.type == FlutterAnycamType.tf) {
+            // An id-only native frame: nobody here can consume it, so free it.
+            final id = data["id"];
+            if (id is String) {
+              FlutterAnycamPlatform.instance
+                  .closeTfFrame(frameId: id)
+                  .catchError((_) => false);
+            }
           } else if (widget.onFrame != null) {
             final frame = FlutterAnycamFrame.fromMap(data);
             widget.onFrame?.call(frame);
@@ -255,21 +294,79 @@ class FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
     );
   }
 
-  void _autoRetry() {
-    if (widget.autoRetry && !autoRetryTrigged) {
-      autoRetryTrigged = true;
-      Future.delayed(const Duration(seconds: 60), () {
-        _refresh();
-        autoRetryTrigged = false;
-      });
+  bool get _needsRuntimePermission =>
+      widget.camera.lensFacing != FlutterAnycamLensFacing.rtsp &&
+      widget.camera.lensFacing != FlutterAnycamLensFacing.usb;
+
+  void _handleConnected(Map<String, dynamic> data) {
+    if (_disposed || _awaitingDispose) return;
+    debugPrint("CM: onConnected");
+    _disconnectTimer?.cancel();
+    _disconnectTimer = null;
+    _retryTimer?.cancel();
+    _retryTimer = null;
+
+    final width = (data["width"] as num?)?.toDouble() ?? 0;
+    final height = (data["height"] as num?)?.toDouble() ?? 0;
+    final textureId = (data["textureId"] as num?)?.toInt();
+    if (textureId == null || width <= 0 || height <= 0) {
+      debugPrint("FlutterAnycam: invalid onConnected payload $data");
+      _setViewState(_ViewState.failure);
+      return;
     }
+
+    if (!mounted) return;
+    // Applied right away: a post-frame callback alone does not schedule a frame,
+    // so a static "disconnected" screen would hide a USB reconnection until the
+    // next unrelated repaint.
+    setState(() {
+      _connectResult = (width: width, height: height, textureId: textureId);
+      _viewState = _ViewState.connected;
+    });
+
+    if (widget.enableDebug) {
+      _mesureFrames?.stopCounting();
+      _mesureFrames = FlutterAnycamMesure(seconds: 1);
+      _mesureFrames?.startCounting(
+        callback: (counter) {
+          if (!mounted) return;
+          setState(() {
+            if (kDebugMode) {
+              print("FPS $viewId: $counter");
+            }
+            _framesPerSecond = counter;
+          });
+        },
+      );
+    }
+  }
+
+  void _autoRetry() {
+    if (!widget.autoRetry || _disposed || _retryTimer != null) return;
+    _retryTimer = Timer(widget.autoRetryDelay, () {
+      _retryTimer = null;
+      _refresh();
+    });
+  }
+
+  static String _cameraKey(FlutterAnycamCameraSelector camera) {
+    final map = camera.toMap();
+    return [
+      camera.id,
+      camera.lensFacing.name,
+      camera.sensorOrientation,
+      map['forceSensorOrientation'],
+      map['url'],
+      map['username'],
+      map['password'],
+    ].join('|');
   }
 
   @override
   void didUpdateWidget(FlutterAnycamWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final cameraChanged = oldWidget.camera.id != widget.camera.id ||
-        oldWidget.camera.lensFacing != widget.camera.lensFacing;
+    final cameraChanged =
+        _cameraKey(oldWidget.camera) != _cameraKey(widget.camera);
     final pipelineChanged = oldWidget.fps != widget.fps ||
         oldWidget.type != widget.type ||
         oldWidget.previewEnabled != widget.previewEnabled ||
@@ -279,8 +376,17 @@ class FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
         oldWidget.resizeFrame?.height != widget.resizeFrame?.height ||
         oldWidget.preferredSize.width != widget.preferredSize.width ||
         oldWidget.preferredSize.height != widget.preferredSize.height;
-    if (cameraChanged || pipelineChanged) {
+    final viewIdChanged = oldWidget.viewId != widget.viewId;
+    if (viewIdChanged) {
+      _factory.disposeView(oldWidget.viewId ?? hashCode).catchError((_) => false);
+      _onPlatformViewCreated();
+    }
+    if (cameraChanged || pipelineChanged || viewIdChanged) {
       _refresh();
+    }
+    if (!widget.autoRetry) {
+      _retryTimer?.cancel();
+      _retryTimer = null;
     }
   }
 
@@ -302,13 +408,25 @@ class FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
     super.didChangeAppLifecycleState(state);
   }
 
+  /// Disposes the native camera, waits for the platform to confirm, then
+  /// recreates it. Safe to call repeatedly and after dispose.
   void _refresh() {
-    setState(() {
-      _viewState = _ViewState.loading;
-    });
-    _factory.disposeView(viewId);
-    Future.delayed(const Duration(milliseconds: 200), () {
-      _createView();
+    if (_disposed) return;
+    final generation = ++_generation;
+    _cancelTimers();
+    _mesureFrames?.stopCounting();
+    _setViewState(_ViewState.loading);
+    _awaitingDispose = true;
+    _factory
+        .disposeView(viewId)
+        .catchError((_) => false)
+        .whenComplete(() {
+      if (!_isCurrent(generation)) return;
+      _awaitingDispose = false;
+      _recreateTimer = Timer(const Duration(milliseconds: 200), () {
+        _recreateTimer = null;
+        _createNativeView(generation);
+      });
     });
   }
 
@@ -369,8 +487,7 @@ class FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
             TextButton(
               onPressed: () {
                 if (_viewState == _ViewState.unauthorized &&
-                    widget.camera.lensFacing != FlutterAnycamLensFacing.rtsp &&
-                    widget.camera.lensFacing != FlutterAnycamLensFacing.usb) {
+                    _needsRuntimePermission) {
                   FlutterAnycamPermissionHandler.I.requestPermission(
                     viewId: viewId,
                     onResult: (result) {
@@ -385,14 +502,17 @@ class FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
               },
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   const Icon(Icons.refresh, color: Colors.white),
                   const SizedBox(
                     width: 8,
                   ),
-                  Text(
-                    widget.texts.retry,
-                    style: const TextStyle(color: Colors.white, fontSize: 20),
+                  Flexible(
+                    child: Text(
+                      widget.texts.retry,
+                      style: const TextStyle(color: Colors.white, fontSize: 20),
+                    ),
                   ),
                 ],
               ),
@@ -434,38 +554,59 @@ class FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
   }
 
   double get getAspectRatio {
-    final dstWidth = _connectResult!.width;
-    final dstHeight = _connectResult!.height;
-    return dstWidth / dstHeight;
+    final result = _connectResult;
+    if (result == null || result.width <= 0 || result.height <= 0) {
+      return _kFallbackAspectRatio;
+    }
+    return result.width / result.height;
+  }
+
+  /// Outer box ratio. Unbounded parents (Column, ListView) get the preview's own
+  /// ratio instead of `width / infinity`, which would break [AspectRatio].
+  double _outerAspectRatio(double width, BoxConstraints constraints) {
+    final requested = widget.aspectRatio;
+    if (requested != null && requested.isFinite && requested > 0) {
+      return requested;
+    }
+    if (constraints.hasBoundedHeight && constraints.maxHeight > 0) {
+      final ratio = width / constraints.maxHeight;
+      if (ratio.isFinite && ratio > 0) return ratio;
+    }
+    return getAspectRatio;
   }
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(builder: (_, constraints) {
+    return LayoutBuilder(builder: (context, constraints) {
+      final width = constraints.hasBoundedWidth
+          ? constraints.maxWidth
+          : MediaQuery.sizeOf(context).width;
+      if (width <= 0) {
+        return const SizedBox.shrink();
+      }
       return UnconstrainedBox(
         child: Container(
           color: Colors.black,
-          width: constraints.maxWidth,
+          width: width,
           child: AspectRatio(
-            aspectRatio: widget.aspectRatio ??
-                (constraints.maxWidth / constraints.maxHeight),
+            aspectRatio: _outerAspectRatio(width, constraints),
             child: Stack(
               children: [
                 IndexedStack(
                   index: _ViewState.connected == _viewState ? 1 : 0,
                   children: [
                     _buildStates,
-                    LayoutBuilder(builder: (_, x) {
+                    LayoutBuilder(builder: (_, inner) {
                       return SizedBox(
                         key: _externalBoxKey,
-                        width: x.maxWidth,
-                        height: constraints.maxHeight,
+                        width: inner.maxWidth,
+                        height: inner.maxHeight,
                         child: ClipRect(
                           clipBehavior: Clip.hardEdge,
                           child: FittedBox(
                             fit: BoxFit.cover,
                             child: SizedBox(
-                              width: x.maxWidth,
+                              width: inner.maxWidth,
                               child: _generateView,
                             ),
                           ),
@@ -485,28 +626,5 @@ class FlutterAnycamWidgetState extends State<FlutterAnycamWidget>
         ),
       );
     });
-  }
-}
-
-class _Debouncer {
-  final int milliseconds;
-  VoidCallback? _action;
-  Timer? _timer;
-
-  _Debouncer({required this.milliseconds});
-
-  /// Chama a função fornecida após o tempo de debounce.
-  void call(VoidCallback action) {
-    _action = action;
-    _timer?.cancel(); // Cancela o timer anterior, se existir.
-    _timer = Timer(Duration(milliseconds: milliseconds), () {
-      _action?.call();
-    });
-  }
-
-  /// Cancela qualquer execução pendente.
-  void cancel() {
-    _timer?.cancel();
-    _timer = null;
   }
 }

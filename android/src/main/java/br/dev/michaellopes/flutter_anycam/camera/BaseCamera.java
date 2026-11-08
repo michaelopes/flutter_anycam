@@ -153,10 +153,19 @@ public abstract class BaseCamera {
     /**
      * Fans the frame out to every bridge with at most one frame in flight per camera. A TF
      * frame that reaches no Dart listener is closed here, since Dart would never close it.
+     * <p>
+     * A TF frame has a single owner, so it goes only to the most recently attached view (the
+     * top route when two screens share a camera); otherwise one view's close() would free the
+     * frame the other is still running inference on.
      */
     public void  onVideoFrameReceived(Map<String, Object> imageData) {
         final Runnable onNoneDelivered = tfFrameCloser(imageData);
         final List<CameraBridge> targets = new ArrayList<>(bridges);
+        if (onNoneDelivered != null && targets.size() > 1) {
+            CameraBridge latest = targets.get(targets.size() - 1);
+            targets.clear();
+            targets.add(latest);
+        }
         final FrameDeliveryGate.Delivery delivery = frameDelivery.tryBegin(targets.size(), onNoneDelivered);
         if (delivery == null) {
             if (!targets.isEmpty() && onNoneDelivered != null) onNoneDelivered.run();
@@ -229,12 +238,12 @@ public abstract class BaseCamera {
                 init();
                 isInitialed = true;
             }
-        } else if (CameraPermissionsUtil.getInstance().hasCameraPermission() && !isInitialed) {
+        } else if (!CameraPermissionsUtil.getInstance().hasCameraPermission()) {
+            onUnauthorized();
+            isInitialed = false;
+        } else if (!isInitialed) {
             init();
             isInitialed = true;
-        } else {
-           onUnauthorized();
-            isInitialed = false;
         }
     }
 
@@ -246,10 +255,20 @@ public abstract class BaseCamera {
 
     public void setExposureCompensation(int value) {}
 
+    /** Stops event fan-out right away when the native teardown completes asynchronously. */
+    protected void clearBridges() {
+        bridges.clear();
+    }
+
     @CallSuper
     public void dispose() {
         bridges.clear();
-        texture.release();
+        try {
+            texture.release();
+        } catch (Exception e) {
+            // The engine may already be detached when teardown completes asynchronously.
+            android.util.Log.w("BaseCamera", "texture release failed: " + e.getMessage());
+        }
     }
 
    static class ActionCall {

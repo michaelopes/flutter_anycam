@@ -115,7 +115,6 @@ stream = await FlutterAnycamWebRtc.I.newStream(
       feedDisposer = await FlutterAnycamWebRtcCameraFeed.I.attach(
         cameraId: camera.id,
         fps: 15,
-        streamId: stream!.id,
         streamSize: const FlutterAnycamSize(426, 320), // opcional — downscale nativo
       );
     },
@@ -191,7 +190,6 @@ class AppServer {
           _feedDisposer = await FlutterAnycamWebRtcCameraFeed.I.attach(
             cameraId: cameraId,
             fps: 15,
-            streamId: _stream!.id,
           );
         },
         onDisconnectedCallback: () async {
@@ -249,7 +247,6 @@ FlutterAnycamCameraRawStream.I.register(..., listener: (frame) {
 FlutterAnycamWebRtcCameraFeed.I.attach(
   cameraId: '0',
   fps: 15,
-  streamId: stream.id,
 );
 ```
 
@@ -259,7 +256,6 @@ Parâmetros:
 |-----------|------|-----------|
 | `cameraId` | `String` | ID da câmera (mesmo do `FlutterAnycamWidget`) |
 | `fps` | `int` | Taxa máxima de frames enviados ao WebRTC |
-| `streamId` | `String` | ID retornado por `newStream()` |
 | `alsoDeliverToFlutter` | `bool` | Se `true`, também envia frames via EventChannel (padrão: `false`) |
 | `streamSize` | `FlutterAnycamSize?` | Redimensiona o frame nativamente antes do encode WebRTC (opcional) |
 
@@ -398,7 +394,6 @@ FlutterAnycamWidget(
 await FlutterAnycamWebRtcCameraFeed.I.attach(
   cameraId: camera.id,
   fps: 10,
-  streamId: stream.id,
   streamSize: const FlutterAnycamSize(426, 320), // opcional
 );
 ```
@@ -455,7 +450,7 @@ await FlutterAnycamWebRtcCameraFeed.I.attach(
 │  (signaling)│ ◄── onConnected ──── │   (Android nativo)  │
 └─────────────┘                      └────────┬─────────┘
        │                                        │
-       │ attach(cameraId, streamId)             │ pushFrame (I420)
+       │ attach(cameraId)                       │ pushFrame (I420)
        ▼                                        ▼
 ┌─────────────┐     ImageProxy         ┌──────────────────┐
 │ FlutterAnycam│ ◄── CameraX ──────── │ CameraRawStream  │

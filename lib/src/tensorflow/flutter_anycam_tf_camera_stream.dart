@@ -41,32 +41,51 @@ class FlutterAnycamTfCameraStream {
       return () async {};
     }
 
-    final result = await FlutterAnycamPlatform.instance.registerTfCameraStream(
-      cameraId: camera.id,
-      fps: fps,
-      preferredSize: preferredSize,
-      filter: filter,
-      camera: camera,
-    );
-
-    if (!result) {
-      return () async {};
+    // Every headless stream shares one event view id: only events of this camera belong here.
+    bool isMine(Map<String, dynamic> data) {
+      final id = data['cameraId'];
+      return id == null || id == camera.id;
     }
 
-    final disposer = FlutterAnycamPlatform.instance.addStreamListener(
+    // Registered before the native stream starts so its first events are not lost.
+    final removeListener = FlutterAnycamPlatform.instance.addStreamListener(
       FlutterAnycamStreamListener(
         viewId: kTfCameraStreamViewId,
         onTfCameraStreamConnected: (data) {
+          if (!isMine(data)) return;
           onConnected?.call(
             cameraId: data['cameraId'] as String? ?? camera.id,
-            width: (data['width'] as num).toInt(),
-            height: (data['height'] as num).toInt(),
+            width: (data['width'] as num?)?.toInt() ?? 0,
+            height: (data['height'] as num?)?.toInt() ?? 0,
           );
         },
         onTfCameraStreamFrame: (data) {
-          onFrame?.call(FlutterAnycamTfFrame.fromMap(data));
+          if (!isMine(data)) return;
+          final id = data['id'];
+          if (id is! String) return;
+          final FlutterAnycamTfFrame frame;
+          try {
+            frame = FlutterAnycamTfFrame.fromMap(data);
+          } catch (_) {
+            FlutterAnycamPlatform.instance
+                .closeTfFrame(frameId: id)
+                .catchError((_) => false);
+            return;
+          }
+          // Native memory is only released by close(): a frame nobody takes is closed here.
+          if (onFrame == null) {
+            frame.close();
+            return;
+          }
+          try {
+            onFrame(frame);
+          } catch (_) {
+            frame.close();
+            rethrow;
+          }
         },
         onTfCameraStreamFailed: (data) {
+          if (!isMine(data)) return;
           onFailed?.call(
             cameraId: data['cameraId'] as String? ?? camera.id,
             message: data['message'] as String? ?? 'unknown',
@@ -75,9 +94,33 @@ class FlutterAnycamTfCameraStream {
       ),
     );
 
+    final bool result;
+    try {
+      result = await FlutterAnycamPlatform.instance.registerTfCameraStream(
+        cameraId: camera.id,
+        fps: fps,
+        preferredSize: preferredSize,
+        filter: filter,
+        camera: camera,
+      );
+    } catch (_) {
+      removeListener();
+      rethrow;
+    }
+
+    if (!result) {
+      removeListener();
+      return () async {};
+    }
+
+    var disposed = false;
     return () async {
-      await FlutterAnycamPlatform.instance.disposeTfCameraStream(camera.id);
-      disposer();
+      if (disposed) return;
+      disposed = true;
+      removeListener();
+      try {
+        await FlutterAnycamPlatform.instance.disposeTfCameraStream(camera.id);
+      } catch (_) {}
     };
   }
 }

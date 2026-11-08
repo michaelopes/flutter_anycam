@@ -36,8 +36,11 @@ final class TfFrameNormalizer {
         invScale: Float,
         zeroPoint: Int
     ) throws -> Data {
-        let mode = TfNormalizeMode(rawValue: normalize) ?? .none
+        let mode = TfNormalizeMode(rawValue: normalize.lowercased()) ?? .none
         let pixelCount = width * height
+        guard bgra.count >= pixelCount * 4 else {
+            throw NSError(domain: "TfFrameNormalizer", code: 1, userInfo: [NSLocalizedDescriptionKey: "Frame buffer smaller than \(width)x\(height)"])
+        }
         let src = [UInt8](bgra)
 
         switch inputKind {

@@ -90,7 +90,8 @@ public class I420Image {
         this.onClose = callback;
     }
 
-    public void close() {
+    /** Idempotent; WebRTC may release from its encoder thread. */
+    public synchronized void close() {
         if (!isClose) {
             if (onClose != null) {
                 onClose.run(this);

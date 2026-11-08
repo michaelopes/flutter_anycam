@@ -1,8 +1,12 @@
 package br.dev.michaellopes.flutter_anycam.webrtc;
 
 import android.annotation.SuppressLint;
+import android.content.Context;
+import android.media.AudioManager;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
 
 import org.webrtc.DefaultVideoDecoderFactory;
 import org.webrtc.DefaultVideoEncoderFactory;
@@ -23,9 +27,25 @@ import java.util.concurrent.Executors;
 import br.dev.michaellopes.flutter_anycam.utils.ContextUtil;
 import io.flutter.plugin.common.MethodChannel;
 
+/**
+ * Owns every WebRTC stream. Frames are encoded on {@link #frameExecutor}; signaling and
+ * teardown run on {@link #signalingExecutor}, never inside a PeerConnection observer callback
+ * (disposing a PeerConnection from its own signaling thread deadlocks).
+ */
 public class WebRtcStreamHandler {
 
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private static final String TAG = "WebRtcStreamHandler";
+
+    private final ExecutorService frameExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "AnycamWebRtcFrames");
+        t.setDaemon(true);
+        return t;
+    });
+    private final ExecutorService signalingExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "AnycamWebRtcSignaling");
+        t.setDaemon(true);
+        return t;
+    });
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
 
     private final List<WebRtcStreamer> streamers = new ArrayList<>();
@@ -68,6 +88,11 @@ public class WebRtcStreamHandler {
         return instance;
     }
 
+    /** The handler if WebRTC was ever used; never initializes the native stack. */
+    public static synchronized WebRtcStreamHandler peekInstance() {
+        return instance;
+    }
+
     public void pushFrame(I420Image image) {
         pushFrame(image, null);
     }
@@ -78,13 +103,17 @@ public class WebRtcStreamHandler {
 
     /**
      * {@code onDone} runs exactly once when the frame has been handed to the streamers (or
-     * dropped), so producers can bound how many frames wait on {@link #executor}.
+     * dropped), so producers can bound how many frames wait on {@link #frameExecutor}.
      */
     public void pushFrame(I420Image image, String streamId, Runnable onDone) {
         try {
-            executor.execute(() -> {
+            frameExecutor.execute(() -> {
                 try {
                     pushFrameNow(image, streamId);
+                } catch (Throwable t) {
+                    // An uncaught exception here would kill the process.
+                    Log.e(TAG, "pushFrame failed: " + t.getMessage());
+                    image.close();
                 } finally {
                     if (onDone != null) onDone.run();
                 }
@@ -92,22 +121,13 @@ public class WebRtcStreamHandler {
         } catch (RuntimeException e) {
             image.close();
             if (onDone != null) onDone.run();
-            throw e;
         }
     }
 
     private void pushFrameNow(I420Image image, String streamId) {
-        synchronized (streamers) {
-            if (streamId != null) {
-                WebRtcStreamer streamer = getStreamById(streamId);
-                if (streamer == null || !streamer.isVideoReady()) {
-                    image.close();
-                    return;
-                }
-            } else if (!hasAnyVideoReadyStream()) {
-                image.close();
-                return;
-            }
+        if (streamId != null ? !shouldPushVideoFrames(streamId) : !hasAnyVideoReadyStream()) {
+            image.close();
+            return;
         }
 
         @SuppressLint("UnsafeOptInUsageError")
@@ -125,51 +145,106 @@ public class WebRtcStreamHandler {
         );
 
         VideoFrame frame = new VideoFrame(i420, image.rotation, System.nanoTime());
-        synchronized (streamers) {
-            if (streamId != null) {
-                WebRtcStreamer streamer = getStreamById(streamId);
-                if (streamer != null && streamer.isVideoReady()) {
+        try {
+            for (WebRtcStreamer streamer : snapshot()) {
+                if ((streamId == null || streamer.id.equals(streamId)) && streamer.isVideoReady()) {
                     streamer.pushFrame(frame);
                 }
-            } else {
-                for (WebRtcStreamer streamer : streamers) {
-                    if (streamer.isVideoReady()) {
-                        streamer.pushFrame(frame);
-                    }
-                }
             }
+        } finally {
+            frame.release();
         }
-        frame.release();
+    }
+
+    private List<WebRtcStreamer> snapshot() {
+        synchronized (streamers) {
+            return new ArrayList<>(streamers);
+        }
     }
 
     public boolean shouldPushVideoFrames(String streamId) {
-        synchronized (streamers) {
-            WebRtcStreamer streamer = getStreamById(streamId);
-            return streamer != null && streamer.isVideoReady();
-        }
+        WebRtcStreamer streamer = getStreamById(streamId);
+        return streamer != null && streamer.isVideoReady();
     }
 
     public boolean hasAnyVideoReadyStream() {
-        synchronized (streamers) {
-            for (WebRtcStreamer streamer : streamers) {
-                if (streamer.isVideoReady()) {
-                    return true;
-                }
+        for (WebRtcStreamer streamer : snapshot()) {
+            if (streamer.isVideoReady()) {
+                return true;
             }
+        }
+        return false;
+    }
+
+    public void stopAll() {
+        List<WebRtcStreamer> all;
+        synchronized (streamers) {
+            all = new ArrayList<>(streamers);
+            streamers.clear();
+        }
+        runSignaling(() -> {
+            for (WebRtcStreamer streamer : all) {
+                safeStop(streamer);
+            }
+            restoreAudioIfIdle();
+        });
+    }
+
+    /** Removes and stops one stream off the caller's thread. */
+    public void stopStream(String streamId) {
+        WebRtcStreamer streamer = getStreamById(streamId);
+        if (streamer == null) return;
+        removeStream(streamer);
+        runSignaling(() -> {
+            safeStop(streamer);
+            restoreAudioIfIdle();
+        });
+    }
+
+    /** Returns false when the task was rejected and will never run. */
+    public boolean runSignaling(Runnable task) {
+        try {
+            signalingExecutor.execute(() -> {
+                try {
+                    task.run();
+                } catch (Throwable t) {
+                    Log.e(TAG, "signaling task failed: " + t.getMessage());
+                }
+            });
+            return true;
+        } catch (RuntimeException e) {
+            Log.e(TAG, "signaling executor rejected task: " + e.getMessage());
             return false;
         }
     }
 
-    public void stopAll() {
+    private static void safeStop(WebRtcStreamer streamer) {
+        try {
+            streamer.stop();
+        } catch (Throwable t) {
+            Log.e(TAG, "stop failed: " + t.getMessage());
+        }
+    }
+
+    private void restoreAudioIfIdle() {
         synchronized (streamers) {
-            for (WebRtcStreamer streamer : streamers) {
-                streamer.stop();
+            if (!streamers.isEmpty()) return;
+        }
+        try {
+            AudioManager audioManager =
+                    (AudioManager) ContextUtil.get().getSystemService(Context.AUDIO_SERVICE);
+            if (audioManager == null) return;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                audioManager.clearCommunicationDevice();
             }
-            streamers.clear();
+            audioManager.setMode(AudioManager.MODE_NORMAL);
+        } catch (Exception e) {
+            Log.w(TAG, "restore audio failed: " + e.getMessage());
         }
     }
 
     public WebRtcStreamer getStreamById(String streamId) {
+        if (streamId == null) return null;
         synchronized (streamers) {
             for (WebRtcStreamer item : streamers) {
                 if (item.id.equals(streamId)) {
@@ -186,52 +261,64 @@ public class WebRtcStreamHandler {
         }
     }
 
+    private void invoke(MethodChannel channel, String method, Map<String, Object> data) {
+        uiHandler.post(() -> {
+            try {
+                channel.invokeMethod(method, data);
+            } catch (Exception e) {
+                Log.w(TAG, method + " not delivered: " + e.getMessage());
+            }
+        });
+    }
+
     public WebRtcStreamer newStream(MethodChannel channel) {
+        WebRtcStreamer stream = new WebRtcStreamer(factory);
+        stream.setCallback(new WebRtcStreamer.Callback() {
+            @Override
+            public void onIceCandidate(IceCandidate candidate, WebRtcStreamer st) {
+                Map<String, Object> data = new HashMap<>();
+                data.put("sdpMid", candidate.sdpMid);
+                data.put("sdpMLineIndex", candidate.sdpMLineIndex);
+                data.put("candidate", candidate.sdp);
+                data.put("streamId", st.id);
+                invoke(channel, "onWebRtcIceCandidate", data);
+            }
+
+            @Override
+            public void onDataChannelMessage(String message, WebRtcStreamer st) {
+                Map<String, Object> data = new HashMap<>();
+                data.put("message", message);
+                data.put("streamId", st.id);
+                invoke(channel, "onWebRtcDataChannelMessage", data);
+            }
+
+            @Override
+            public void onConnected(WebRtcStreamer st) {
+                Map<String, Object> data = new HashMap<>();
+                data.put("streamId", st.id);
+                invoke(channel, "onWebRtcConnected", data);
+            }
+
+            @Override
+            public void onDisconnected(WebRtcStreamer st) {
+                // Runs on the WebRTC signaling thread: hand the teardown off.
+                boolean removed;
+                synchronized (streamers) {
+                    removed = streamers.remove(st);
+                }
+                if (!removed) return;
+                runSignaling(() -> {
+                    safeStop(st);
+                    restoreAudioIfIdle();
+                });
+                Map<String, Object> data = new HashMap<>();
+                data.put("streamId", st.id);
+                invoke(channel, "onWebRtcDisconnected", data);
+            }
+        });
         synchronized (streamers) {
-            WebRtcStreamer stream = new WebRtcStreamer(factory);
-            stream.setCallback(new WebRtcStreamer.Callback() {
-                @Override
-                public void onIceCandidate(IceCandidate candidate, WebRtcStreamer st) {
-                    Map<String, Object> data = new HashMap<>();
-                    data.put("sdpMid", candidate.sdpMid);
-                    data.put("sdpMLineIndex", candidate.sdpMLineIndex);
-                    data.put("candidate", candidate.sdp);
-                    data.put("streamId", st.id);
-                    uiHandler.post(() -> channel.invokeMethod("onWebRtcIceCandidate", data));
-                }
-
-                @Override
-                public void onDataChannelMessage(String message, WebRtcStreamer st) {
-                    uiHandler.post(() -> channel.invokeMethod("onWebRtcDataChannelMessage", new HashMap<String, Object>() {{
-                        put("message", message);
-                        put("streamId", st.id);
-                    }}));
-                }
-
-                @Override
-                public void onConnected(WebRtcStreamer st) {
-                    uiHandler.post(() -> channel.invokeMethod("onWebRtcConnected", new HashMap<String, Object>() {{
-                        put("streamId", st.id);
-                    }}));
-                }
-
-                @Override
-                public void onDisconnected(WebRtcStreamer st) {
-                    synchronized (streamers) {
-                        try {
-                            stream.stop();
-                            streamers.remove(st);
-                            uiHandler.post(() -> channel.invokeMethod("onWebRtcDisconnected", new HashMap<String, Object>() {{
-                                put("streamId", st.id);
-                            }}));
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                        }
-                    }
-                }
-            });
             streamers.add(stream);
-            return stream;
         }
+        return stream;
     }
 }

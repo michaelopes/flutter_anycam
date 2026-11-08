@@ -43,6 +43,27 @@ public class ImageMapperUtil {
         return buf;
     }
 
+    /**
+     * Resolves the requested resize against the source size: (-1, -1) means the centered
+     * square side, a single -1 keeps the aspect ratio. Dimensions are even (NV21 chroma is
+     * 2x2 subsampled) and at least 2.
+     */
+    public static int[] targetSize(Size resizeFrame, int srcWidth, int srcHeight) {
+        return targetSize(resizeFrame.getWidth(), resizeFrame.getHeight(), srcWidth, srcHeight);
+    }
+
+    static int[] targetSize(int w, int h, int srcWidth, int srcHeight) {
+        if (w <= 0 && h <= 0) {
+            w = Math.min(srcWidth, srcHeight);
+            h = w;
+        } else if (w <= 0) {
+            w = Math.round(h * (float) srcWidth / srcHeight);
+        } else if (h <= 0) {
+            h = Math.round(w * (float) srcHeight / srcWidth);
+        }
+        return new int[]{Math.max(2, w & ~1), Math.max(2, h & ~1)};
+    }
+
     public Map<String, Object> imageProxyToNV21Map(ImageProxy imageProxy, Size resizeFrame, int filter, Integer customRotationDegrees) {
         return imageProxyToNV21Map(imageProxy, resizeFrame, filter, customRotationDegrees, null);
     }
@@ -87,16 +108,9 @@ public class ImageMapperUtil {
 
             byte[] finalBytes;
             if (resizeFrame != null) {
-                int targetWidth;
-                int targetHeight;
-                if (resizeFrame.getHeight() == -1 && resizeFrame.getWidth() == -1) {
-                    int minSize = Math.min(srcWidth, srcHeight);
-                    targetWidth = minSize;
-                    targetHeight = minSize;
-                } else {
-                    targetWidth = resizeFrame.getWidth();
-                    targetHeight = resizeFrame.getHeight();
-                }
+                int[] target = targetSize(resizeFrame, srcWidth, srcHeight);
+                int targetWidth = target[0];
+                int targetHeight = target[1];
 
                 int dstSize = targetWidth * targetHeight * 3 / 2;
                 byte[] bytesResizedBuffer = obtainNv21ResizedBuffer(dstSize);
@@ -104,14 +118,12 @@ public class ImageMapperUtil {
                 finalBytes = bytesResizedBuffer;
                 width = targetWidth;
                 height = targetHeight;
-                rowStride = targetWidth;
-                pixelStride = 1;
             } else {
-                Image.Plane firstPlane = image.getPlanes()[0];
-                rowStride = firstPlane.getRowStride();
-                pixelStride = firstPlane.getPixelStride();
                 finalBytes = bytesBuffer;
             }
+            // NV21 output is always tightly packed, whatever the sensor plane stride is.
+            rowStride = width;
+            pixelStride = 1;
 
             Map<String, Object> result = new HashMap<>();
             result.put("height", height);
@@ -163,17 +175,9 @@ public class ImageMapperUtil {
 
             byte[] finalBytes;
             if (resizeFrame != null) {
-
-                int targetWidth;
-                int targetHeight;
-                if (resizeFrame.getHeight() == -1 && resizeFrame.getWidth() == -1) {
-                    int minSize = Math.min(width, height);
-                    targetWidth = minSize;
-                    targetHeight = minSize;
-                } else {
-                    targetWidth = resizeFrame.getWidth();
-                    targetHeight = resizeFrame.getHeight();
-                }
+                int[] target = targetSize(resizeFrame, width, height);
+                int targetWidth = target[0];
+                int targetHeight = target[1];
 
                 int dstSize = targetWidth * targetHeight * 3 / 2;
                 byte[] bytesResizedBuffer = obtainNv21ResizedBuffer(dstSize);
@@ -181,14 +185,11 @@ public class ImageMapperUtil {
                 finalBytes = bytesResizedBuffer;
                 width = targetWidth;
                 height = targetHeight;
-                rowStride = targetWidth;
-                pixelStride = 1;
             } else {
-                Image.Plane firstPlane = image.getPlanes()[0];
-                rowStride = firstPlane.getRowStride();
-                pixelStride = firstPlane.getPixelStride();
                 finalBytes = nv21Working;
             }
+            rowStride = width;
+            pixelStride = 1;
 
 
             Map<String, Object> result = new HashMap<>();
@@ -338,16 +339,9 @@ public class ImageMapperUtil {
 
         byte[] finalBytes;
         if (resizeFrame != null) {
-            int targetWidth;
-            int targetHeight;
-            if (resizeFrame.getHeight() == -1 && resizeFrame.getWidth() == -1) {
-                int minSize = Math.min(width, height);
-                targetWidth = minSize;
-                targetHeight = minSize;
-            } else {
-                targetWidth = resizeFrame.getWidth();
-                targetHeight = resizeFrame.getHeight();
-            }
+            int[] target = targetSize(resizeFrame, width, height);
+            int targetWidth = target[0];
+            int targetHeight = target[1];
             int dstSize = targetWidth * targetHeight * 3 / 2;
             byte[] bytesResizedBuffer = obtainNv21ResizedBuffer(dstSize);
             NativeUtil.resizeNv21(nv21, width, height, bytesResizedBuffer, targetWidth, targetHeight);

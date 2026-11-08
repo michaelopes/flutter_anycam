@@ -56,6 +56,8 @@ android {
     }
 
     testOptions {
+        // android.util.Log & co. are stubs on the JVM; logging must not fail logic tests.
+        unitTests.returnDefaultValues = true
         unitTests.all {
             testLogging {
                events "passed", "skipped", "failed", "standardOut", "standardError"

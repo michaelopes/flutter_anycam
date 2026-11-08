@@ -158,30 +158,22 @@ public class ImageConverterUtil {
     public static byte[] nv21ToJpeg(byte[] nv21Bytes, int width, int height,
                                     int quality, int rotation) {
 
-        byte[] rotated;
-        int    rotatedWidth;
-        int    rotatedHeight;
-
-        if (rotation == 0) {
-            rotated        = nv21Bytes;
-            rotatedWidth   = width;
-            rotatedHeight  = height;
-        } else {
-            boolean swap  = (rotation == 90 || rotation == 270);
-            rotatedWidth  = swap ? height : width;
-            rotatedHeight = swap ? width  : height;
-
-            ByteArrayPoolUtil.PoolItem rotatedEntry = byteArrayPool.acquire(nv21Bytes.length);
-            rotated = rotatedEntry.data;
-
-            NativeUtil.rotateNV21(nv21Bytes, rotated, width, height, rotation);
-
-            byte[] result = compressToJpeg(rotated, rotatedWidth, rotatedHeight, quality);
-            byteArrayPool.release(rotatedEntry);
-            return result;
+        rotation = ((rotation % 360) + 360) % 360;
+        if (rotation != 90 && rotation != 180 && rotation != 270) {
+            return compressToJpeg(nv21Bytes, width, height, quality);
         }
 
-        return compressToJpeg(rotated, rotatedWidth, rotatedHeight, quality);
+        boolean swap = (rotation == 90 || rotation == 270);
+        int rotatedWidth = swap ? height : width;
+        int rotatedHeight = swap ? width : height;
+
+        ByteArrayPoolUtil.PoolItem rotatedEntry = byteArrayPool.acquire(width * height * 3 / 2);
+        try {
+            NativeUtil.rotateNV21(nv21Bytes, rotatedEntry.data, width, height, rotation);
+            return compressToJpeg(rotatedEntry.data, rotatedWidth, rotatedHeight, quality);
+        } finally {
+            byteArrayPool.release(rotatedEntry);
+        }
     }
 
 
@@ -193,8 +185,9 @@ public class ImageConverterUtil {
     }
 
 
+    /** Releases pooled memory; the converter keeps working if the plugin is attached again. */
     public static void shutdown() {
-        byteArrayPool.shutdown();
+        byteArrayPool.clear();
     }
 
    /* public static byte[] nv21ToJpeg(byte[] bytes, int width, int height, int quality, int rotation) {

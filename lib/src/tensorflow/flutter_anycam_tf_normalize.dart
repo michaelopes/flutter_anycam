@@ -1,7 +1,7 @@
 enum FlutterAnycamTfNormalize {
   centered("centered"),
   custom("custom"),
-  imageNet("imageNet"),
+  imageNet("imagenet"),
   simple("simple"),
   bgr("bgr"),
   none("none");

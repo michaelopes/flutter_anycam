@@ -81,25 +81,33 @@ class _FlutterAnycamTfWidgetState extends State<FlutterAnycamTfWidget> {
       type: FlutterAnycamType.tf,
       previewRotation: widget.previewRotation,
       onRawVideoFrameReceived: (data) async {
-        if (_disposed || data.entries.isEmpty) {
+        final id = data["id"];
+        if (id is! String) {
           return;
         }
 
         final frame = FlutterAnycamTfFrame.fromMap(data);
-        if (_disposed) {
+        final onFrame = widget.onFrame;
+        // A frame nobody consumes must be closed here: native memory is only
+        // released by close().
+        if (_disposed || onFrame == null || _hasReachedLimit) {
           await frame.close();
           return;
         }
 
-        if (!_hasReachedLimit) {
-          try {
-            _startProcess();
-            await widget.onFrame?.call(frame);
-          } finally {
-            _stopProcess();
-          }
-        } else {
+        _startProcess();
+        try {
+          await onFrame(frame);
+        } catch (e, s) {
+          FlutterError.reportError(FlutterErrorDetails(
+            exception: e,
+            stack: s,
+            library: 'flutter_anycam',
+            context: ErrorDescription('while handling a TF camera frame'),
+          ));
           await frame.close();
+        } finally {
+          _stopProcess();
         }
       },
     );

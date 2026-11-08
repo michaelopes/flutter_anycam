@@ -55,6 +55,7 @@ class ImageConverterUtil: NSObject {
         crop: [String: Any]? = nil
     ) -> Data? {
         let bytesPerPixel = 4
+        guard width > 0, height > 0, bgraData.count >= width * height * bytesPerPixel else { return nil }
         var currentData = bgraData
         var currentWidth = width
         var currentHeight = height
@@ -66,17 +67,11 @@ class ImageConverterUtil: NSObject {
             var left    = cropMap["left"]   as? Int ?? 0
             var top     = cropMap["top"]    as? Int ?? 0
             
-            /* rot = Int(rotation.rounded())
-             if rot == 90 || rot == 270 {
-             swap(&cWidth, &cHeight)
-             swap(&left, &top)
-             }*/
-            
-            // Clamp
-            cWidth  = min(cWidth,  currentWidth)
-            cHeight = min(cHeight, currentHeight)
-            left    = min(left, currentWidth  - cWidth)
-            top     = min(top,  currentHeight - cHeight)
+            // Clamp into the frame: an out-of-range crop must never read outside the buffer.
+            cWidth  = max(1, min(cWidth,  currentWidth))
+            cHeight = max(1, min(cHeight, currentHeight))
+            left    = max(0, min(left, currentWidth  - cWidth))
+            top     = max(0, min(top,  currentHeight - cHeight))
             
             let srcRowBytes = currentWidth * bytesPerPixel
             let dstRowBytes = cWidth * bytesPerPixel
@@ -151,10 +146,14 @@ class ImageConverterUtil: NSObject {
                 var rHeight = resizeMap["height"] as? Int ?? currentHeight
                 
                 
-                if(rWidth == -1 && rHeight == -1) {
+                if(rWidth <= 0 && rHeight <= 0) {
                     let minSize = min(currentWidth,  currentHeight);
                     rWidth = minSize;
                     rHeight = minSize;
+                } else if rWidth <= 0 {
+                    rWidth = max(1, rHeight * currentWidth / currentHeight)
+                } else if rHeight <= 0 {
+                    rHeight = max(1, rWidth * currentHeight / currentWidth)
                 }
                 
                 
@@ -163,8 +162,8 @@ class ImageConverterUtil: NSObject {
                     Float(rWidth)  / Float(currentWidth),
                     Float(rHeight) / Float(currentHeight)
                 )
-                let scaledWidth  = Int(Float(currentWidth)  * scale)
-                let scaledHeight = Int(Float(currentHeight) * scale)
+                let scaledWidth  = max(rWidth,  Int((Float(currentWidth)  * scale).rounded(.up)))
+                let scaledHeight = max(rHeight, Int((Float(currentHeight) * scale).rounded(.up)))
                 let scaledRowBytes = scaledWidth * bytesPerPixel
                 
                 var scaledData = Data(count: scaledHeight * scaledRowBytes)
@@ -276,8 +275,9 @@ class ImageConverterUtil: NSObject {
             Float(targetHeight) / Float(srcHeight)
         )
         
-        let resizedWidth = Int(Float(srcWidth) * scale)
-        let resizedHeight = Int(Float(srcHeight) * scale)
+        guard targetWidth > 0, targetHeight > 0, srcWidth > 0, srcHeight > 0 else { return nil }
+        let resizedWidth = max(targetWidth, Int((Float(srcWidth) * scale).rounded(.up)))
+        let resizedHeight = max(targetHeight, Int((Float(srcHeight) * scale).rounded(.up)))
         
         let bytesPerPixel = 4
         let resizedRowBytes = resizedWidth * bytesPerPixel

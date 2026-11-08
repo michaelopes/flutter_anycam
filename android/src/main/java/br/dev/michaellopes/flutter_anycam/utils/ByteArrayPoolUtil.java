@@ -80,55 +80,21 @@ public class ByteArrayPoolUtil {
     // API pública
     // -------------------------------------------------------------------------
 
+    /** Max wait for a pooled buffer before handing out an unpooled one. */
+    private static final long ACQUIRE_WAIT_MS = 250;
+
     /**
-     * Obtém um byte[] de pelo menos {@code size} bytes.
-     * Bloqueia indefinidamente até que um item seja liberado,
-     * caso o pool esteja cheio e todos em uso.
-     *
-     * @param size tamanho mínimo do buffer
-     * @return byte[] pronto para uso (pode ser maior que size)
-     * @throws InterruptedException se a thread for interrompida enquanto aguarda
+     * Obtém um byte[] de pelo menos {@code size} bytes. Never blocks for long and never
+     * returns null: when every pooled buffer stays in use past {@link #ACQUIRE_WAIT_MS}, an
+     * unpooled buffer is returned ({@link #release} ignores it).
      */
-    public PoolItem acquire(int size)  {
-
-       try {
-           lock.lockInterruptibly();
-           try {
-               while (true) {
-                   // 1. Procura item disponível com tamanho suficiente
-                   for (PoolItem item : items) {
-                       if (item.state == State.AVAILABLE && item.data.length >= size) {
-                           markInUse(item);
-                           return item;
-                       }
-                   }
-
-                   // 2. Pool não cheio → cria novo item
-                   if (items.size() < maxItems) {
-                       PoolItem item = new PoolItem(size);
-                       markInUse(item);
-                       items.add(item);
-                       return item;
-                   }
-
-                   // 3. Pool cheio e nada disponível → aguarda sinal de release
-                   available.await();
-               }
-           } finally {
-               lock.unlock();
-           }
-       } catch ( InterruptedException e) {
-         return null;
-       }
+    public PoolItem acquire(int size) {
+        PoolItem item = acquire(size, ACQUIRE_WAIT_MS);
+        return item != null ? item : newUnpooled(size);
     }
 
     /**
      * Variante com timeout: retorna null se não conseguir um buffer no prazo.
-     *
-     * @param size        tamanho mínimo do buffer
-     * @param timeoutMs   tempo máximo de espera em milissegundos
-     * @return byte[] ou null se timeout expirar
-     * @throws InterruptedException se a thread for interrompida
      */
     public PoolItem acquire(int size, long timeoutMs) {
         try {
@@ -136,19 +102,8 @@ public class ByteArrayPoolUtil {
             lock.lockInterruptibly();
             try {
                 while (true) {
-                    for (PoolItem item : items) {
-                        if (item.state == State.AVAILABLE && item.data.length >= size) {
-                            markInUse(item);
-                            return item;
-                        }
-                    }
-
-                    if (items.size() < maxItems) {
-                        PoolItem item = new PoolItem(size);
-                        markInUse(item);
-                        items.add(item);
-                        return item;
-                    }
+                    PoolItem item = tryAcquireLocked(size);
+                    if (item != null) return item;
 
                     long remaining = deadline - System.currentTimeMillis();
                     if (remaining <= 0) return null;
@@ -157,10 +112,42 @@ public class ByteArrayPoolUtil {
             } finally {
                 lock.unlock();
             }
-        } catch ( InterruptedException e) {
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             return null;
         }
+    }
 
+    private PoolItem tryAcquireLocked(int size) {
+        for (PoolItem item : items) {
+            if (item.state == State.AVAILABLE && item.data.length >= size) {
+                markInUse(item);
+                return item;
+            }
+        }
+        if (items.size() >= maxItems) {
+            // A full pool of idle-but-too-small buffers would otherwise wait forever:
+            // no release is coming. Replace one of them.
+            for (int i = 0; i < items.size(); i++) {
+                if (items.get(i).state == State.AVAILABLE) {
+                    items.remove(i);
+                    break;
+                }
+            }
+        }
+        if (items.size() < maxItems) {
+            PoolItem item = new PoolItem(size);
+            markInUse(item);
+            items.add(item);
+            return item;
+        }
+        return null;
+    }
+
+    private static PoolItem newUnpooled(int size) {
+        PoolItem item = new PoolItem(size);
+        item.state = State.IN_USE;
+        return item;
     }
 
     public void release(PoolItem item) {
@@ -186,6 +173,11 @@ public class ByteArrayPoolUtil {
      */
     public void shutdown() {
         cleaner.shutdown();
+        clear();
+    }
+
+    /** Drops every pooled buffer; the pool stays usable. In-use buffers are simply forgotten. */
+    public void clear() {
         lock.lock();
         try {
             items.clear();

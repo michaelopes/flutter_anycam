@@ -17,6 +17,12 @@ Plugin Flutter para captura e análise de frames de múltiplos tipos de câmera 
 - Pode ser executado multipas cameras ao mesmo tempo ex: Camera frontal e traseira
 #### Obs: Não pode duas instâncias da mesma camera.
 
+## Documentação
+
+Guia completo, em português: o que o plugin faz, fluxos, cenários, contrato de memória e a assinatura de cada método público.
+
+**[docs/GUIA.md](docs/GUIA.md)**
+
 ## WebRTC (Android)
 
 Transmissão WebRTC integrada com feed de câmera nativo (sem passar frames pelo Flutter).

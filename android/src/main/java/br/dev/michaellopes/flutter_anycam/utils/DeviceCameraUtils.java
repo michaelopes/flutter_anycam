@@ -5,14 +5,12 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Range;
 
-
 import androidx.annotation.NonNull;
 import androidx.annotation.OptIn;
 import androidx.camera.camera2.internal.Camera2CameraInfoImpl;
 import androidx.camera.camera2.interop.Camera2CameraInfo;
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop;
 import androidx.camera.core.Camera;
-
 import androidx.camera.core.CameraControl;
 import androidx.camera.core.CameraInfo;
 import androidx.camera.core.CameraSelector;
@@ -20,80 +18,110 @@ import androidx.camera.core.ConcurrentCamera;
 import androidx.camera.core.ExposureState;
 import androidx.camera.core.ImageAnalysis;
 import androidx.camera.core.Preview;
+import androidx.camera.core.UseCase;
 import androidx.camera.core.UseCaseGroup;
 import androidx.camera.core.ZoomState;
 import androidx.camera.core.impl.utils.futures.FutureCallback;
 import androidx.camera.core.impl.utils.futures.Futures;
 import androidx.camera.lifecycle.ProcessCameraProvider;
-
 import androidx.core.content.ContextCompat;
 import androidx.lifecycle.LifecycleOwner;
-
 
 import com.google.common.util.concurrent.ListenableFuture;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Objects;
-
+import java.util.Map;
+import java.util.Set;
 
 import br.dev.michaellopes.flutter_anycam.model.ViewCameraSelector;
 import io.flutter.Log;
 
+/**
+ * Owns every CameraX bind of the process.
+ *
+ * <p>Invariants:
+ * <ul>
+ *   <li>A registered camera is either CameraX-managed ({@link #binds}) or Camera2-direct
+ *   ({@link #camera2Direct}), never both.</li>
+ *   <li>While any Camera2-direct camera is alive, new cameras also go Camera2-direct: CameraX
+ *   cannot share hardware with an externally opened camera, and switching back would force a
+ *   black-frame transition on the cameras already streaming.</li>
+ *   <li>Callbacks stay registered until the camera is disposed, so every rebind (activity
+ *   recreation, second camera joining) reaches every camera that lost its use cases.</li>
+ * </ul>
+ * All mutating methods run on the main thread (CameraX requirement) and are synchronized so the
+ * analyzer threads can safely read {@link #cameras}.
+ */
 @SuppressLint("RestrictedApi")
 public class DeviceCameraUtils {
+
+    private static final String TAG = "DeviceCameraUtils";
 
     private DeviceCameraUtils() {
     }
 
     private static DeviceCameraUtils instance;
+
     private final List<CameraRef> binds = new ArrayList<>();
-    private  List<Camera> cameras = new ArrayList<>();
+    private final Set<String> camera2Direct = new LinkedHashSet<>();
+    private final Map<String, BindCallback> bindCallbacks = new HashMap<>();
+    private final List<Camera> cameras = new ArrayList<>();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+
     private Runnable pendingLifecycleUpdate;
+    private boolean concurrentBound = false;
+
     private static final long LIFECYCLE_DEBOUNCE_MS = 500;
     private int activityWaitRetries = 0;
     private static final int MAX_ACTIVITY_WAIT_RETRIES = 20;
+    private int providerWaitRetries = 0;
+    private static final int MAX_PROVIDER_WAIT_RETRIES = 3;
 
     public interface BindCallback {
+        /** Called after every successful CameraX (re)bind of this camera. */
         void onCameraXBound(Camera2CameraInfoImpl cameraInfo);
+
+        /** CameraX released this camera; the owner must open it through Camera2 directly. */
         void onUseCamera2Direct();
+
         void onBindFailed(String message);
     }
-
-    private final java.util.Map<String, BindCallback> bindCallbacks = new java.util.HashMap<>();
 
     public static synchronized DeviceCameraUtils getInstance() {
         if (instance == null) instance = new DeviceCameraUtils();
         return instance;
     }
 
-    public synchronized Camera2CameraInfoImpl bind(
+    public synchronized void bind(
             String cameraId,
             Preview preview,
             ImageAnalysis imageAnalysis,
             BindCallback callback
     ) {
-        CameraUtil.CameraItem camera = CameraUtil.getInstance().getCameraById(cameraId);
-        if (camera != null) {
-            CameraRef existingCamera = getCameraIfExistsById(cameraId);
-            if (existingCamera != null) {
-                binds.remove(existingCamera);
-            }
-            CameraSelector selector = buildSelectorForCameraId(cameraId);
-            binds.add(new CameraRef(cameraId, selector, preview, imageAnalysis));
-            if (callback != null) {
-                bindCallbacks.put(cameraId, callback);
-            }
-            scheduleLifecycleUpdate();
-            return camera.getCameraInfo();
-        }
-        return null;
-    }
+        unregister(cameraId);
 
-    /** @deprecated Use {@link #bind(String, Preview, ImageAnalysis, BindCallback)} */
-    public synchronized Camera2CameraInfoImpl bind(String cameraId, Preview preview, ImageAnalysis imageAnalysis) {
-        return bind(cameraId, preview, imageAnalysis, null);
+        if (callback != null) {
+            bindCallbacks.put(cameraId, callback);
+        }
+
+        if (CameraUtil.getInstance().getProvider() != null
+                && CameraUtil.getInstance().getCameraById(cameraId) == null) {
+            notifyBindFailed(cameraId, "Camera not found: " + cameraId);
+            bindCallbacks.remove(cameraId);
+            return;
+        }
+
+        if (!camera2Direct.isEmpty()) {
+            camera2Direct.add(cameraId);
+            notifyUseCamera2Direct(cameraId);
+            return;
+        }
+
+        binds.add(new CameraRef(cameraId, buildSelectorForCameraId(cameraId), preview, imageAnalysis));
+        scheduleLifecycleUpdate();
     }
 
     @OptIn(markerClass = ExperimentalCamera2Interop.class)
@@ -113,7 +141,7 @@ public class DeviceCameraUtils {
     }
 
     public synchronized int getActiveBindCount() {
-        return binds.size();
+        return binds.size() + camera2Direct.size();
     }
 
     /** Called when Activity becomes available again (attach / config change). */
@@ -129,208 +157,229 @@ public class DeviceCameraUtils {
             mainHandler.removeCallbacks(pendingLifecycleUpdate);
         }
         pendingLifecycleUpdate = this::performLifecycleUpdate;
-        // First cold bind: no debounce (faster preview on low-end).
-        // Rebinds / multi-cam: debounce to coalesce rapid create/dispose from Dart lifecycle.
+        // Cold single bind: no debounce (faster first preview on low-end).
+        // Rebinds / multi-cam: debounce to coalesce rapid create/dispose from Dart.
         boolean coldSingleBind = binds.size() == 1 && cameras.isEmpty();
         long delay = coldSingleBind ? 0L : LIFECYCLE_DEBOUNCE_MS;
         mainHandler.postDelayed(pendingLifecycleUpdate, delay);
     }
 
-
-    private Camera getBackCamera() {
-        for (Camera camera: cameras) {
-            if(camera.getCameraInfo().getCameraSelector().getLensFacing() ==
-                    CameraSelector.LENS_FACING_BACK ) {
-             return  camera;
-            }
-        }
-        return  null;
-    }
-
-
-    @OptIn(markerClass = ExperimentalCamera2Interop.class)
-    private Camera getCameraById(String id) {
-        for (Camera camera: cameras) {
-            String cameraId = Camera2CameraInfo.from(camera.getCameraInfo()).getCameraId();
-            if(cameraId.equals(id)) {
+    private synchronized Camera getBackCamera() {
+        for (Camera camera : cameras) {
+            if (camera.getCameraInfo().getLensFacing() == CameraSelector.LENS_FACING_BACK) {
                 return camera;
             }
         }
-        return  null;
+        return null;
     }
-    public void setFlash(boolean value) {
-        if(getBackCamera() != null) {
-            if (getBackCamera().getCameraInfo().hasFlashUnit()) {
-                getBackCamera().getCameraControl().enableTorch(value);
+
+    @OptIn(markerClass = ExperimentalCamera2Interop.class)
+    private synchronized Camera getCameraById(String id) {
+        for (Camera camera : cameras) {
+            String cameraId = Camera2CameraInfo.from(camera.getCameraInfo()).getCameraId();
+            if (cameraId.equals(id)) {
+                return camera;
             }
+        }
+        return null;
+    }
+
+    public void setFlash(boolean value) {
+        Camera back = getBackCamera();
+        if (back == null) return;
+        try {
+            if (back.getCameraInfo().hasFlashUnit()) {
+                back.getCameraControl().enableTorch(value);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "setFlash failed: " + e.getMessage());
         }
     }
 
     public void setZoom(float value, String cameraId) {
         Camera camera = getCameraById(cameraId);
-        if(camera != null) {
-            try {
-                ZoomState zoomState = camera.getCameraInfo().getZoomState().getValue();
-                float maxZoom = zoomState.getMaxZoomRatio();
-                if (maxZoom >= value) {
-                    camera.getCameraControl().setZoomRatio(value);
-                }
-            } catch (Exception ignored) {}
+        if (camera == null) return;
+        try {
+            ZoomState zoomState = camera.getCameraInfo().getZoomState().getValue();
+            if (zoomState == null) return;
+            float clamped = Math.max(zoomState.getMinZoomRatio(),
+                    Math.min(zoomState.getMaxZoomRatio(), value));
+            camera.getCameraControl().setZoomRatio(clamped);
+        } catch (Exception ignored) {
         }
     }
 
     public void setExposureCompensation(int value, String cameraId) {
         Camera camera = getCameraById(cameraId);
         if (camera == null) {
-            Log.e("Camera", "Camera null para id: " + cameraId);
+            Log.w(TAG, "setExposureCompensation: camera not bound: " + cameraId);
             return;
         }
-
         try {
-            CameraInfo cameraInfo = camera.getCameraInfo();
-            ExposureState exposureState = cameraInfo.getExposureState();
-
-            Log.d("Camera", "isExposureCompensationSupported: " + exposureState.isExposureCompensationSupported());
-
-            Range<Integer> range = exposureState.getExposureCompensationRange();
-            Log.d("Camera", "Range: " + range.getLower() + " to " + range.getUpper());
-            Log.d("Camera", "Exposure atual: " + exposureState.getExposureCompensationIndex());
-            Log.d("Camera", "Valor recebido: " + value);
-
+            ExposureState exposureState = camera.getCameraInfo().getExposureState();
             if (!exposureState.isExposureCompensationSupported()) {
-                Log.w("Camera", "Dispositivo não suporta exposure compensation");
                 return;
             }
-
+            Range<Integer> range = exposureState.getExposureCompensationRange();
             CameraControl cameraControl = camera.getCameraControl();
             int clamped = Math.max(range.getLower(), Math.min(range.getUpper(), value));
-            Log.d("Camera", "Clamped value: " + clamped);
-
             ListenableFuture<Integer> future = cameraControl.setExposureCompensationIndex(clamped);
-
             Futures.addCallback(future, new FutureCallback<Integer>() {
                 @Override
                 public void onSuccess(Integer result) {
-                    Log.d("Camera", "Exposure aplicado: " + result);
                 }
 
                 @Override
                 public void onFailure(@NonNull Throwable t) {
-                    Log.e("Camera", "Exposure falhou: " + t.getClass().getSimpleName() + " - " + t.getMessage());
+                    Log.w(TAG, "Exposure failed: " + t.getMessage());
                 }
             }, ContextCompat.getMainExecutor(ContextUtil.get()));
-
         } catch (Exception e) {
-            Log.e("Camera", "Exceção: " + e.getMessage());
+            Log.w(TAG, "setExposureCompensation failed: " + e.getMessage());
         }
     }
 
-    @SuppressLint("RestrictedApi")
-    private CameraRef getCameraIfExists(CameraRef cameraRef) {
-        Object[] list = binds.stream().filter(camera -> Objects.equals(camera.getCameraId(), cameraRef.cameraId)).toArray();
-        if (list.length > 0) {
-            return (CameraRef) list[0];
+    private CameraRef findBind(String cameraId) {
+        for (CameraRef ref : binds) {
+            if (ref.cameraId.equals(cameraId)) return ref;
         }
         return null;
     }
 
-
-    private CameraRef getCameraIfExistsById(String cameraId) {
-        Object[] list = binds.stream().filter(camera -> Objects.equals(camera.getCameraId(), cameraId)).toArray();
-        if (list.length > 0) {
-            return (CameraRef) list[0];
-        }
-        return null;
-    }
-
-    private void performLifecycleUpdate() {
+    private synchronized void performLifecycleUpdate() {
         pendingLifecycleUpdate = null;
+
         ProcessCameraProvider cameraProvider = CameraUtil.getInstance().getProvider();
-        if (cameraProvider != null) {
-            cameras.clear();
-            cameraProvider.unbindAll();
-            if (!binds.isEmpty()) {
-                LifecycleOwner lifecycleOwner = ContextUtil.getLifecycleOwner();
-                if (lifecycleOwner == null) {
-                    // Activity often attaches slightly after engine; keep callbacks and retry.
-                    if (activityWaitRetries++ < MAX_ACTIVITY_WAIT_RETRIES) {
-                        Log.w("DeviceCameraUtils", "LifecycleOwner missing; retry "
-                                + activityWaitRetries + "/" + MAX_ACTIVITY_WAIT_RETRIES);
-                        mainHandler.postDelayed(this::scheduleLifecycleUpdate, 100);
-                    } else {
-                        activityWaitRetries = 0;
-                        Log.e("DeviceCameraUtils", "No LifecycleOwner after retries; failing binds");
-                        for (CameraRef bind : new ArrayList<>(binds)) {
-                            notifyBindFailed(bind.getCameraId(), "Activity not attached");
-                        }
-                        // Drop orphan refs so a later onActivityReady() cannot rebind
-                        // without the callbacks that were already notified as failed.
-                        binds.clear();
+        if (cameraProvider == null) {
+            waitForProvider();
+            return;
+        }
+        providerWaitRetries = 0;
+
+        safeUnbindAll(cameraProvider);
+        if (binds.isEmpty()) {
+            return;
+        }
+
+        LifecycleOwner lifecycleOwner = ContextUtil.getLifecycleOwner();
+        if (lifecycleOwner == null) {
+            // Activity often attaches slightly after the engine; keep callbacks and retry.
+            if (activityWaitRetries++ < MAX_ACTIVITY_WAIT_RETRIES) {
+                Log.w(TAG, "LifecycleOwner missing; retry "
+                        + activityWaitRetries + "/" + MAX_ACTIVITY_WAIT_RETRIES);
+                mainHandler.postDelayed(this::retryLifecycleUpdate, 100);
+            } else {
+                activityWaitRetries = 0;
+                Log.e(TAG, "No LifecycleOwner after retries; failing binds");
+                failAllBinds("Activity not attached");
+            }
+            return;
+        }
+        activityWaitRetries = 0;
+
+        try {
+            if (binds.size() == 1) {
+                bindSingleCamera(cameraProvider, lifecycleOwner, binds.get(0));
+                notifyCameraXBound(binds.get(0));
+                return;
+            }
+            if (binds.size() == 2 && isConcurrentPairSupported(cameraProvider)) {
+                bindConcurrentCameras(cameraProvider, lifecycleOwner);
+                if (cameras.size() >= binds.size()) {
+                    for (CameraRef bind : binds) {
+                        notifyCameraXBound(bind);
                     }
                     return;
                 }
-                activityWaitRetries = 0;
-                try {
-                    if (binds.size() == 1) {
-                        bindSingleCamera(cameraProvider, lifecycleOwner, binds.get(0));
-                        notifyCameraXBound(binds.get(0));
-                    } else if (!isConcurrentPairSupported(cameraProvider)) {
-                        Log.i("DeviceCameraUtils", "Concurrent not supported — using Camera2 direct for "
-                                + binds.get(0).getCameraId() + "+" + binds.get(1).getCameraId());
-                        notifyUseCamera2Direct();
-                    } else {
-                        bindConcurrentCameras(cameraProvider, lifecycleOwner);
-                        if (cameras.size() < binds.size()) {
-                            Log.w("DeviceCameraUtils", "Concurrent bind opened "
-                                    + cameras.size() + "/" + binds.size()
-                                    + " cameras — falling back to Camera2");
-                            cameraProvider.unbindAll();
-                            cameras.clear();
-                            notifyUseCamera2Direct();
-                        } else {
-                            for (CameraRef bind : binds) {
-                                notifyCameraXBound(bind);
-                            }
-                        }
-                    }
-                } catch (Exception e) {
-                    // Analysis-only drops Preview → black Texture + null resolution races.
-                    // Dual preview must use Camera2 when CameraX concurrent fails.
-                    Log.e("DeviceCameraUtils", "Concurrent CameraX failed — using Camera2 direct", e);
-                    try {
-                        cameraProvider.unbindAll();
-                    } catch (Exception ignored) {
-                    }
-                    cameras.clear();
-                    notifyUseCamera2Direct();
-                }
+                Log.w(TAG, "Concurrent bind opened " + cameras.size() + "/" + binds.size()
+                        + " cameras — falling back to Camera2");
+            } else {
+                Log.i(TAG, "Concurrent CameraX unavailable for " + binds.size()
+                        + " cameras — using Camera2 direct");
             }
+        } catch (Exception e) {
+            Log.e(TAG, "CameraX bind failed — using Camera2 direct", e);
+        }
+        moveAllToCamera2(cameraProvider);
+    }
+
+    private synchronized void retryLifecycleUpdate() {
+        if (!binds.isEmpty()) {
+            scheduleLifecycleUpdate();
+        }
+    }
+
+    private void waitForProvider() {
+        if (binds.isEmpty()) return;
+        if (providerWaitRetries++ >= MAX_PROVIDER_WAIT_RETRIES) {
+            providerWaitRetries = 0;
+            Log.e(TAG, "ProcessCameraProvider unavailable; failing binds");
+            failAllBinds("Camera provider unavailable");
+            return;
+        }
+        CameraUtil.getInstance().availableCameras(list -> mainHandler.post(this::retryLifecycleUpdate));
+    }
+
+    private void failAllBinds(String message) {
+        // Drop refs so a later onActivityReady() cannot rebind cameras whose
+        // owners were already told the bind failed.
+        for (CameraRef bind : new ArrayList<>(binds)) {
+            notifyBindFailed(bind.cameraId, message);
+            bindCallbacks.remove(bind.cameraId);
+        }
+        binds.clear();
+    }
+
+    private void moveAllToCamera2(ProcessCameraProvider cameraProvider) {
+        safeUnbindAll(cameraProvider);
+        for (CameraRef bind : new ArrayList<>(binds)) {
+            detachUseCases(bind);
+            camera2Direct.add(bind.cameraId);
+            notifyUseCamera2Direct(bind.cameraId);
+        }
+        binds.clear();
+    }
+
+    private void safeUnbindAll(ProcessCameraProvider cameraProvider) {
+        cameras.clear();
+        concurrentBound = false;
+        try {
+            cameraProvider.unbindAll();
+        } catch (Exception e) {
+            Log.w(TAG, "unbindAll failed: " + e.getMessage());
         }
     }
 
     private void notifyCameraXBound(CameraRef bind) {
-        BindCallback callback = bindCallbacks.remove(bind.getCameraId());
-        if (callback != null) {
-            CameraUtil.CameraItem camera = CameraUtil.getInstance().getCameraById(bind.getCameraId());
-            if (camera != null) {
-                mainHandler.post(() -> callback.onCameraXBound(camera.getCameraInfo()));
+        BindCallback callback = bindCallbacks.get(bind.cameraId);
+        CameraUtil.CameraItem camera = CameraUtil.getInstance().getCameraById(bind.cameraId);
+        if (callback == null || camera == null || camera.getCameraInfo() == null) return;
+        Camera2CameraInfoImpl info = camera.getCameraInfo();
+        mainHandler.post(() -> {
+            if (isCurrentCallback(bind.cameraId, callback)) {
+                callback.onCameraXBound(info);
             }
-        }
+        });
     }
 
-    private void notifyUseCamera2Direct() {
-        List<BindCallback> callbacks = new ArrayList<>(bindCallbacks.values());
-        bindCallbacks.clear();
-        for (BindCallback callback : callbacks) {
-            mainHandler.post(callback::onUseCamera2Direct);
-        }
+    private void notifyUseCamera2Direct(String cameraId) {
+        BindCallback callback = bindCallbacks.get(cameraId);
+        if (callback == null) return;
+        mainHandler.post(() -> {
+            if (isCurrentCallback(cameraId, callback)) {
+                callback.onUseCamera2Direct();
+            }
+        });
     }
 
     private void notifyBindFailed(String cameraId, String message) {
-        BindCallback callback = bindCallbacks.remove(cameraId);
-        if (callback != null) {
-            mainHandler.post(() -> callback.onBindFailed(message));
-        }
+        BindCallback callback = bindCallbacks.get(cameraId);
+        if (callback == null) return;
+        mainHandler.post(() -> callback.onBindFailed(message));
+    }
+
+    private synchronized boolean isCurrentCallback(String cameraId, BindCallback callback) {
+        return bindCallbacks.get(cameraId) == callback;
     }
 
     private void bindSingleCamera(
@@ -338,34 +387,13 @@ public class DeviceCameraUtils {
             LifecycleOwner lifecycleOwner,
             CameraRef bind
     ) {
-        UseCaseGroup useCaseGroup = buildUseCaseGroup(bind);
         Camera currentCamera = cameraProvider.bindToLifecycle(
                 lifecycleOwner,
                 bind.cameraSelector,
-                useCaseGroup
+                buildUseCaseGroup(bind)
         );
         cameras.add(currentCamera);
-        Log.i("DeviceCameraUtils", "Bound single camera id=" + bind.getCameraId());
-    }
-
-    @OptIn(markerClass = ExperimentalCamera2Interop.class)
-    private void bindConcurrentCamerasAnalysisOnly(
-            ProcessCameraProvider cameraProvider,
-            LifecycleOwner lifecycleOwner
-    ) {
-        Log.i("DeviceCameraUtils", "Retrying concurrent bind analysis-only");
-        List<ConcurrentCamera.SingleCameraConfig> configs = new ArrayList<>();
-        for (CameraRef bind : binds) {
-            ConcurrentCamera.SingleCameraConfig config = new ConcurrentCamera.SingleCameraConfig(
-                    bind.cameraSelector,
-                    buildUseCaseGroup(bind, true),
-                    lifecycleOwner
-            );
-            configs.add(config);
-        }
-        ConcurrentCamera concurrentCamera = cameraProvider.bindToLifecycle(configs);
-        cameras.addAll(concurrentCamera.getCameras());
-        Log.i("DeviceCameraUtils", "Bound concurrent analysis-only count=" + cameras.size());
+        Log.i(TAG, "Bound single camera id=" + bind.cameraId);
     }
 
     @OptIn(markerClass = ExperimentalCamera2Interop.class)
@@ -373,22 +401,18 @@ public class DeviceCameraUtils {
             ProcessCameraProvider cameraProvider,
             LifecycleOwner lifecycleOwner
     ) {
-        boolean supported = isConcurrentPairSupported(cameraProvider);
-        Log.i("DeviceCameraUtils", "Concurrent mode supported=" + supported
-                + " cameras=" + binds.get(0).getCameraId() + "+" + binds.get(1).getCameraId());
-
         List<ConcurrentCamera.SingleCameraConfig> configs = new ArrayList<>();
         for (CameraRef bind : binds) {
-            ConcurrentCamera.SingleCameraConfig config = new ConcurrentCamera.SingleCameraConfig(
+            configs.add(new ConcurrentCamera.SingleCameraConfig(
                     bind.cameraSelector,
-                    buildUseCaseGroup(bind, false),
+                    buildUseCaseGroup(bind),
                     lifecycleOwner
-            );
-            configs.add(config);
+            ));
         }
         ConcurrentCamera concurrentCamera = cameraProvider.bindToLifecycle(configs);
         cameras.addAll(concurrentCamera.getCameras());
-        Log.i("DeviceCameraUtils", "Bound concurrent cameras count=" + cameras.size());
+        concurrentBound = true;
+        Log.i(TAG, "Bound concurrent cameras count=" + cameras.size());
     }
 
     @OptIn(markerClass = ExperimentalCamera2Interop.class)
@@ -397,10 +421,8 @@ public class DeviceCameraUtils {
         if (concurrentSets.isEmpty()) {
             return false;
         }
-
-        String id0 = binds.get(0).getCameraId();
-        String id1 = binds.get(1).getCameraId();
-
+        String id0 = binds.get(0).cameraId;
+        String id1 = binds.get(1).cameraId;
         for (List<CameraInfo> set : concurrentSets) {
             boolean has0 = false;
             boolean has1 = false;
@@ -417,61 +439,92 @@ public class DeviceCameraUtils {
     }
 
     private UseCaseGroup buildUseCaseGroup(CameraRef bind) {
-        return buildUseCaseGroup(bind, false);
-    }
-
-    private UseCaseGroup buildUseCaseGroup(CameraRef bind, boolean analysisOnly) {
         UseCaseGroup.Builder usecase = new UseCaseGroup.Builder();
-        if (!analysisOnly && bind.preview != null) {
+        if (bind.preview != null) {
             usecase.addUseCase(bind.preview);
         }
         usecase.addUseCase(bind.imageAnalysis);
         return usecase.build();
     }
 
-    public void dispose(ViewCameraSelector cameraSelector) {
-        setFlash(false);
-        CameraRef existingCamera = getCameraIfExistsById(cameraSelector.getId());
-        if (existingCamera != null) {
-            binds.remove(existingCamera);
-            disposeCameraRef(existingCamera);
-            bindCallbacks.remove(cameraSelector.getId());
-            scheduleLifecycleUpdate();
-        }
+    /**
+     * Unbinds this camera's use cases right away: the owner releases its SurfaceTexture right
+     * after this call, and CameraX must not keep rendering into it until the debounced rebind.
+     */
+    public synchronized void dispose(ViewCameraSelector cameraSelector) {
+        unregister(cameraSelector.getId());
     }
 
     public synchronized void removeBind(String cameraId) {
-        CameraRef existingCamera = getCameraIfExistsById(cameraId);
-        if (existingCamera != null) {
-            binds.remove(existingCamera);
-            bindCallbacks.remove(cameraId);
+        unregister(cameraId);
+    }
+
+    private void unregister(String cameraId) {
+        bindCallbacks.remove(cameraId);
+        camera2Direct.remove(cameraId);
+
+        CameraRef ref = findBind(cameraId);
+        if (ref == null) return;
+        binds.remove(ref);
+
+        boolean wasBound = getCameraByIdLocked(cameraId) != null;
+        detachUseCases(ref);
+
+        ProcessCameraProvider provider = CameraUtil.getInstance().getProvider();
+        if (provider != null && wasBound) {
+            List<UseCase> useCases = new ArrayList<>();
+            if (ref.preview != null) useCases.add(ref.preview);
+            if (ref.imageAnalysis != null) useCases.add(ref.imageAnalysis);
+            try {
+                provider.unbind(useCases.toArray(new UseCase[0]));
+            } catch (Exception e) {
+                Log.w(TAG, "unbind failed for " + cameraId + ": " + e.getMessage());
+            }
+            removeCamera(cameraId);
+        }
+        if (cameras.isEmpty()) {
+            concurrentBound = false;
+        }
+
+        // Survivors of a concurrent pair must be rebound as a single camera; a camera
+        // that was never bound only needs the pending update (if any) to run.
+        if (!binds.isEmpty() && (concurrentBound || pendingLifecycleUpdate != null)) {
+            scheduleLifecycleUpdate();
+        } else if (binds.isEmpty() && pendingLifecycleUpdate != null) {
+            mainHandler.removeCallbacks(pendingLifecycleUpdate);
+            pendingLifecycleUpdate = null;
         }
     }
 
-
-    private void disposeCameraRef(CameraRef cameraRef) {
-        if (cameraRef != null) {
-            if (cameraRef.preview != null) {
-                cameraRef.preview.setSurfaceProvider(null);
+    @OptIn(markerClass = ExperimentalCamera2Interop.class)
+    private Camera getCameraByIdLocked(String id) {
+        for (Camera camera : cameras) {
+            if (id.equals(Camera2CameraInfo.from(camera.getCameraInfo()).getCameraId())) {
+                return camera;
             }
+        }
+        return null;
+    }
 
-            if (cameraRef.imageAnalysis != null) {
-                cameraRef.imageAnalysis.clearAnalyzer();
-            }
+    private void removeCamera(String id) {
+        Camera camera = getCameraByIdLocked(id);
+        if (camera != null) cameras.remove(camera);
+    }
+
+    private void detachUseCases(CameraRef cameraRef) {
+        if (cameraRef.preview != null) {
+            cameraRef.preview.setSurfaceProvider(null);
+        }
+        if (cameraRef.imageAnalysis != null) {
+            cameraRef.imageAnalysis.clearAnalyzer();
         }
     }
 
     public static class CameraRef {
-
-        private  final String cameraId;
-
-       private final CameraSelector cameraSelector;
-        private final  Preview preview;
-        private final  ImageAnalysis imageAnalysis;
-
-        private String getCameraId() {
-            return cameraId;
-        }
+        private final String cameraId;
+        private final CameraSelector cameraSelector;
+        private final Preview preview;
+        private final ImageAnalysis imageAnalysis;
 
         private CameraRef(String cameraId, CameraSelector cameraSelector, Preview preview, ImageAnalysis imageAnalysis) {
             this.cameraId = cameraId;
@@ -480,5 +533,4 @@ public class DeviceCameraUtils {
             this.imageAnalysis = imageAnalysis;
         }
     }
-
 }

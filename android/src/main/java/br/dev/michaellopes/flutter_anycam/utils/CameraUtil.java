@@ -194,10 +194,11 @@ public class CameraUtil {
 
             io.flutter.Log.i("REQUEST_MAX_NUM_OUTPUT_STREAMS", String.valueOf(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_BACKWARD_COMPATIBLE));
 
-            cameraProviderFuture = ProcessCameraProvider.getInstance(context);
-            cameraProviderFuture.addListener(() -> {
+            final ListenableFuture<ProcessCameraProvider> future = ProcessCameraProvider.getInstance(context);
+            cameraProviderFuture = future;
+            future.addListener(() -> {
                 try {
-                    ProcessCameraProvider provider = cameraProviderFuture.get();
+                    ProcessCameraProvider provider = future.get();
                     int counter = provider.getAvailableCameraInfos().size();
                     for (int i = 0; i < counter; i++) {
                         CameraInfo availableCameraInfo = provider.getAvailableCameraInfos().get(i);
@@ -276,6 +277,15 @@ public class CameraUtil {
                     this.provider = provider;
                 } catch (Exception e) {
                     Log.e("CameraUtil", "Failed to initialize ProcessCameraProvider", e);
+                    synchronized (instance) {
+                        // Allow the next availableCameras() call to retry instead of
+                        // waiting for the timeout on a future that already failed.
+                        if (cameraProviderFuture == future) {
+                            cameras.clear();
+                            initStarted = false;
+                            cameraProviderFuture = null;
+                        }
+                    }
                 } finally {
                     flushPendingCallbacks();
                 }

@@ -4,6 +4,13 @@ import 'dart:convert';
 import '../core/flutter_anycam_size.dart';
 import 'flutter_anycam_tf_bbox_tracker.dart';
 
+/// Platform channels decode typed lists as Float32List/Float64List and plain
+/// lists as List<Object?>; both are accepted.
+List<double> _toDoubleList(Object? value) {
+  if (value is List<double>) return List<double>.of(value);
+  return (value as List).map((e) => (e as num).toDouble()).toList();
+}
+
 class FlutterAnycamTfInferenceOutput {
   final FlutterAnycamTfInferenceOutputBox? box;
   final FlutterAnycamTfInferenceOutputKeypoint? keypoint;
@@ -34,7 +41,7 @@ class FlutterAnycamTfInferenceOutput {
 
   factory FlutterAnycamTfInferenceOutput.fromMap(Map<String, dynamic> map) {
     return FlutterAnycamTfInferenceOutput(
-      score: map['score'] ?? 0,
+      score: (map['score'] as num?)?.toDouble() ?? 0.0,
       box: map['box'] != null
           ? FlutterAnycamTfInferenceOutputBox.fromMap(
               Map<String, dynamic>.from(map['box']),
@@ -46,16 +53,12 @@ class FlutterAnycamTfInferenceOutput {
             )
           : null,
       embedding: map['embedding'] != null
-          ? List<double>.from((map['embedding'] as List<double>))
+          ? _toDoubleList(map['embedding'])
           : null,
       segmentation: map['segmentation'] != null
-          ? List<List<double>>.from(
-              (map['segmentation'])
-                  .map(
-                    (x) => List<double>.from(x),
-                  )
-                  .toList(),
-            )
+          ? (map['segmentation'] as List)
+              .map((row) => _toDoubleList(row))
+              .toList()
           : null,
       text: map['text'] != null ? map['text'] as String : null,
     );
@@ -111,14 +114,14 @@ class FlutterAnycamTfInferenceOutputBox extends FlutterAnycamTfBoundingBox {
 
   factory FlutterAnycamTfInferenceOutputBox.fromMap(Map<String, dynamic> map) {
     return FlutterAnycamTfInferenceOutputBox(
-      xMin: map['xMin'],
-      yMin: map['yMin'],
-      xMax: map['xMax'],
-      yMax: map['yMax'],
-      srcWidth: map['srcWidth'],
-      srcHeight: map['srcHeight'],
-      classId: map['classId'] as int,
-      trackingId: map['trackingId'],
+      xMin: (map['xMin'] as num).toInt(),
+      yMin: (map['yMin'] as num).toInt(),
+      xMax: (map['xMax'] as num).toInt(),
+      yMax: (map['yMax'] as num).toInt(),
+      srcWidth: (map['srcWidth'] as num).toInt(),
+      srcHeight: (map['srcHeight'] as num).toInt(),
+      classId: (map['classId'] as num?)?.toInt() ?? -1,
+      trackingId: map['trackingId'] as String?,
       minScaledCropSize: map['minScaledCropSize'] != null
           ? FlutterAnycamSize.fromMap(
               Map<String, dynamic>.from(map['minScaledCropSize']),
@@ -159,10 +162,10 @@ class FlutterAnycamTfInferenceOutputBox extends FlutterAnycamTfBoundingBox {
   }
 
   @override
-  double get height => (xMax - xMin).toDouble();
+  double get height => (yMax - yMin).toDouble();
 
   @override
-  double get width => (yMax - yMin).toDouble();
+  double get width => (xMax - xMin).toDouble();
 
   @override
   double get x => xMin.toDouble();
@@ -188,9 +191,9 @@ class FlutterAnycamTfInferenceOutputKeypoint {
   factory FlutterAnycamTfInferenceOutputKeypoint.fromMap(
       Map<String, dynamic> map) {
     return FlutterAnycamTfInferenceOutputKeypoint(
-      map['x'] as double,
-      map['y'] as double,
-      map['score'] != null ? map['score'] as double : null,
+      (map['x'] as num).toDouble(),
+      (map['y'] as num).toDouble(),
+      (map['score'] as num?)?.toDouble(),
     );
   }
 

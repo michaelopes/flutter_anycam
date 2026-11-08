@@ -334,7 +334,8 @@ public class TfFrameNormalizer {
     }
 
     private static int mapNormalization(String normalization) {
-        switch (normalization) {
+        if (normalization == null) return 4;
+        switch (normalization.toLowerCase(java.util.Locale.ROOT)) {
             case "simple":
                 return 0;
             case "centered":

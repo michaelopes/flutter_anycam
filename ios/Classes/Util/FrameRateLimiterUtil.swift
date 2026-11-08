@@ -20,8 +20,7 @@ class FrameRateLimiterUtil<T> {
         onFrameLimited: @escaping (T) -> Void,
         onFrameSkipped: @escaping (T) -> Void = { _ in }
     ) {
-        precondition(targetFps > 0, "FPS precisa ser > 0")
-        self.frameInterval = 1.0 / Double(targetFps)
+        self.frameInterval = 1.0 / Double(max(1, targetFps))
         self.onFrameLimited = onFrameLimited
         self.onFrameSkipped = onFrameSkipped
     }
@@ -37,7 +36,11 @@ class FrameRateLimiterUtil<T> {
         }
         
         if currentTime >= lastAnalyzedTime + frameInterval {
+            // Keeps a steady cadence, but never "catches up" with a burst after a pause.
             lastAnalyzedTime += frameInterval
+            if currentTime - lastAnalyzedTime > frameInterval {
+                lastAnalyzedTime = currentTime
+            }
             onFrameLimited(data)
         } else {
             onFrameSkipped(data)

@@ -22,19 +22,25 @@ class FlutterAnycamTfFrame {
     this.rawHeight,
   });
 
+  bool get isClosed => _closed;
+
+  /// Releases the native frame. Idempotent; never throws.
   Future<void> close() async {
+    if (_closed) return;
     _closed = true;
-    await FlutterAnycamPlatform.instance.closeTfFrame(frameId: id);
+    try {
+      await FlutterAnycamPlatform.instance.closeTfFrame(frameId: id);
+    } catch (e) {
+      debugPrint("FlutterAnycamTfFrame.close($id) failed: $e");
+    }
   }
 
   Future<Uint8List?> getJpeg() async {
     if (_closed) return null;
     final res =
         await FlutterAnycamPlatform.instance.getTfFrameJpeg(frameId: id);
-    if (res["bytes"] != null) {
-      return res["bytes"];
-    }
-    return null;
+    final bytes = res["bytes"];
+    return bytes is Uint8List ? bytes : null;
   }
 
   /// Laplacian variance blur score. Higher values mean sharper frames.

@@ -18,12 +18,15 @@ class FlutterAnycamTfModel {
     int threads = 1,
   }) async {
     final String key = generateRandomHash();
-    await FlutterAnycamPlatform.instance.loadTfModel(
+    final loaded = await FlutterAnycamPlatform.instance.loadTfModel(
       assetPath: assetPath,
       key: key,
       delegate: delegate,
       threads: threads,
     );
+    if (!loaded) {
+      throw StateError('FlutterAnycam: unable to load model $assetPath');
+    }
     return FlutterAnycamTfSession(
       key,
       inputSize,

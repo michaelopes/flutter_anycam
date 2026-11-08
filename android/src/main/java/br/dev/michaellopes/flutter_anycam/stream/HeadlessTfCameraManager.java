@@ -1,5 +1,6 @@
 package br.dev.michaellopes.flutter_anycam.stream;
 
+import android.util.Log;
 import android.util.Size;
 
 import java.util.ArrayList;
@@ -7,6 +8,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import br.dev.michaellopes.flutter_anycam.integration.CameraViewFactory;
 import br.dev.michaellopes.flutter_anycam.utils.CameraPermissionsUtil;
 
 public class HeadlessTfCameraManager {
@@ -32,6 +34,11 @@ public class HeadlessTfCameraManager {
 
         String cameraId = (String) args.get("cameraId");
         if (cameraId == null || exists(cameraId)) {
+            return false;
+        }
+        if (CameraViewFactory.getInstance().getCameraById(cameraId) != null) {
+            // Opening the same device twice evicts the widget's session (black preview).
+            Log.w("HeadlessTfCameraManager", "Camera " + cameraId + " is already used by a widget");
             return false;
         }
 
@@ -72,6 +79,21 @@ public class HeadlessTfCameraManager {
             session.dispose();
             sessions.remove(session);
         }
+    }
+
+    public synchronized boolean isActive(String cameraId) {
+        return exists(cameraId);
+    }
+
+    public synchronized void disposeAll() {
+        for (HeadlessTfCameraSession session : new ArrayList<>(sessions)) {
+            try {
+                session.dispose();
+            } catch (Exception e) {
+                Log.w("HeadlessTfCameraManager", "dispose failed: " + e.getMessage());
+            }
+        }
+        sessions.clear();
     }
 
     private boolean exists(String cameraId) {

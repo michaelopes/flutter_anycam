@@ -1,22 +1,33 @@
+import 'dart:math' as math;
+
 // ---------------------------------------------------------------------------
 // UUID v4 sem dependências externas
 // ---------------------------------------------------------------------------
 
-String _uuid() {
-  final r = _Xor();
-  String h(int n, int len) => r.next(n).toRadixString(16).padLeft(len, '0');
-  return '${h(0xffffffff, 8)}-${h(0xffff, 4)}-4${h(0xfff, 3)}-'
-      '${(8 + r.next(3)).toRadixString(16)}${h(0xff, 2)}-${h(0xffffffffffff, 12)}';
+final math.Random _random = _createRandom();
+
+math.Random _createRandom() {
+  try {
+    return math.Random.secure();
+  } catch (_) {
+    return math.Random();
+  }
 }
 
-class _Xor {
-  int _s = DateTime.now().microsecondsSinceEpoch ^ 0xDEADBEEF;
-  int next(int max) {
-    _s ^= _s << 13;
-    _s ^= _s >> 7;
-    _s ^= _s << 17;
-    return _s.abs() % (max + 1);
+/// One shared generator: per-call seeding by timestamp gave identical ids to
+/// tracks created in the same microsecond.
+String _uuid() {
+  String h(int bits, int len) {
+    var v = 0;
+    for (var i = 0; i < bits; i += 16) {
+      final chunk = bits - i >= 16 ? 16 : bits - i;
+      v = (v << chunk) | _random.nextInt(1 << chunk);
+    }
+    return v.toRadixString(16).padLeft(len, '0');
   }
+
+  return '${h(32, 8)}-${h(16, 4)}-4${h(12, 3)}-'
+      '${(8 + _random.nextInt(4)).toRadixString(16)}${h(12, 3)}-${h(48, 12)}';
 }
 
 // ---------------------------------------------------------------------------
@@ -344,34 +355,34 @@ class FlutterAnycamTfBBoxTracker {
     _frame = frameNumber ?? _frame + 1;
 
     final matched = <String, int>{}; // trackId → box index
-    final unmatched = <int>[];
-    final usedTracks = <String>{};
 
     // ---------------------------------------------------------------------
-    // 1. Matching (BOX → TRACK)  ✅ CORRIGIDO
+    // 1. Matching: global greedy on the best (track, box) pairs first, so an
+    //    early box cannot steal a track that a later box matches better.
     // ---------------------------------------------------------------------
-    for (int i = 0; i < boxes.length; i++) {
-      double bestScore = threshold;
-      String? bestTrackId;
-
-      for (final track in _tracks.values) {
-        if (usedTracks.contains(track.id)) continue;
-
+    final pairs = <({String trackId, int box, double score})>[];
+    for (final track in _tracks.values) {
+      for (int i = 0; i < boxes.length; i++) {
         final score = matchFn(track.ref, boxes[i]);
-
-        if (score > bestScore) {
-          bestScore = score;
-          bestTrackId = track.id;
+        if (score > threshold) {
+          pairs.add((trackId: track.id, box: i, score: score));
         }
       }
-
-      if (bestTrackId != null) {
-        matched[bestTrackId] = i;
-        usedTracks.add(bestTrackId);
-      } else {
-        unmatched.add(i);
-      }
     }
+    pairs.sort((a, b) => b.score.compareTo(a.score));
+
+    final usedBoxes = <int>{};
+    for (final pair in pairs) {
+      if (matched.containsKey(pair.trackId) || usedBoxes.contains(pair.box)) {
+        continue;
+      }
+      matched[pair.trackId] = pair.box;
+      usedBoxes.add(pair.box);
+    }
+    final unmatched = <int>[
+      for (int i = 0; i < boxes.length; i++)
+        if (!usedBoxes.contains(i)) i,
+    ];
 
     // ---------------------------------------------------------------------
     // 2. Atualiza tracks com match

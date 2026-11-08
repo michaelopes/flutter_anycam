@@ -21,118 +21,226 @@ class DeviceCamera : BaseCamera {
     private var previewLayer: AVCaptureVideoPreviewLayer?
     private var videoOutput: AVCaptureVideoDataOutput?
     private var videoInput: AVCaptureDeviceInput?
-    private var isCapturing = false
     private var sensorRotation: Int = 0;
+    private let outputQueue = DispatchQueue(label: "camera.output")
     
     
+    /// Copy/filter/resize/register run here, off `outputQueue`: on that queue they would stall
+    /// the preview, since late camera frames are discarded while it is busy.
+    private let processingQueue = DispatchQueue(label: "camera.processing", qos: .userInitiated)
+    private let processingLock = NSLock()
+    /// At most one sample buffer is retained for processing, so the camera pool never starves.
+    private var isProcessing = false
+
+    private var isProcessingBusy: Bool {
+        processingLock.lock()
+        defer { processingLock.unlock() }
+        return isProcessing
+    }
+
+    private func enqueueProcessing(_ sampleBuffer: CMSampleBuffer) {
+        processingLock.lock()
+        if isProcessing {
+            processingLock.unlock()
+            return
+        }
+        isProcessing = true
+        processingLock.unlock()
+        processingQueue.async { [weak self] in
+            guard let self = self else { return }
+            self.processBuffer(sampleBuffer: sampleBuffer)
+            self.processingLock.lock()
+            self.isProcessing = false
+            self.processingLock.unlock()
+        }
+    }
+
     private lazy var limiter: FrameRateLimiterUtil<CMSampleBuffer> = {
         return FrameRateLimiterUtil<CMSampleBuffer>(targetFps: self.getFps()) { [weak self] sampleBuffer in
-            self?.processBuffer(sampleBuffer: sampleBuffer)
+            self?.enqueueProcessing(sampleBuffer)
         } onFrameSkipped: { sampleBuffer in
             // Implementação opcional para frames pulados
         }
     }()
 
+    /// Main thread (dispatched by BaseCamera.run). Session (re)configuration happens here and in
+    /// `dispose`, both on main, so the two can never interleave; start/stop run on the
+    /// session queue because they block.
     override func exec() -> Void {
-        
-        guard let input = AVCaptureUtil.shared.getCameraInput(cameraSelector: self.cameraSelector!) else {
+        if isDisposed { return }
+        guard let selector = self.cameraSelector,
+              let input = AVCaptureUtil.shared.getCameraInput(cameraSelector: selector, owner: self) else {
+            AVCaptureUtil.shared.cameraDidClose(self)
             onFailed(message: "Error: It is not possible to open two instances of the same camera.")
             return;
         }
         
         videoInput = input;
-        videoOutput = AVCaptureVideoDataOutput()
-        videoOutput?.setSampleBufferDelegate(self, queue: DispatchQueue(label: "camera.output"))
-        videoOutput?.alwaysDiscardsLateVideoFrames = true
-        videoOutput?.videoSettings = [
+        let output = AVCaptureVideoDataOutput()
+        output.setSampleBufferDelegate(self, queue: outputQueue)
+        output.alwaysDiscardsLateVideoFrames = true
+        output.videoSettings = [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
         ]
-        
-        
-     
-        captureSession.beginConfiguration()
-       // captureSession.sessionPreset = .inputPriority
-        if !(captureSession is AVCaptureMultiCamSession) {
-            captureSession.sessionPreset = .inputPriority
-        }
-        captureSession.addInput(input);
-        
-        do {
-            try setClosestFormat();
-        } catch {
-            print("Erro ao configurar formato: \(error)")
-            onFailed(message: "Error: \(error).")
-            return;
-        }
-        
-        sensorRotation = getFinalRotation(for: input.device.position);
-        
-        if let output = videoOutput, captureSession.canAddOutput(output) {
-            captureSession.addOutput(output)
-        }
-        
-        var correntOrientation: AVCaptureVideoOrientation?;
-        for connection in videoOutput!.connections {
-            correntOrientation = getVideoOrientation();
-            connection.videoOrientation = correntOrientation!;
-            if input.device.position == .front && connection.isVideoMirroringSupported {
-                connection.isVideoMirrored = true
-            }
-            
-        }
-        
-        
-        captureSession.commitConfiguration()
-        
-        
-        DispatchQueue.global(qos: .userInitiated).async {
-            self.captureSession.startRunning()
-            self.isCapturing = true
-        }
-        
-     
-        print("🧩 Starting camera setup")
-        print("🧩 Input: \(input.device.localizedName)")
-        print("🧩 Can add output: \(captureSession.canAddOutput(videoOutput!))")
-        print("🧩 Delegate: \(videoOutput?.sampleBufferDelegate != nil)")
-        print("🧩 Before startRunning: \(captureSession.isRunning)")
-        
-        for format in input.device.formats {
-            let desc = format.formatDescription
-            let dims = CMVideoFormatDescriptionGetDimensions(desc)
-            print("Resolução \(dims.width)x\(dims.height)")
-        }
-        
+        videoOutput = output
 
-        
-        let format =  input.device.activeFormat as AVCaptureDevice.Format?
-        if(format != nil && correntOrientation != nil) {
-            let dimensions = CMVideoFormatDescriptionGetDimensions(format!.formatDescription)
-            
-            var width = dimensions.width;
-            var height = dimensions.height;
-            
-            if(sensorRotation == 90 || sensorRotation == 270) {
-                let temp = width;
-                width = height;
-                height = temp;
+        var failure: String?
+        captureSession.beginConfiguration()
+        configure: do {
+            // An open configuration block would freeze every camera sharing this session.
+            defer { captureSession.commitConfiguration() }
+
+            if !(captureSession is AVCaptureMultiCamSession) {
+                captureSession.sessionPreset = .inputPriority
             }
-            
-            onConnected(data: [
-                "width": width,
-                "height": height
-            ]);
+            guard captureSession.canAddInput(input) else {
+                failure = "Error: camera input cannot be added to the capture session."
+                break configure
+            }
+            captureSession.addInput(input);
+
+            if preferredSize != nil {
+                do {
+                    try setClosestFormat();
+                } catch {
+                    failure = "Error: \(error)."
+                    break configure
+                }
+            }
+
+            sensorRotation = getFinalRotation(for: input.device.position);
+
+            guard captureSession.canAddOutput(output) else {
+                failure = "Error: camera output cannot be added to the capture session."
+                break configure
+            }
+            captureSession.addOutput(output)
+
+            if #available(iOS 13.0, *),
+               let multiCam = captureSession as? AVCaptureMultiCamSession,
+               multiCam.hardwareCost > 1.0 {
+                // Committing would make the whole shared session fail at runtime.
+                failure = "Error: the device cannot run this camera alongside the open ones."
+                break configure
+            }
+
+            let orientation = getVideoOrientation();
+            for connection in output.connections {
+                if connection.isVideoOrientationSupported {
+                    connection.videoOrientation = orientation;
+                }
+                if input.device.position == .front && connection.isVideoMirroringSupported {
+                    connection.isVideoMirrored = true
+                }
+            }
+        }
+
+        if let message = failure {
+            teardownSession()
+            AVCaptureUtil.shared.cameraDidClose(self)
+            onFailed(message: message)
+            return
+        }
+
+        observeRuntimeErrors()
+        let session = captureSession
+        AVCaptureUtil.shared.sessionQueue.async { [weak self] in
+            guard let self = self, !self.isDisposed else { return }
+            if !session.isRunning {
+                session.startRunning()
+            }
+        }
+
+        let dimensions = CMVideoFormatDescriptionGetDimensions(input.device.activeFormat.formatDescription)
+        var width = dimensions.width;
+        var height = dimensions.height;
+        if(sensorRotation == 90 || sensorRotation == 270) {
+            let temp = width;
+            width = height;
+            height = temp;
+        }
+        onConnected(data: [
+            "width": width,
+            "height": height
+        ]);
+    }
+
+    /// Main thread only.
+    private var isSuspended = false
+    private var runtimeErrorObserver: NSObjectProtocol?
+
+    /// A runtime error stops the shared session: without this, every preview would freeze
+    /// and Dart would never hear about it.
+    private func observeRuntimeErrors() {
+        if runtimeErrorObserver != nil { return }
+        runtimeErrorObserver = NotificationCenter.default.addObserver(
+            forName: .AVCaptureSessionRuntimeError,
+            object: captureSession,
+            queue: .main
+        ) { [weak self] note in
+            guard let self = self, !self.isDisposed, !self.isSuspended else { return }
+            let error = note.userInfo?[AVCaptureSessionErrorKey] as? AVError
+            if error?.code == .mediaServicesWereReset {
+                let session = self.captureSession
+                AVCaptureUtil.shared.sessionQueue.async {
+                    if !session.isRunning { session.startRunning() }
+                }
+            } else {
+                self.onFailed(message: "Error: capture session failed (\(error?.localizedDescription ?? "unknown")).")
+            }
+        }
+    }
+
+    /// Main thread. Single-camera hardware: a newer camera took the device. The texture keeps
+    /// its last frame and no event is sent, so an `autoRetry` cannot steal the device back.
+    func suspendForOtherCamera() {
+        guard !isDisposed, videoInput != nil else { return }
+        isSuspended = true
+        teardownSession(stopIfUnused: false)
+    }
+
+    /// Main thread. The device is free again: reopen with the same settings.
+    func resumeFromSuspension() {
+        guard isSuspended, !isDisposed else { return }
+        isSuspended = false
+        exec()
+    }
+
+    /// Main thread. Removes this camera's input/output; stops the shared session when unused.
+    private func teardownSession(stopIfUnused: Bool = true) {
+        if let observer = runtimeErrorObserver {
+            NotificationCenter.default.removeObserver(observer)
+            runtimeErrorObserver = nil
+        }
+        captureSession.beginConfiguration()
+        if let output = videoOutput {
+            output.setSampleBufferDelegate(nil, queue: nil)
+            captureSession.removeOutput(output)
+        }
+        if let input = videoInput {
+            AVCaptureUtil.shared.release(input: input)
+        }
+        captureSession.commitConfiguration()
+        videoOutput = nil
+        videoInput = nil
+
+        guard stopIfUnused else { return }
+        let session = captureSession
+        AVCaptureUtil.shared.sessionQueue.async {
+            if session.inputs.isEmpty && session.isRunning {
+                session.stopRunning()
+            }
         }
     }
     
     
     func setClosestFormat() throws {
-
-        let device = videoInput!.device;
-        let preferredWidth = Int32(preferredSize!.width);
-        let preferredHeight = Int32(preferredSize!.height);
+        guard let device = videoInput?.device, let preferred = preferredSize else { return }
+        let preferredWidth = Int32(preferred.width);
+        let preferredHeight = Int32(preferred.height);
         
         try device.lockForConfiguration()
+        defer { device.unlockForConfiguration() }
 
         var closestFormat: AVCaptureDevice.Format?
         var minDiff: Int32 = Int32.max
@@ -164,16 +272,7 @@ class DeviceCamera : BaseCamera {
 
         if let bestFormat = closestFormat {
             device.activeFormat = bestFormat
-        
-            let desc = bestFormat.formatDescription
-            let dims = CMVideoFormatDescriptionGetDimensions(desc)
-    
-            print("Selected: \(CMVideoFormatDescriptionGetDimensions(bestFormat.formatDescription).width)x\(CMVideoFormatDescriptionGetDimensions(bestFormat.formatDescription).height)")
-            
         }
-
-
-        device.unlockForConfiguration()
     }
     
     func getFinalRotation(for position: AVCaptureDevice.Position) -> Int {
@@ -225,35 +324,34 @@ class DeviceCamera : BaseCamera {
     }
     
     override func setZoom(zoom: Float) -> Void {
-        let value = CGFloat(zoom);
-        if(videoInput!.device.activeFormat.videoMaxZoomFactor >= value) {
-            let device = videoInput!.device;
-            if (try? device.lockForConfiguration()) != nil {
-                device.ramp(toVideoZoomFactor: value, withRate: 4.0)
-                device.unlockForConfiguration()
-            }
-           
+        guard let device = videoInput?.device else { return }
+        let maxZoom = device.activeFormat.videoMaxZoomFactor
+        let value = min(max(CGFloat(zoom), 1.0), maxZoom)
+        if (try? device.lockForConfiguration()) != nil {
+            device.ramp(toVideoZoomFactor: value, withRate: 4.0)
+            device.unlockForConfiguration()
         }
     }
 
-    override func dispose() -> Void {
-        if(cameraSelector != nil && videoInput != nil) {
-            AVCaptureUtil.shared.resetCameraInput(cameraSelector: cameraSelector!);
-            if(videoOutput != nil){
-                captureSession.removeOutput(videoOutput!)
-            }
-            
-            if isCapturing {
-                if(captureSession.inputs.isEmpty) {
-                    captureSession.stopRunning()
-                    isCapturing = false
-                }
-            }
+    /// `value` is an exposure bias in EV, clamped to what the device supports.
+    override func setExposureCompensation(value: Int) -> Void {
+        guard let device = videoInput?.device else { return }
+        let bias = min(max(Float(value), device.minExposureTargetBias), device.maxExposureTargetBias)
+        if (try? device.lockForConfiguration()) != nil {
+            device.setExposureTargetBias(bias, completionHandler: nil)
+            device.unlockForConfiguration()
         }
-        
+    }
+
+    /// Main thread (CameraViewFactory.disposeView).
+    override func dispose() -> Void {
+        super.dispose()
+        if videoInput != nil || videoOutput != nil {
+            teardownSession()
+        }
+        AVCaptureUtil.shared.cameraDidClose(self)
         previewLayer?.removeFromSuperlayer()
         previewLayer = nil
-        videoOutput = nil
     }
     
 }
@@ -264,7 +362,7 @@ extension DeviceCamera: AVCaptureVideoDataOutputSampleBufferDelegate {
     func captureOutput(_ output: AVCaptureOutput,
                        didOutput sampleBuffer: CMSampleBuffer,
                        from connection: AVCaptureConnection) {
-        guard isCapturing else { return }
+        guard !isDisposed else { return }
         guard CMSampleBufferDataIsReady(sampleBuffer) else {
             return
         }
@@ -272,12 +370,57 @@ extension DeviceCamera: AVCaptureVideoDataOutputSampleBufferDelegate {
             latestPixelBuffer = buffer
             frameAvailable();
         }
-        limiter.processFrame(sampleBuffer)
+        // Skip the copy entirely while the previous frame is processed or waits for main.
+        if canDeliverFrame() && !isProcessingBusy {
+            limiter.processFrame(sampleBuffer)
+        }
+    }
+
+    /// Tightly packed copy (rowStride = width * 4) of a locked BGRA buffer.
+    private static func copyPacked(_ pixelBuffer: CVPixelBuffer) -> Data? {
+        CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
+        guard let base = CVPixelBufferGetBaseAddress(pixelBuffer) else { return nil }
+        let width = CVPixelBufferGetWidth(pixelBuffer)
+        let height = CVPixelBufferGetHeight(pixelBuffer)
+        let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
+        let packedRow = width * 4
+        if bytesPerRow == packedRow {
+            return Data(bytes: base, count: height * packedRow)
+        }
+        var data = Data(count: height * packedRow)
+        data.withUnsafeMutableBytes { destPtr in
+            let src = base.assumingMemoryBound(to: UInt8.self)
+            let dest = destPtr.baseAddress!.assumingMemoryBound(to: UInt8.self)
+            for row in 0..<height {
+                memcpy(dest + row * packedRow, src + row * bytesPerRow, packedRow)
+            }
+        }
+        return data
+    }
+
+    private static func frameMap(_ data: Data, width: Int, height: Int) -> [String: Any] {
+        let typed = FlutterStandardTypedData(bytes: data)
+        return [
+            "width": width,
+            "height": height,
+            "rotation": 0,
+            "format": "BGRA8888",
+            "planes": [[
+                "rowStride": width * 4,
+                "bytesPerRow": width * 4,
+                "pixelStride": 4,
+                "width": width,
+                "height": height,
+                "bytes": typed
+            ]],
+            "bytes": typed
+        ]
     }
     
     private func processBuffer(sampleBuffer: CMSampleBuffer) {
-        
-        guard var pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer),
+        guard !isDisposed,
+              var pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer),
               CVPixelBufferGetPixelFormatType(pixelBuffer) == kCVPixelFormatType_32BGRA else {
             return
         }
@@ -285,236 +428,88 @@ extension DeviceCamera: AVCaptureVideoDataOutputSampleBufferDelegate {
         var width = CVPixelBufferGetWidth(pixelBuffer)
         var height = CVPixelBufferGetHeight(pixelBuffer)
         
-        // Captura raw ANTES de qualquer processamento, só se necessário
-        var rawImageBuffer: [String: Any]? = nil
-        
-        if resizeFrame != nil {
-            // Lock original para capturar raw
-            CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
-            
-            let rawWidth = width
-            let rawHeight = height
-            let rawBytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
-            let bytesPerPixel = 4
-            let rawRequiredBytesPerRow = rawWidth * bytesPerPixel
-            
-            if let rawBaseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) {
-                let rawImageData: Data
-                if rawBytesPerRow == rawRequiredBytesPerRow {
-                    rawImageData = Data(bytes: rawBaseAddress, count: rawHeight * rawBytesPerRow)
-                } else {
-                    var data = Data(count: rawHeight * rawRequiredBytesPerRow)
-                    data.withUnsafeMutableBytes { destPtr in
-                        let src = rawBaseAddress.assumingMemoryBound(to: UInt8.self)
-                        let dest = destPtr.baseAddress!.assumingMemoryBound(to: UInt8.self)
-                        for row in 0..<rawHeight {
-                            memcpy(dest + row * rawRequiredBytesPerRow,
-                                   src + row * rawBytesPerRow,
-                                   rawRequiredBytesPerRow)
-                        }
-                    }
-                    rawImageData = data
-                }
-                
-                rawImageBuffer = [
-                    "width": rawWidth,
-                    "height": rawHeight,
-                    "rotation": 0,
-                    "format": "BGRA8888",
-                    "planes": [[
-                        "rowStride": rawRequiredBytesPerRow,
-                        "pixelStride": bytesPerPixel,
-                        "width": rawWidth,
-                        "height": rawHeight,
-                        "bytes": FlutterStandardTypedData(bytes: rawImageData)
-                    ]],
-                    "bytes": FlutterStandardTypedData(bytes: rawImageData)
-                ]
-            }
-            
-            CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly)
-            
-            // Agora aplica resize
-            var targetWidth: Int = resizeFrame!.width
-            var targetHeight: Int = resizeFrame!.height
-            if targetWidth == -1 && targetHeight == -1 {
+        var rawData: Data? = nil
+        var rawWidth = width
+        var rawHeight = height
+        if let resize = resizeFrame {
+            rawData = Self.copyPacked(pixelBuffer)
+            rawWidth = width
+            rawHeight = height
+
+            var targetWidth = resize.width
+            var targetHeight = resize.height
+            if targetWidth <= 0 && targetHeight <= 0 {
                 let minSize = min(width, height)
                 targetWidth = minSize
                 targetHeight = minSize
+            } else if targetWidth <= 0 {
+                targetWidth = max(1, targetHeight * width / max(1, height))
+            } else if targetHeight <= 0 {
+                targetHeight = max(1, targetWidth * height / max(1, width))
             }
             if sensorRotation == 90 || sensorRotation == 270 {
-                let temp = targetWidth
-                targetWidth = targetHeight
-                targetHeight = temp
+                swap(&targetWidth, &targetHeight)
             }
-            pixelBuffer = ImageConverterUtil.resizeAspectFillAndCrop(
+            if let resized = ImageConverterUtil.resizeAspectFillAndCrop(
                 pixelBuffer: pixelBuffer,
                 targetWidth: targetWidth,
                 targetHeight: targetHeight
-            ) ?? pixelBuffer
-            width = targetWidth
-            height = targetHeight
-        }
-        
-        CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
-        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
-        
-        guard let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) else { return }
-        
-        let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
-        let bytesPerPixel = 4
-        let requiredBytesPerRow = width * bytesPerPixel
-        
-        ImageConverterUtil.applyFilter(
-            baseAddress: baseAddress,
-            width: width,
-            height: height,
-            bytesPerRow: requiredBytesPerRow,
-            filter: filter
-        )
-        
-        let imageData: Data
-        if bytesPerRow == requiredBytesPerRow {
-            imageData = Data(bytes: baseAddress, count: height * bytesPerRow)
-        } else {
-            var data = Data(count: height * requiredBytesPerRow)
-            data.withUnsafeMutableBytes { destPtr in
-                let src = baseAddress.assumingMemoryBound(to: UInt8.self)
-                let dest = destPtr.baseAddress!.assumingMemoryBound(to: UInt8.self)
-                for row in 0..<height {
-                    memcpy(dest + row * requiredBytesPerRow,
-                           src + row * bytesPerRow,
-                           requiredBytesPerRow)
-                }
+            ) {
+                pixelBuffer = resized
+                width = targetWidth
+                height = targetHeight
             }
-            imageData = data
         }
         
-        var imageBuffer: [String: Any] = [
-            "width": width,
-            "height": height,
-            "rotation": 0,
-            "format": "BGRA8888",
-            "planes": [[
-                "rowStride": requiredBytesPerRow,
-                "pixelStride": bytesPerPixel,
-                "width": width,
-                "height": height,
-                "bytes": FlutterStandardTypedData(bytes: imageData)
-            ]],
-            "bytes": FlutterStandardTypedData(bytes: imageData)
-        ]
-        
-        // Injeta rawFrame apenas quando resizeFrame está ativo
-        if let raw = rawImageBuffer {
-            imageBuffer["rawFrame"] = raw
+        // Always a private copy: the camera's buffer is also the preview texture and is
+        // locked read-only, so it must never be filtered in place.
+        guard var imageData = Self.copyPacked(pixelBuffer) else { return }
+        if filter > 0 {
+            imageData.withUnsafeMutableBytes { ptr in
+                guard let base = ptr.baseAddress else { return }
+                ImageConverterUtil.applyFilter(
+                    baseAddress: base,
+                    width: width,
+                    height: height,
+                    bytesPerRow: width * 4,
+                    filter: filter
+                )
+            }
         }
 
         if isTfMode {
-            var rawBytes: Data?
-            var rw: Int?
-            var rh: Int?
-            if let raw = rawImageBuffer,
-               let rawTyped = raw["bytes"] as? FlutterStandardTypedData {
-                rawBytes = rawTyped.data
-                rw = raw["width"] as? Int
-                rh = raw["height"] as? Int
+            if filter > 0, rawData != nil {
+                rawData!.withUnsafeMutableBytes { ptr in
+                    guard let base = ptr.baseAddress else { return }
+                    ImageConverterUtil.applyFilter(
+                        baseAddress: base,
+                        width: rawWidth,
+                        height: rawHeight,
+                        bytesPerRow: rawWidth * 4,
+                        filter: filter
+                    )
+                }
             }
-            let tfMeta = TfFrameHandler.shared.registerCameraFrame(
+            // Dart only gets the id; pixels stay native.
+            guard let tfMeta = TfFrameHandler.shared.registerCameraFrame(
                 processedBGRA: imageData,
                 width: width,
                 height: height,
-                rawBGRA: rawBytes,
-                rawWidth: rw,
-                rawHeight: rh,
-                filter: filter
-            )
-            for (k, v) in tfMeta {
-                imageBuffer[k] = v
+                rawBGRA: rawData,
+                rawWidth: rawData != nil ? rawWidth : nil,
+                rawHeight: rawData != nil ? rawHeight : nil
+            ) else {
+                return
             }
+            onVideoFrameReceived(imageData: tfMeta)
+            return
         }
-        
+
+        var imageBuffer = Self.frameMap(imageData, width: width, height: height)
+        if let raw = rawData {
+            imageBuffer["rawFrame"] = Self.frameMap(raw, width: rawWidth, height: rawHeight)
+        }
         onVideoFrameReceived(imageData: imageBuffer)
     }
-    
-   /* private func processBuffer(sampleBuffer: CMSampleBuffer) {
-        
-        guard var pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer),
-              CVPixelBufferGetPixelFormatType(pixelBuffer) == kCVPixelFormatType_32BGRA else {
-            return
-        }
-        
-        
-        var width = CVPixelBufferGetWidth(pixelBuffer)
-        var height = CVPixelBufferGetHeight(pixelBuffer)
-        
-        if(resizeFrame != nil) {
-            var targetWidth: Int = resizeFrame!.width;
-            var targetHeight: Int = resizeFrame!.height;
-            if(targetWidth == -1 && targetHeight == -1) {
-                let minSize = min(width, height);
-                targetWidth = minSize;
-                targetHeight = minSize;
-            }
-            if(sensorRotation == 90 || sensorRotation == 270) {
-                let temp = targetWidth;
-                targetWidth = targetHeight;
-                targetHeight = temp;
-            }
-            pixelBuffer = ImageConverterUtil.resizeAspectFillAndCrop(pixelBuffer: pixelBuffer, targetWidth: targetWidth, targetHeight: targetHeight,) ?? pixelBuffer;
-            width = targetWidth;
-            height = targetHeight;
-        }
-        
-        CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
-        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
-        
-        let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
-        guard let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) else {
-            return
-        }
-        
-        let bytesPerPixel = 4
-        let requiredBytesPerRow = width * bytesPerPixel
-        
-                
-        ImageConverterUtil.applyFilter(baseAddress: baseAddress, width: width, height: height, bytesPerRow: requiredBytesPerRow, filter: filter);
-        
-        var imageData: Data
-        if bytesPerRow == requiredBytesPerRow {
-            imageData = Data(bytes: baseAddress, count: height * bytesPerRow)
-        } else {
-            imageData = Data(count: height * requiredBytesPerRow)
-            imageData.withUnsafeMutableBytes { destPtr in
-                let src = baseAddress.assumingMemoryBound(to: UInt8.self)
-                let dest = destPtr.baseAddress!.assumingMemoryBound(to: UInt8.self)
-                
-                for row in 0..<height {
-                    let srcRow = src + row * bytesPerRow
-                    let destRow = dest + row * requiredBytesPerRow
-                    memcpy(destRow, srcRow, requiredBytesPerRow)
-                }
-            }
-        }
-        
-        let imageBuffer: [String: Any] = [
-            "width": width,
-            "height": height,
-            "rotation": 0,
-            "format": "BGRA8888",
-            "planes": [[
-                "rowStride": requiredBytesPerRow,
-                "pixelStride": bytesPerPixel,
-                "width": width,
-                "height": height,
-                "bytes": FlutterStandardTypedData(bytes: imageData)
-            ]],
-            "bytes": FlutterStandardTypedData(bytes: imageData)
-        ]
-        
-        onVideoFrameReceived(imageData: imageBuffer);
-        
-    }*/
-    
     
 }

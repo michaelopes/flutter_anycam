@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 typedef FlutterAnycamEventStreamListener = void Function(dynamic event);
@@ -5,7 +6,13 @@ typedef FlutterAnycamEventStreamListener = void Function(dynamic event);
 final class FlutterAnycamEventStream {
   FlutterAnycamEventStream._() {
     final stream = _eventChannel.receiveBroadcastStream();
-    stream.listen(_listen);
+    stream.listen(
+      _listen,
+      onError: (Object error, StackTrace stack) {
+        debugPrint("FlutterAnycam event channel error: $error");
+      },
+      cancelOnError: false,
+    );
   }
 
   static final I = FlutterAnycamEventStream._();
@@ -15,8 +22,8 @@ final class FlutterAnycamEventStream {
 
   final _listeners = <FlutterAnycamEventStreamListener>[];
 
-  void _listen(data) {
-    for (var listener in _listeners) {
+  void _listen(dynamic data) {
+    for (final listener in List.of(_listeners)) {
       listener(data);
     }
   }

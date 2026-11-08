@@ -48,6 +48,9 @@ class FlutterAnycamTfSession {
     FlutterAnycamFilter filter = FlutterAnycamFilter.none,
     FlutterAnycamTfNormalize normalize = FlutterAnycamTfNormalize.none,
   }) async {
+    // Throws rather than returning []: output processors often publish results
+    // as a side effect, and an empty reply would leave the previous ones visible.
+    if (_disposed) throw StateError('FlutterAnycamTfSession $modelKey is disposed');
     final res = await FlutterAnycamPlatform.instance.runTfInference(
       inputFrame: inputFrame,
       filter: filter,
@@ -64,12 +67,22 @@ class FlutterAnycamTfSession {
     //_copyMapValues(map, output);
   }
 
+  bool _disposed = false;
+
+  bool get isDisposed => _disposed;
+
+  /// Releases the native model. Idempotent; never throws, so it is safe to call
+  /// unawaited from `State.dispose`.
   Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
     _listenerDisposer();
     _tracker.reset();
-    await FlutterAnycamPlatform.instance.disposeTfModel(
-      key: modelKey,
-    );
+    try {
+      await FlutterAnycamPlatform.instance.disposeTfModel(
+        key: modelKey,
+      );
+    } catch (_) {}
   }
 
   static void cast(Map origem, Map destino) {

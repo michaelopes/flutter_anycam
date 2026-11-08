@@ -36,30 +36,80 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
   final methodChannel =
       const MethodChannel('br.dev.michaellopes.flutter_anycam/channel');
 
-  void _listen(ldata) {
-    final viewId = ldata["viewId"] as int?;
-    final method = ldata["method"] as String?;
-    final data = Map<String, dynamic>.from(ldata["data"] ?? {});
-    if (viewId != null && method != null) {
-      final listeners =
-          _streamListeners.where((e) => e.viewId == viewId || e.viewId == -1);
+  static FlutterAnycamStreamMethod? _handlerFor(
+    FlutterAnycamStreamListener listener,
+    String method,
+  ) {
+    switch (method) {
+      case "onConnected":
+        return listener.onConnected;
+      case "onDisconnected":
+        return listener.onDisconnected;
+      case "onUnauthorized":
+        return listener.onUnauthorized;
+      case "onFailed":
+        return listener.onFailed;
+      case "onVideoFrameReceived":
+        return listener.onVideoFrameReceived;
+      case "onCameraRawFrame":
+        return listener.onCameraRawFrame;
+      case "onTfCameraStreamConnected":
+        return listener.onTfCameraStreamConnected;
+      case "onTfCameraStreamFrame":
+        return listener.onTfCameraStreamFrame;
+      case "onTfCameraStreamFailed":
+        return listener.onTfCameraStreamFailed;
+    }
+    return null;
+  }
 
-      for (var listener in listeners) {
-        final methods = {
-          "onConnected": listener.onConnected,
-          "onDisconnected": listener.onDisconnected,
-          "onUnauthorized": listener.onUnauthorized,
-          "onFailed": listener.onFailed,
-          "onVideoFrameReceived": listener.onVideoFrameReceived,
-          "onCameraRawFrame": listener.onCameraRawFrame,
-          "onTfCameraStreamConnected": listener.onTfCameraStreamConnected,
-          "onTfCameraStreamFrame": listener.onTfCameraStreamFrame,
-          "onTfCameraStreamFailed": listener.onTfCameraStreamFailed,
-        };
-        if (methods[method] != null) {
-          methods[method]!(data);
-        }
+  /// A native TF frame carries only an id; nothing frees it unless Dart calls
+  /// closeTfFrame.
+  static bool _isTfFrame(String method, Map<String, dynamic> data) {
+    if (method != "onVideoFrameReceived" && method != "onTfCameraStreamFrame") {
+      return false;
+    }
+    return data["id"] is String &&
+        !data.containsKey("bytes") &&
+        !data.containsKey("planes");
+  }
+
+  @visibleForTesting
+  void dispatchEvent(dynamic event) => _listen(event);
+
+  void _listen(dynamic ldata) {
+    if (ldata is! Map) return;
+    final viewId = ldata["viewId"];
+    final method = ldata["method"];
+    if (viewId is! int || method is! String) return;
+    final rawData = ldata["data"];
+    final data =
+        rawData is Map ? Map<String, dynamic>.from(rawData) : <String, dynamic>{};
+
+    // Snapshot: a handler may add or remove listeners (e.g. dispose a widget).
+    final listeners = _streamListeners
+        .where((e) => e.viewId == viewId || e.viewId == -1)
+        .toList(growable: false);
+
+    var handled = false;
+    for (final listener in listeners) {
+      final handler = _handlerFor(listener, method);
+      if (handler == null) continue;
+      handled = true;
+      try {
+        handler(data);
+      } catch (e, s) {
+        FlutterError.reportError(FlutterErrorDetails(
+          exception: e,
+          stack: s,
+          library: 'flutter_anycam',
+          context: ErrorDescription('while dispatching $method to view $viewId'),
+        ));
       }
+    }
+
+    if (!handled && _isTfFrame(method, data)) {
+      closeTfFrame(frameId: data["id"] as String).catchError((_) => false);
     }
   }
 
@@ -172,23 +222,25 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
 
   @override
   Future<bool> registerRawStream(String cameraId, int fps) async {
-    return await methodChannel.invokeMethod(
+    final res = await methodChannel.invokeMethod<bool>(
       'registerRawStream',
       {
         "cameraId": cameraId,
         "fps": fps,
       },
     );
+    return res ?? false;
   }
 
   @override
   Future<bool> disposeRawStream(String cameraId) async {
-    return await methodChannel.invokeMethod(
+    final res = await methodChannel.invokeMethod<bool>(
       'disposeRawStream',
       {
         "cameraId": cameraId,
       },
     );
+    return res ?? false;
   }
 
   @override
@@ -199,7 +251,7 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
     required FlutterAnycamFilter filter,
     required FlutterAnycamCameraSelector camera,
   }) async {
-    return await methodChannel.invokeMethod(
+    final res = await methodChannel.invokeMethod<bool>(
       'registerTfCameraStream',
       {
         "cameraId": cameraId,
@@ -210,16 +262,18 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
         "forceSensorOrientation": camera.toMap()["forceSensorOrientation"] ?? false,
       },
     );
+    return res ?? false;
   }
 
   @override
   Future<bool> disposeTfCameraStream(String cameraId) async {
-    return await methodChannel.invokeMethod(
+    final res = await methodChannel.invokeMethod<bool>(
       'disposeTfCameraStream',
       {
         "cameraId": cameraId,
       },
     );
+    return res ?? false;
   }
 
   @override
@@ -251,7 +305,7 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
     FlutterAnycamTfDelegate delegate = FlutterAnycamTfDelegate.nnapi,
     int threads = 1,
   }) async {
-    return await methodChannel.invokeMethod(
+    final res = await methodChannel.invokeMethod<bool>(
       'loadTfModel',
       {
         "assetPath": assetPath,
@@ -260,6 +314,7 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
         "threads": threads,
       },
     );
+    return res ?? false;
   }
 
   @override
@@ -286,10 +341,11 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
   Future<bool> disposeTfModel({
     required String key,
   }) async {
-    return await methodChannel.invokeMethod(
+    final res = await methodChannel.invokeMethod<bool>(
       'disposeTfModel',
       {"key": key},
     );
+    return res ?? false;
   }
 
   @override
@@ -344,10 +400,11 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
   Future<bool> closeTfFrame({
     required String frameId,
   }) async {
-    return await methodChannel.invokeMethod(
+    final res = await methodChannel.invokeMethod<bool>(
       'closeTfFrame',
       {"id": frameId},
     );
+    return res ?? false;
   }
 
   @override
@@ -358,6 +415,7 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
       'getTfFrameJpeg',
       {"id": frameId},
     );
+    if (res is! Map) return <String, dynamic>{"bytes": null};
     return Map<String, dynamic>.from(res);
   }
 
@@ -401,10 +459,11 @@ class MethodChannelFlutterAnycam extends FlutterAnycamPlatform {
   Future<bool> closeTfInferenceResult({
     required String inferenceId,
   }) async {
-    return await methodChannel.invokeMethod(
+    final res = await methodChannel.invokeMethod<bool>(
       'closeTfInferenceResult',
       {"id": inferenceId},
     );
+    return res ?? false;
   }
 
   @override

@@ -15,11 +15,28 @@ struct FpSize {
 class BaseCamera: NSObject, FlutterTexture {
     
     static var waitPermission = false;
-    var latestPixelBuffer: CVPixelBuffer?
+
+    /// Written on the capture queue, read by Flutter's raster thread in `copyPixelBuffer`.
+    private let pixelBufferLock = NSLock()
+    private var _latestPixelBuffer: CVPixelBuffer?
+    var latestPixelBuffer: CVPixelBuffer? {
+        get {
+            pixelBufferLock.lock()
+            defer { pixelBufferLock.unlock() }
+            return _latestPixelBuffer
+        }
+        set {
+            pixelBufferLock.lock()
+            _latestPixelBuffer = newValue
+            pixelBufferLock.unlock()
+        }
+    }
     
     let params:  [String : Any?];
     let cameraSelector: ViewCameraSelector?
     
+    /// Mutated on main, iterated from the capture queue.
+    private let bridgesLock = NSLock()
     private var bridges: [CameraBridge] = []
     
     public var textureId: Int64?;
@@ -28,6 +45,17 @@ class BaseCamera: NSObject, FlutterTexture {
     private var lastAction: ActionCall?;
     
     private var isInitied = false;
+    private let stateLock = NSLock()
+    private var _isDisposed = false
+    var isDisposed: Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return _isDisposed
+    }
+
+    /// Frames handed to the main queue but not yet given to the Flutter sink. One at a time:
+    /// a busy main thread must drop frames, not queue them (each one is a full-size copy).
+    private var framesInFlight = 0
     
     var preferredSize : FpSize?;
     var resizeFrame : FpSize?;
@@ -44,7 +72,7 @@ class BaseCamera: NSObject, FlutterTexture {
         self.params = params
         self.frameAvailableCallback = frameAvailableCallback;
         let map = params["cameraSelector"] as? [String : Any?];
-        cameraSelector = ViewCameraSelector.fromMap(map!);
+        cameraSelector = map != nil ? ViewCameraSelector.fromMap(map!) : nil;
         
         if let preferredSizeMap = params["preferredSize"] as? [String: Any],
               let width = preferredSizeMap["width"] as? Int,
@@ -74,39 +102,54 @@ class BaseCamera: NSObject, FlutterTexture {
     
     func run(textureId: Int64) -> Void {
         self.textureId = textureId;
+        if isDisposed { return }
         let status = AVCaptureDevice.authorizationStatus(for: .video);
-        if(status == .authorized && !isInitied) {
-            DispatchQueue.main.async {
-                self.exec()
+        if status == .authorized {
+            // Re-running an initialized camera (e.g. broadcastPermissionGranted) is a no-op.
+            if !isInitied {
+                isInitied = true;
+                DispatchQueue.main.async {
+                    if self.isDisposed { return }
+                    self.exec()
+                }
             }
-            isInitied = true;
         } else {
             onUnauthorized();
             isInitied = false;
         }
     }
     
-    func dispose() -> Void {};
-    
+    /// Subclasses must call super.
+    func dispose() -> Void {
+        stateLock.lock()
+        _isDisposed = true
+        stateLock.unlock()
+        latestPixelBuffer = nil
+    };
     
     func getFps() -> Int {
-        if(params["fps"] != nil) {
-            return params["fps"] as! Int;
+        if let fps = params["fps"] as? Int, fps > 0 {
+            return fps
         }
-        return  5;
+        return 5;
     }
     
-    
     func frameAvailable() -> Void {
-        if(frameAvailableCallback != nil) {
-            frameAvailableCallback!(textureId!);
+        if let id = textureId, let callback = frameAvailableCallback, !isDisposed {
+            callback(id)
         }
+    }
+
+    private func snapshotBridges() -> [CameraBridge] {
+        bridgesLock.lock()
+        defer { bridgesLock.unlock() }
+        return bridges
     }
     
     func onConnected(data: [String: Any?]) -> Void {
         var newData = data;
         newData["textureId"] = textureId;
-        for bridge in bridges {
+        for bridge in snapshotBridges() {
             bridge.onConnected(data: newData)
         }
        
@@ -114,7 +157,7 @@ class BaseCamera: NSObject, FlutterTexture {
     }
     
     func onDisconnected() -> Void {
-        for bridge in bridges {
+        for bridge in snapshotBridges() {
             bridge.onDisconnected()
         }
         
@@ -122,27 +165,90 @@ class BaseCamera: NSObject, FlutterTexture {
     }
     
     func onUnauthorized() -> Void {
-        for bridge in bridges {
+        for bridge in snapshotBridges() {
             bridge.onUnauthorized()
         }
         lastAction = BaseCamera.ActionCall(method: "onUnauthorized");
     }
     
     func onFailed(message: String) -> Void {
-        for bridge in bridges {
+        for bridge in snapshotBridges() {
             bridge.onFailed(message: message)
         }
         lastAction = BaseCamera.ActionCall(method: "onFailed", data: message);
     }
+
+    /// True when a new frame may be produced: nothing is still waiting for the main thread.
+    func canDeliverFrame() -> Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return framesInFlight == 0 && !_isDisposed
+    }
     
+    /// Native TF frames that no Dart listener received are closed here; otherwise they would
+    /// stay registered forever.
+    ///
+    /// A TF frame has a single owner, so it goes only to the most recently attached connected
+    /// view (the top route when two screens share a camera); otherwise one view's close() would
+    /// free the frame the other is still running inference on.
     func onVideoFrameReceived(imageData: [String: Any]) -> Void {
-        for bridge in bridges {
-            bridge.onVideoFrameReceived(imageData: imageData)
+        let tfFrameId = isTfMode ? imageData["id"] as? String : nil
+        let targets = tfFrameId != nil ? snapshotBridges().reversed() : snapshotBridges()
+
+        stateLock.lock()
+        framesInFlight += 1
+        stateLock.unlock()
+
+        var pending = 0
+        var anyDelivered = false
+        let completionLock = NSLock()
+        var sent = 0
+        let finish: (Bool) -> Void = { [weak self] delivered in
+            completionLock.lock()
+            if delivered { anyDelivered = true }
+            pending -= 1
+            let done = pending == 0
+            let delivered = anyDelivered
+            completionLock.unlock()
+            guard done else { return }
+            if let camera = self {
+                camera.frameFinished(tfFrameId: tfFrameId, delivered: delivered)
+            } else if !delivered, let id = tfFrameId {
+                TfFrameHandler.shared.closeFrame(id)
+            }
+        }
+
+        completionLock.lock()
+        for bridge in targets {
+            pending += 1
+            if bridge.onVideoFrameReceived(imageData: imageData, completion: finish) {
+                sent += 1
+                if tfFrameId != nil { break }
+            } else {
+                pending -= 1
+            }
+        }
+        let nothingSent = sent == 0
+        completionLock.unlock()
+
+        if nothingSent {
+            frameFinished(tfFrameId: tfFrameId, delivered: false)
+        }
+    }
+
+    private func frameFinished(tfFrameId: String?, delivered: Bool) {
+        stateLock.lock()
+        framesInFlight = max(0, framesInFlight - 1)
+        stateLock.unlock()
+        if !delivered, let id = tfFrameId {
+            TfFrameHandler.shared.closeFrame(id)
         }
     }
     
     
     func getBridgeByViewId(_ viewId: Int) -> CameraBridge? {
+        bridgesLock.lock()
+        defer { bridgesLock.unlock() }
         return bridges.first { $0.viewId == viewId }
     }
     
@@ -151,38 +257,43 @@ class BaseCamera: NSObject, FlutterTexture {
     }
     
     func existsBridge() -> Bool {
+        bridgesLock.lock()
+        defer { bridgesLock.unlock() }
         return !bridges.isEmpty
     }
     
     func removeBridge(_ bridge: CameraBridge) {
+        bridgesLock.lock()
         if let index = bridges.firstIndex(where: { $0 === bridge }) {
             bridges.remove(at: index)
         }
+        bridgesLock.unlock()
     }
     
     func setZoom(zoom: Float) -> Void { }
+
+    func setExposureCompensation(value: Int) -> Void { }
     
     func addBridge(_ bridge: CameraBridge) {
+        bridgesLock.lock()
         let runCall = !bridges.isEmpty;
-        let filter = bridges.filter { $0.viewId == bridge.viewId }
-        if filter.isEmpty {
+        if !bridges.contains(where: { $0.viewId == bridge.viewId }) {
             bridges.append(bridge)
         }
+        bridgesLock.unlock()
         
-        if(runCall && lastAction != nil) {
-            switch lastAction!.method {
+        if runCall, let action = lastAction {
+            switch action.method {
             case "onDisconnected":
                 bridge.onDisconnected()
-                break;
             case "onUnauthorized":
                 bridge.onUnauthorized()
-                break;
             case "onFailed":
-                bridge.onFailed(message: (lastAction!.data as? String)!)
-                break;
+                bridge.onFailed(message: (action.data as? String) ?? "")
             default:
-                bridge.onConnected(data: (lastAction!.data as? [String: Any])!)
-                break;
+                if let data = action.data as? [String: Any?] {
+                    bridge.onConnected(data: data)
+                }
             }
         }
         
@@ -203,4 +314,3 @@ class BaseCamera: NSObject, FlutterTexture {
         
     }
 }
-

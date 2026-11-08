@@ -14,6 +14,9 @@ public class YuvUtil {
 
     public static I420Image normalizeToI420(I420Image src) {
         I420Image result = normalizeToI420JNI(src);
+        if (result == null) {
+            throw new IllegalStateException("normalizeToI420 failed");
+        }
         result.setOnClose((ref) -> {
             releaseNativeBuffer(ref.dataY);
             releaseNativeBuffer(ref.dataU);

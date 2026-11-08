@@ -32,12 +32,25 @@ Java_br_dev_michaellopes_flutter_1anycam_webrtc_YuvUtil_normalizeToI420JNI(
     uint8_t* srcU = reinterpret_cast<uint8_t*>(env->GetDirectBufferAddress(dataU));
     uint8_t* srcV = reinterpret_cast<uint8_t*>(env->GetDirectBufferAddress(dataV));
 
-    int chromaWidth = width / 2;
-    int chromaHeight = height / 2;
+    if (srcY == nullptr || srcU == nullptr || srcV == nullptr || width <= 0 || height <= 0) {
+        LOGE("normalizeToI420: invalid source planes");
+        return nullptr;
+    }
+
+    // I420 chroma covers odd edges: (w+1)/2 x (h+1)/2.
+    int chromaWidth = (width + 1) / 2;
+    int chromaHeight = (height + 1) / 2;
 
     uint8_t* outY = (uint8_t*) malloc(width * height);
     uint8_t* outU = (uint8_t*) malloc(chromaWidth * chromaHeight);
     uint8_t* outV = (uint8_t*) malloc(chromaWidth * chromaHeight);
+    if (outY == nullptr || outU == nullptr || outV == nullptr) {
+        free(outY);
+        free(outU);
+        free(outV);
+        LOGE("normalizeToI420: out of memory");
+        return nullptr;
+    }
 
     for (int row = 0; row < height; row++) {
         for (int col = 0; col < width; col++) {

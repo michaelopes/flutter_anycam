@@ -69,13 +69,24 @@ class FlutterAnycamTfInferenceResult {
     return _scaledCroppedFrame!;
   }
 
+  bool _closed = false;
+
+  bool get isClosed => _closed;
+
+  /// Releases the native result and its derived frames. Idempotent.
   Future<bool> close() async {
+    if (_closed) return true;
+    _closed = true;
     _frame = null;
     _rawFrame = null;
     _croppedFrame = null;
     _scaledCroppedFrame = null;
-    return await FlutterAnycamPlatform.instance
-        .closeTfInferenceResult(inferenceId: id);
+    try {
+      return await FlutterAnycamPlatform.instance
+          .closeTfInferenceResult(inferenceId: id);
+    } catch (_) {
+      return false;
+    }
   }
 
   factory FlutterAnycamTfInferenceResult.fromMap(Map<String, dynamic> map) {

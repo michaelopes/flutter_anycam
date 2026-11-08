@@ -40,6 +40,7 @@ public class WebRtcStreamer {
     private VideoSource videoSource;
     private VideoTrack videoTrack;
     AudioTrack audioTrack;
+    private org.webrtc.AudioSource audioSource;
 
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicBoolean connected = new AtomicBoolean(false);
@@ -142,10 +143,52 @@ public class WebRtcStreamer {
         }
     }
 
-    public void start(List<Map<String, Object>> iceServersParam) {
+    public synchronized void start(List<Map<String, Object>> iceServersParam) {
+        if (started.get()) return;
         if (iceServersParam != null) {
             this.iceServersParam = iceServersParam;
         }
+        List<PeerConnection.IceServer> iceServers = buildIceServers(this.iceServersParam);
+        try {
+            allocate(iceServers);
+            started.set(true);
+        } catch (RuntimeException e) {
+            // stop() only releases a started stream; free what was allocated before the failure.
+            started.set(true);
+            stop();
+            throw e;
+        }
+    }
+
+    private static List<PeerConnection.IceServer> buildIceServers(List<Map<String, Object>> params) {
+        List<PeerConnection.IceServer> iceServers = new ArrayList<>();
+        if (params != null) {
+            for (Map<String, Object> item : params) {
+                Object hostname = item != null ? item.get("hostname") : null;
+                if (!(hostname instanceof String) || ((String) hostname).isEmpty()) continue;
+                PeerConnection.IceServer.Builder iceServer =
+                        PeerConnection.IceServer.builder((String) hostname);
+                Object password = item.get("password");
+                Object username = item.get("username");
+                if (password != null || username != null) {
+                    iceServer.setPassword(password != null ? password.toString() : "");
+                    iceServer.setUsername(username != null ? username.toString() : "");
+                }
+                iceServers.add(iceServer.createIceServer());
+            }
+        }
+        if (params == null) {
+            iceServers.add(
+                    PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
+            );
+            iceServers.add(
+                    PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer()
+            );
+        }
+        return iceServers;
+    }
+
+    private void allocate(List<PeerConnection.IceServer> iceServers) {
         configureAudioRouting();
 
         videoSource = factory.createVideoSource(false);
@@ -159,28 +202,8 @@ public class WebRtcStreamer {
         audioConstraints.mandatory.add(
                 new MediaConstraints.KeyValuePair("googNoiseSuppression", "true"));
 
-        org.webrtc.AudioSource audioSource = factory.createAudioSource(audioConstraints);
+        audioSource = factory.createAudioSource(audioConstraints);
         audioTrack = factory.createAudioTrack("audio", audioSource);
-
-        List<PeerConnection.IceServer> iceServers = new ArrayList<>();
-        if (iceServersParam != null) {
-            for (Map<String, Object> item : iceServersParam) {
-                PeerConnection.IceServer.Builder iceServer =
-                        PeerConnection.IceServer.builder((String) item.get("hostname"));
-                if (item.get("password") != null || item.get("username") != null) {
-                    iceServer.setPassword((String) item.get("password"));
-                    iceServer.setUsername((String) item.get("username"));
-                }
-                iceServers.add(iceServer.createIceServer());
-            }
-        } else {
-            iceServers.add(
-                    PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
-            );
-            iceServers.add(
-                    PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer()
-            );
-        }
 
         PeerConnection.RTCConfiguration config = new PeerConnection.RTCConfiguration(iceServers);
         config.sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN;
@@ -199,15 +222,20 @@ public class WebRtcStreamer {
 
             @Override
             public void onIceConnectionChange(PeerConnection.IceConnectionState newState) {
+                Callback cb = callback;
                 boolean status = newState == PeerConnection.IceConnectionState.CONNECTED
                         || newState == PeerConnection.IceConnectionState.COMPLETED;
                 if (status) {
-                    connected.set(true);
-                    callback.onConnected(WebRtcStreamer.this);
-                } else if ((newState == PeerConnection.IceConnectionState.DISCONNECTED
-                        || newState == PeerConnection.IceConnectionState.CLOSED) && connected.get()) {
+                    if (connected.compareAndSet(false, true) && cb != null) {
+                        cb.onConnected(WebRtcStreamer.this);
+                    }
+                } else if (newState == PeerConnection.IceConnectionState.FAILED) {
+                    // A stream that never connected must still be reported, or Dart waits forever.
                     connected.set(false);
-                    callback.onDisconnected(WebRtcStreamer.this);
+                    if (cb != null) cb.onDisconnected(WebRtcStreamer.this);
+                } else if ((newState == PeerConnection.IceConnectionState.DISCONNECTED
+                        || newState == PeerConnection.IceConnectionState.CLOSED) && connected.compareAndSet(true, false)) {
+                    if (cb != null) cb.onDisconnected(WebRtcStreamer.this);
                 }
             }
 
@@ -241,7 +269,8 @@ public class WebRtcStreamer {
                         byte[] bytes = new byte[data.remaining()];
                         data.get(bytes);
                         String msg = new String(bytes, StandardCharsets.UTF_8);
-                        callback.onDataChannelMessage(msg, WebRtcStreamer.this);
+                        Callback cb = callback;
+                        if (cb != null) cb.onDataChannelMessage(msg, WebRtcStreamer.this);
                     }
 
                     @Override
@@ -266,12 +295,15 @@ public class WebRtcStreamer {
         List<String> streamIds = new ArrayList<>();
         streamIds.add("stream1");
 
+        if (peerConnection == null) {
+            throw new IllegalStateException("createPeerConnection returned null");
+        }
         peerConnection.addTrack(videoTrack, streamIds);
         peerConnection.addTrack(audioTrack, streamIds);
-        started.set(true);
     }
 
-    public void stop() {
+    /** Never call from a PeerConnection observer callback (dispose blocks on that thread). */
+    public synchronized void stop() {
         if (!started.compareAndSet(true, false)) return;
         connected.set(false);
 
@@ -320,94 +352,139 @@ public class WebRtcStreamer {
             }
             audioTrack = null;
         }
+        if (audioSource != null) {
+            try {
+                audioSource.dispose();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+            audioSource = null;
+        }
     }
 
     public interface AnswerCallback {
         void onAnswer(String sdp);
+
+        void onError(String message);
     }
 
+    /** {@code callback} receives exactly one of answer or error. */
     public void setOffer(String offerSdp, List<Map<String, Object>> iceServers, AnswerCallback callback) {
-        if (!started.get()) {
-            start(iceServers);
+        final AtomicBoolean replied = new AtomicBoolean(false);
+        final AnswerCallback once = new AnswerCallback() {
+            @Override
+            public void onAnswer(String sdp) {
+                if (replied.compareAndSet(false, true)) callback.onAnswer(sdp);
+            }
+
+            @Override
+            public void onError(String message) {
+                if (replied.compareAndSet(false, true)) callback.onError(message);
+            }
+        };
+
+        final PeerConnection pc;
+        try {
+            synchronized (this) {
+                if (!started.get()) {
+                    start(iceServers);
+                }
+                pc = peerConnection;
+            }
+        } catch (RuntimeException e) {
+            once.onError("start failed: " + e.getMessage());
+            return;
+        }
+        if (pc == null || offerSdp == null) {
+            once.onError(pc == null ? "PeerConnection unavailable" : "Offer SDP is null");
+            return;
         }
 
         SessionDescription offer = new SessionDescription(SessionDescription.Type.OFFER, offerSdp);
+        try {
+            setRemoteOffer(pc, offer, once);
+        } catch (RuntimeException e) {
+            // Stream stopped concurrently: the PeerConnection is disposed.
+            once.onError("setRemoteDescription failed: " + e.getMessage());
+        }
+    }
 
-        peerConnection.setRemoteDescription(new SdpObserver() {
+    private static void setRemoteOffer(PeerConnection pc, SessionDescription offer, AnswerCallback once) {
+        pc.setRemoteDescription(new SdpAdapter("setRemoteDescription", once) {
             @Override
             public void onSetSuccess() {
                 MediaConstraints constraints = new MediaConstraints();
                 constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"));
                 constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveVideo", "false"));
-
-                peerConnection.createAnswer(new SdpObserver() {
-                    @Override
-                    public void onCreateSuccess(SessionDescription answer) {
-                        peerConnection.setLocalDescription(new SdpObserver() {
-                            @Override
-                            public void onSetSuccess() {
-                                callback.onAnswer(answer.description);
+                try {
+                    pc.createAnswer(new SdpAdapter("createAnswer", once) {
+                        @Override
+                        public void onCreateSuccess(SessionDescription answer) {
+                            try {
+                                pc.setLocalDescription(new SdpAdapter("setLocalDescription", once) {
+                                    @Override
+                                    public void onSetSuccess() {
+                                        once.onAnswer(answer.description);
+                                    }
+                                }, answer);
+                            } catch (Exception e) {
+                                // Stream stopped while negotiating: the PeerConnection is disposed.
+                                once.onError("setLocalDescription failed: " + e.getMessage());
                             }
-
-                            @Override
-                            public void onCreateSuccess(SessionDescription sdp) {
-                            }
-
-                            @Override
-                            public void onCreateFailure(String error) {
-                            }
-
-                            @Override
-                            public void onSetFailure(String error) {
-                            }
-                        }, answer);
-                    }
-
-                    @Override
-                    public void onSetSuccess() {
-                    }
-
-                    @Override
-                    public void onCreateFailure(String error) {
-                    }
-
-                    @Override
-                    public void onSetFailure(String error) {
-                    }
-                }, constraints);
-            }
-
-            @Override
-            public void onCreateSuccess(SessionDescription sdp) {
-            }
-
-            @Override
-            public void onCreateFailure(String error) {
-            }
-
-            @Override
-            public void onSetFailure(String error) {
+                        }
+                    }, constraints);
+                } catch (Exception e) {
+                    once.onError("createAnswer failed: " + e.getMessage());
+                }
             }
         }, offer);
     }
 
-    public void addIceCandidate(String sdpMid, int sdpMLineIndex, String candidate) {
-        if (peerConnection != null) {
+    private static class SdpAdapter implements SdpObserver {
+        private final String step;
+        private final AnswerCallback callback;
+
+        SdpAdapter(String step, AnswerCallback callback) {
+            this.step = step;
+            this.callback = callback;
+        }
+
+        @Override
+        public void onCreateSuccess(SessionDescription sdp) {
+        }
+
+        @Override
+        public void onSetSuccess() {
+        }
+
+        @Override
+        public void onCreateFailure(String error) {
+            callback.onError(step + " failed: " + error);
+        }
+
+        @Override
+        public void onSetFailure(String error) {
+            callback.onError(step + " failed: " + error);
+        }
+    }
+
+    public synchronized void addIceCandidate(String sdpMid, int sdpMLineIndex, String candidate) {
+        if (peerConnection != null && candidate != null) {
             IceCandidate iceCandidate = new IceCandidate(sdpMid, sdpMLineIndex, candidate);
             peerConnection.addIceCandidate(iceCandidate);
         }
     }
 
-    public void sendDataMessage(String message) {
-        if (started.get() && dataChannel != null) {
+    public synchronized void sendDataMessage(String message) {
+        if (started.get() && dataChannel != null && message != null) {
             ByteBuffer buffer = ByteBuffer.wrap(message.getBytes(StandardCharsets.UTF_8));
             dataChannel.send(new DataChannel.Buffer(buffer, false));
             buffer.clear();
         }
     }
 
-    public void pushFrame(VideoFrame frame) {
-        if (started.get() && connected.get()) {
+    public synchronized void pushFrame(VideoFrame frame) {
+        if (started.get() && connected.get() && videoSource != null) {
             videoSource.getCapturerObserver().onFrameCaptured(frame);
         }
     }

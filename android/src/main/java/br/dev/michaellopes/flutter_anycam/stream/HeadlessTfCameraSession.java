@@ -192,7 +192,7 @@ public class HeadlessTfCameraSession {
     public void dispose() {
         disposed = true;
         if (camera2Session != null) {
-            camera2Session.dispose();
+            camera2Session.dispose(null);
             camera2Session = null;
         }
         executor.shutdown();

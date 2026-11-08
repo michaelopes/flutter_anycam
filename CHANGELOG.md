@@ -85,3 +85,17 @@ Melhorias suporte na integrações externas
 
 ## 1.1.13
 RTSP camera support has been discontinued in this package because it does not comply with the new 16 KB paging requirement mandated by the Play Store.
+## Unreleased
+Estabilidade e memória (Android e iOS):
+* Frames TF com dono único: são liberados nativamente quando nenhum listener Dart os recebe, quando o `FlutterAnycamTfWidget` os descarta (`maxConcurrentFrames`) ou quando `onFrame` lança erro. Limite de 12 frames de câmera vivos.
+* Quando duas telas usam a mesma câmera, o frame TF vai só para a view mais recente (a rota do topo); frames NV21/BGRA continuam indo para todas.
+* Todas as respostas do method channel acontecem uma única vez, na main thread; o trabalho pesado roda em background. `processTfOutput` tem timeout de 10 s.
+* Android: eventos de câmera são roteados para o engine Flutter que criou a view (múltiplos engines). `createView` falha se a câmera estiver em uso por um `FlutterAnycamTfCameraStream`.
+* iOS: sessão de captura sempre fecha a configuração (sem preview preto), processamento de frame fora da fila de captura, recuperação de erro de runtime da sessão e, em aparelhos sem multi-câmera, a câmera anterior é retomada quando a nova é liberada.
+
+Mudanças de comportamento:
+* `loadModel` com falha lança `PlatformException` (antes podia derrubar o app no Android).
+* iOS: frames TF chegam ao Dart só com `id`/`width`/`height`; use `getJpeg()`/inferência para os pixels.
+* Android: frames NV21 redimensionados informam `rowStride == width` e `pixelStride == 1`.
+* iOS: métodos exclusivos de Android retornam `false`/`true` ou `PlatformException('unsupported')` em vez de `MissingPluginException`.
+* `FlutterAnycamTfSession.dispose()` e `FlutterAnycamTfInferenceResult.close()` são idempotentes e não lançam; `runInference` numa sessão descartada lança `StateError`.
